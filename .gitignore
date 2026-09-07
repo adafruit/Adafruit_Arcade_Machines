@@ -8,12 +8,19 @@
 #     "SdFat - Adafruit Fork"
 # (their own dependencies -- Adafruit GFX Library, Adafruit BusIO, etc. --
 # are pulled in automatically)
-libraries/Adafruit_*/
-libraries/PicoDVI_-_Adafruit_Fork/
-libraries/SdFat_-_Adafruit_Fork/
-libraries/Bounce2/
-libraries/MIDI_Library/
-libraries/FlashStorage/
+#
+# NOTE: no trailing slashes. A trailing slash matches directories ONLY, so
+# these patterns silently stopped ignoring these paths the moment they became
+# symlinks rather than real directories -- which is how 13 broken, absolute,
+# self-referential symlinks (libraries/Adafruit_BusIO -> /Volumes/.../
+# libraries/Adafruit_BusIO) got committed and published. Anyone cloning got 13
+# dangling links. Leave these unslashed so both forms stay ignored.
+libraries/Adafruit_*
+libraries/PicoDVI_-_Adafruit_Fork
+libraries/SdFat_-_Adafruit_Fork
+libraries/Bounce2
+libraries/MIDI_Library
+libraries/FlashStorage
 
 # Build output / caches
 build/
