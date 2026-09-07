@@ -2,6 +2,14 @@
 //
 // SPDX-License-Identifier: MIT
 
+// BEFORE YOU BUILD -- set Tools > Optimize to "Optimize More (-O2)".
+//
+// The sketch.yaml beside this file pins that level and `arduino-cli` reads
+// it automatically; the Arduino IDE does not always, so set it by hand. The
+// core's default is "Small (-Os) (standard)", which the games in this
+// project are too slow at (../DEVNOTES.md #35 and #49); these standalone
+// tests stay on the same setting as the sketches they are diagnosing.
+
 // Standalone smoke test for ArcadeBoard_FruitJam's hal_audio implementation.
 //
 // Plays a continuous 440 Hz tone through the TLV320DAC3100 -- no WAV

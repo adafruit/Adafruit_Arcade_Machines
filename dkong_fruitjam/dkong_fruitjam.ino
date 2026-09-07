@@ -2,6 +2,18 @@
 //
 // SPDX-License-Identifier: MIT
 
+// BEFORE YOU BUILD -- set Tools > Optimize to "Optimize Even More (-O3)".
+//
+// The core's default, "Small (-Os) (standard)", is not fast enough for any
+// game in this project: the emulated frame overruns the 16.66ms DVI frame
+// budget, the scanline queue starves, and the screen goes SOLID RED. That
+// looks exactly like a missing or unreadable SD card, so it is easy to lose
+// an afternoon to the wrong thing -- check this setting before suspecting
+// the hardware. See ../DEVNOTES.md #35 and #49 for two measured cases.
+//
+// The sketch.yaml beside this file pins the level and `arduino-cli` reads it
+// automatically; the Arduino IDE does not always, so set it by hand.
+
 // dkong_fruitjam -- Donkey Kong (ArcadeMachine_DKong) on the Adafruit Fruit
 // Jam (ArcadeBoard_FruitJam). This sketch is the SAMP composition root: it
 // is the ONLY place that knows both "this game" and "this board" at once.

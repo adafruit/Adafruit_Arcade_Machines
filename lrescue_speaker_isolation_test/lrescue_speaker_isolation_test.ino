@@ -2,6 +2,14 @@
 //
 // SPDX-License-Identifier: MIT
 
+// BEFORE YOU BUILD -- set Tools > Optimize to "Optimize More (-O2)".
+//
+// The sketch.yaml beside this file pins that level and `arduino-cli` reads
+// it automatically; the Arduino IDE does not always, so set it by hand. The
+// core's default is "Small (-Os) (standard)", which the games in this
+// project are too slow at (../DEVNOTES.md #35 and #49); these standalone
+// tests stay on the same setting as the sketches they are diagnosing.
+
 // Standing regression check for ArcadeMachine_LunarRescue's synthesized
 // speaker channel (lrescue_audio.h/.cpp) -- the one genuinely bit-banged
 // (not sampled) audio channel in this codebase, and the trickiest piece of
