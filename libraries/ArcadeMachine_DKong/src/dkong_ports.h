@@ -6,11 +6,11 @@
 // DMA controller, and the video-control latch block. See dkong_ports.cpp's
 // header for the full map and its MAME citations.
 //
-// Like ArcadeMachine_Pacman and unlike ArcadeCPU_i8080's extern-global
-// read_port()/write_port(), ArcadeCPU_Z80 wires hardware access via
+// Like ArcadeMachine_Pacman, ArcadeCPU_Z80 wires hardware access via
 // per-instance function pointers on the z80 struct, so this file exposes a
-// "wire" function that assigns them rather than a fixed-name contract the
-// CPU core reaches for by symbol.
+// "wire" function that assigns them. ArcadeCPU_i8080 now installs its port
+// callbacks the same way (Cpu_state.port_in/.port_out) rather than exporting
+// extern globals the CPU core reached for by symbol.
 #ifndef DKONG_PORTS_H
 #define DKONG_PORTS_H
 

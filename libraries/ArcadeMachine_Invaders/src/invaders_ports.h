@@ -15,15 +15,15 @@
 extern "C" {
 #endif
 
-// Binds the port I/O functions below to a specific system instance. Call
-// once before running the CPU (ArcadeCPU_i8080 calls read_port()/
-// write_port() with no other way to reach `system`).
+// Binds this machine's port I/O to a specific system instance and installs
+// it on that system's CPU (system->state.port_in / .port_out -- see the
+// contract on Cpu_state in ArcadeCPU_i8080's i8080.h). Call once before
+// running the CPU; until then IN reads 0xFF and OUT is discarded.
+//
+// The port handlers themselves are deliberately NOT declared here: they are
+// file-static in invaders_ports.cpp and reached only through those pointers,
+// so two i8080 machines can be compiled into one build without colliding.
 void invaders_ports_bind(arcade_system *system);
-
-// These match the signatures ArcadeCPU_i8080's exec_opcode() calls via
-// IN/OUT opcodes (see i8080_ports.h in that library).
-uint8_t read_port(uint8_t port_number);
-void write_port(uint8_t port_number, uint8_t port_data);
 
 #ifdef __cplusplus
 }

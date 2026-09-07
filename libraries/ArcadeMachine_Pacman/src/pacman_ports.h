@@ -5,11 +5,12 @@
 // Pac-Man Z80 bus wiring: memory map (read_byte/write_byte) and the one
 // real I/O-space access (port_out on port 0, for the interrupt vector).
 //
-// Unlike ArcadeCPU_i8080 (extern-global read_port()/write_port() the CPU
-// core calls directly), ArcadeCPU_Z80's core wires hardware access via
-// per-instance function pointers on the z80 struct itself -- so this file
-// exposes a "wire" function that assigns them, rather than a fixed-name
-// contract the CPU core reaches for by symbol name.
+// ArcadeCPU_Z80's core wires hardware access via per-instance function
+// pointers on the z80 struct itself, so this file exposes a "wire" function
+// that assigns them. ArcadeCPU_i8080 now does the same for its ports
+// (Cpu_state.port_in/.port_out); it used to reach for extern globals named
+// read_port()/write_port() by symbol, which stopped working once two i8080
+// machines shared one build.
 #ifndef PACMAN_PORTS_H
 #define PACMAN_PORTS_H
 

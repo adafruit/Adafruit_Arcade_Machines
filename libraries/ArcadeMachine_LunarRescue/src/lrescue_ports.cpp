@@ -18,11 +18,21 @@
 
 static arcade_system *g_system;
 
+// Both callbacks are file-static: the CPU reaches them only through the
+// pointers installed below, so nothing here exports a symbol that another
+// i8080 machine (ArcadeMachine_Invaders) could collide with.
+static uint8_t lrescue_read_port(Cpu_state *state, uint8_t port_number);
+static void    lrescue_write_port(Cpu_state *state, uint8_t port_number,
+                                  uint8_t port_data);
+
 void lrescue_ports_bind(arcade_system *system) {
     g_system = system;
+    system->state.port_in  = lrescue_read_port;
+    system->state.port_out = lrescue_write_port;
 }
 
-uint8_t read_port(uint8_t port_number) {
+static uint8_t lrescue_read_port(Cpu_state *state, uint8_t port_number) {
+    (void)state; // this machine has one CPU; g_system above is its system
     uint8_t port_data = 0;
 
     switch (port_number) {
@@ -73,7 +83,9 @@ uint8_t read_port(uint8_t port_number) {
     return port_data;
 }
 
-void write_port(uint8_t port_number, uint8_t port_data) {
+static void lrescue_write_port(Cpu_state *state, uint8_t port_number,
+                               uint8_t port_data) {
+    (void)state;
     static uint8_t port_data_mem[2] = {0, 0};
 
     switch (port_number) {

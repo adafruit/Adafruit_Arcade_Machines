@@ -17,12 +17,12 @@
 // mangle the call site's expected symbol names, producing "undefined
 // reference" at link time against z80.c's plain C symbols.
 //
-// Unlike ArcadeCPU_i8080's Cpu_state (a flat register/memory struct polled
-// by read_port()/write_port()/read_memory()/write_memory() extern globals
-// the Machine layer defines), this upstream core wires hardware access via
-// per-instance function pointers on the z80 struct itself (read_byte,
-// write_byte, port_in, port_out, userdata) -- a different but equally
-// "no hardware knowledge" shape, native to this particular vendored core.
+// This upstream core wires hardware access via per-instance function
+// pointers on the z80 struct itself (read_byte, write_byte, port_in,
+// port_out, userdata). ArcadeCPU_i8080's Cpu_state now carries port_in/
+// port_out in the same spirit, though it needs no userdata and no memory
+// callbacks: that core decodes memory internally via read_memory()/
+// write_memory(), which take a Cpu_state *, so ports are its only hook.
 #ifndef Z80_Z80_H_
 #define Z80_Z80_H_
 

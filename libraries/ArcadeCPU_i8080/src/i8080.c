@@ -11,7 +11,6 @@
 #include <stdlib.h>
 #include "pico/stdlib.h"
 #include "i8080.h"
-#include "i8080_ports.h"
 
 static inline void cpu_panic(void) {
     // Halt core on illegal or unimplemented opcode — blinks onboard LED if available
@@ -523,13 +522,17 @@ int DI(Cpu_state *state)  { state->int_enable = 0; return 4; }
 
 int IN(Cpu_state *state) {
     state->pc++;
-    state->regs[A] = read_port(read_memory(state, state->pc));
+    // An unbound port reads as an undriven bus rather than faulting -- see
+    // the port_in/port_out contract on Cpu_state in i8080.h.
+    uint8_t port_number = read_memory(state, state->pc);
+    state->regs[A] = state->port_in ? state->port_in(state, port_number) : 0xFF;
     return 10;
 }
 
 int OUT(Cpu_state *state) {
     state->pc++;
-    write_port(read_memory(state, state->pc), state->regs[A]);
+    uint8_t port_number = read_memory(state, state->pc);
+    if (state->port_out) state->port_out(state, port_number, state->regs[A]);
     return 10;
 }
 

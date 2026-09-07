@@ -26,8 +26,7 @@ INC="-I$HERE/../host_common/shim \
 
 mkdir -p "$OBJ"
 
-# i8080.c is C (i8080.h carries its own extern "C" guards -- it is shared
-# verbatim with the pure-C invaders_pico reference clone), so build it as C
+# i8080.c is C (i8080.h carries its own extern "C" guards), so build it as C
 # and link -- same split the Arduino build uses.
 cc -O2 -g -std=c11 -Wall $INC -c "$LIBS/ArcadeCPU_i8080/src/i8080.c" -o "$OBJ/i8080.o"
 

@@ -14,18 +14,18 @@
 extern "C" {
 #endif
 
-// Binds the port I/O functions below to a specific system instance. Call
-// once before running the CPU (ArcadeCPU_i8080 calls read_port()/
-// write_port() with no other way to reach `system`).
+// Binds this machine's port I/O to a specific system instance and installs
+// it on that system's CPU (system->state.port_in / .port_out -- see the
+// contract on Cpu_state in ArcadeCPU_i8080's i8080.h). Call once before
+// running the CPU; until then IN reads 0xFF and OUT is discarded.
+//
+// The port handlers themselves are deliberately NOT declared here: they are
+// file-static in lrescue_ports.cpp and reached only through those pointers.
+// They used to be extern globals sharing exactly the names
+// ArcadeMachine_Invaders defines, which was safe only while exactly one
+// Machine library was ever linked into a sketch. That stopped being true,
+// and the two definitions collided; see i8080.h for the full note.
 void lrescue_ports_bind(arcade_system *system);
-
-// These match the signatures ArcadeCPU_i8080's exec_opcode() calls via
-// IN/OUT opcodes. NOTE: these are the same global symbol names
-// ArcadeMachine_Invaders defines -- exactly one Machine library may ever be
-// linked into a given sketch (the SAMP composition root picks one), so this
-// is not a collision, it's the intended pattern.
-uint8_t read_port(uint8_t port_number);
-void write_port(uint8_t port_number, uint8_t port_data);
 
 #ifdef __cplusplus
 }
