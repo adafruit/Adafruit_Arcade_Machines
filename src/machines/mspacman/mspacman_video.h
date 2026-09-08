@@ -58,12 +58,15 @@ void mspacman_video_build_caches(void);
 // mspacman_run_frame() can call it once per scanline, interleaved with the
 // Z80 cycles that update the VRAM/sprite state it reads -- see that
 // function's own comment (arcade_arduino/DEVNOTES.md problem #19) for why
-// this matters for tate/CW rotation specifically. Landscape/180-degree
-// rotation still needs the WHOLE frame's final VRAM state before any
-// scanline can be emitted (see mspacman_video.cpp's frame_cache comment),
-// so mspacman_run_frame() never calls this directly for those two modes --
-// it uses mspacman_draw_frame() instead, after running the full frame's
-// cycles.
+// this matters.
+//
+// EVERY rotation goes through here now. Landscape/180 used to need the
+// whole frame's final VRAM state before any scanline could be emitted,
+// because a yoko scanline is a native COLUMN and this file could only
+// render rows. render_native_column() removed that, and took the frame
+// cache and the separate whole-frame entry point with it (DEVNOTES #79) --
+// same change as pacman_video.h documents, and the reason those two
+// orientations no longer show red.
 void mspacman_video_render_scanline(const mspacman_system *system, uint32_t dvi_y, uint16_t *buf);
 
 // Boot-time asset-load error screen: floods every scanline with a solid

@@ -108,10 +108,15 @@ bool mspacman_load_assets(mspacman_system *system, uint16_t *out_error_color) {
 // visible stall remained because *this* loop still ran the whole frame's
 // ~50,688 Z80 cycles before mspacman_draw_frame() ever called
 // hal_video_acquire_scanline() -- same starvation mechanism, just moved
-// from the renderer into the CPU loop. Only safe for tate/CW rotation,
-// which render each scanline from LIVE VRAM state on demand (see
-// mspacman_video_render_scanline()'s doc comment) -- landscape/180 use
-// run_frame_sequential() above instead.
+// from the renderer into the CPU loop.
+//
+// THIS IS NOW THE ONLY PATH. It used to be gated to tate/CW, with
+// landscape/180 falling back to a fully sequential run_frame_sequential()
+// because a yoko scanline needs a native COLUMN and the renderer could only
+// produce rows. mspacman_video.cpp's render_native_column() removed that
+// constraint, so the gate, the sequential path and the frame cache are all
+// gone together -- and with them the red those orientations showed
+// (DEVNOTES #79).
 //
 // Side effect worth knowing about: because each scanline is now rendered
 // from whatever VRAM/sprite state exists at that exact point in the
@@ -122,9 +127,9 @@ bool mspacman_load_assets(mspacman_system *system, uint16_t *out_error_color) {
 // sprites move only a few pixels per frame, so it should be imperceptible
 // in practice; flag it if anything looks like a one-frame tear on fast-
 // moving elements.
-// Same "compare elapsed delta, not absolute cyc" wraparound-safety as
-// run_frame_sequential() above -- see its comment for the full
-// explanation (arcade_arduino/DEVNOTES.md problem #22).
+// "Compare elapsed delta, not absolute cyc" wraparound-safety -- see
+// pacman_machine.cpp for the full explanation
+// (arcade_arduino/DEVNOTES.md problem #22).
 static void run_frame_interleaved(mspacman_system *system) {
     uint32_t start = system->cpu.cyc;
 

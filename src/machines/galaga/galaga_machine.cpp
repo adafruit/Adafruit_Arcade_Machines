@@ -59,7 +59,7 @@
 
 // Steps one CPU up to `target` elapsed cycles since `start` (wraparound-
 // safe unsigned subtraction, same idiom pacman_machine.cpp's
-// run_frame_sequential()/run_frame_interleaved() use and document in
+// run_frame_interleaved() uses and documents in
 // full -- see that file for the DEVNOTES.md problem #22 wraparound
 // lesson, which applies here identically since z80.cyc is the same kind
 // of never-reset running counter), but never more than one quantum slice
