@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
 SPDX-License-Identifier: MIT
 -->
 
-# arcade_arduino
+# Adafruit Arcade Machines
 
 Classic arcade games for the [Adafruit Fruit Jam](https://www.adafruit.com/product/6200)
 (RP2350B), running under the Arduino framework instead of the raw Pico SDK.
@@ -14,41 +14,43 @@ Single Arcade Machine Port — a small framework for building one-game,
 one-board arcade firmware, organized so the pieces that *aren't* specific
 to one game or one board are reusable for the next port:
 
-- **`ArcadeCPU_i8080`** — the Intel 8080 CPU interpreter. No hardware or
-  game knowledge at all. `ArcadeCPU_Z80`, `ArcadeCPU_MCS48` and
-  `ArcadeCPU_M6502` are its siblings, added for the Namco/Nintendo games,
-  for Donkey Kong's sound board, and for Burger Time.
-- **`ArcadeHAL`** — plain C function contracts (video/audio/input/storage).
+- **`src/cpu/`** — CPU interpreters, with no hardware or game knowledge at
+  all: `i8080`, plus `z80`, `mcs48` and `m6502`, added for the
+  Namco/Nintendo games, for Donkey Kong's sound board, and for Burger Time.
+- **`src/hal/`** — plain C function contracts (video/audio/input/storage).
   No implementation lives here.
-- **`ArcadeMachine_*`** — one library per game (`ArcadeMachine_Invaders`,
-  `ArcadeMachine_LunarRescue`, ...): that game's own port wiring, VRAM
-  renderer, sound, and ROM/asset manifest. Board-agnostic — talks only to
-  `ArcadeHAL`.
-- **`ArcadeBoard_FruitJam`** — the Fruit Jam's implementation of
-  `ArcadeHAL`: PicoDVI video, TLV320DAC3100 + I2S audio, GPIO input, SD card
+- **`src/machines/`** — one directory per game (`invaders/`, `lrescue/`,
+  ...): that game's own port wiring, VRAM renderer, sound, and ROM/asset
+  manifest. Board-agnostic — talks only to the HAL.
+- **`src/boards/fruitjam/`** — the Fruit Jam's implementation of those
+  contracts: PicoDVI video, TLV320DAC3100 + I2S audio, GPIO input, SD card
   storage via FatFs.
-- **One sketch per game** (`invaders_fruitjam/`, `lrescue_fruitjam/`, ...) —
-  the one place that knows both "this game" and "this board," wiring the
-  two together.
+- **`examples/Games/`** — one sketch per game, each the one place that knows
+  both "this game" and "this board," wiring the two together.
 
-`ArcadeCPU_Z80`/`ArcadeMachine_Pacman` (below) added the project's first
+This is a single Arduino library: install it, then open an example. The
+three axes above are directories inside `src/`, not separate libraries, so
+every example compiles the whole tree and the linker discards what that
+game does not use — verified byte-for-byte, it costs nothing.
+
+`src/cpu/z80/` and `src/machines/pacman/` (below) added the project's first
 Z80-based game this way — a sibling library alongside the i8080 axis, not a
 replacement for it. A future different board would add a sibling
-`ArcadeBoard_*` library the same way — see `../CLAUDE.md` in the parent
+`src/boards/*` backend the same way — see `../CLAUDE.md` in the parent
 `i8080/` checkout (if you have it) for the full architecture rationale, or
-just read `ArcadeHAL/src/*.h` for the contracts themselves.
+just read `src/hal/*.h` for the contracts themselves.
 
 ## Games
 
 | Game | Sketch | Notes |
 |---|---|---|
-| Space Invaders | [`invaders_fruitjam/`](invaders_fruitjam/README.md) | The original port; sample-based sound only. |
-| Lunar Rescue | [`lrescue_fruitjam/`](lrescue_fruitjam/README.md) | Same "8080bw" board family, plus one genuinely *synthesized* (bit-banged) audio channel — see its README and `DEVNOTES.md` problems #12-17 for what that took. |
-| Pac-Man | [`pacman_fruitjam/`](pacman_fruitjam/README.md) | The project's first **Z80**-based port (`ArcadeCPU_Z80`) and first tile+sprite video hardware (`ArcadeMachine_Pacman`), with fully synthesized Namco WSG sound — built from scratch against the real ROM/PROM dump and verified against MAME's driver source; see its README for citations. |
-| Galaga | [`galaga_fruitjam/`](galaga_fruitjam/README.md) | The project's first **multi-CPU** machine — three Z80s sharing RAM — plus a Namco 06XX/51XX/54XX custom I/O chain and a fourth video layer (the 05XX starfield). Synthesized WSG *and* 54XX explosion audio. |
-| Ms. Pac-Man | [`mspacman_fruitjam/`](mspacman_fruitjam/README.md) | The project's first machine that is another machine **plus a daughterboard**: stock Pac-Man hardware with the aux board's three extra ROMs, an address/data-line **encrypted** program bank, and eight address ranges that flip banks on any access. First **banked** address space and first ROM decode in the project. |
-| Donkey Kong | [`dkong_fruitjam/`](dkong_fruitjam/README.md) | The project's first **Nintendo** board and first **DMA-driven** sprites — the Z80 never writes sprite RAM, an i8257 controller does. Also its first **active-high** inputs, first **NMI** interrupt, and first **resistor-network** palette. Sound is an emulated **8035 sound CPU** (`ArcadeCPU_MCS48`, the project's third CPU axis) driving a DAC, plus approximations of its discrete analog channels tuned against recordings of a real machine. |
-| Burger Time | [`btime_fruitjam/`](btime_fruitjam/README.md) | The project's first **6502** machine (`ArcadeCPU_M6502`), first **encrypted-opcode** CPU (a DECO CPU-7, descrambled in the fetch path rather than at load time), first game with **no vblank interrupt at all** — it polls a vblank bit wired into a DIP-switch port — and first **palette held in RAM** rather than a PROM. Two 6502s driving two emulated **AY-3-8910s** — the project's first PSG — through a band-pass filter derived from the board's measured component values. Needed a real optimisation pass to fit the frame (23.6ms → 14ms); see `DEVNOTES.md` §59-64. |
+| Space Invaders | [`invaders_fruitjam/`](examples/Games/invaders_fruitjam/README.md) | The original port; sample-based sound only. |
+| Lunar Rescue | [`lrescue_fruitjam/`](examples/Games/lrescue_fruitjam/README.md) | Same "8080bw" board family, plus one genuinely *synthesized* (bit-banged) audio channel — see its README and `extras/DEVNOTES.md` problems #12-17 for what that took. |
+| Pac-Man | [`pacman_fruitjam/`](examples/Games/pacman_fruitjam/README.md) | The project's first **Z80**-based port (`src/cpu/z80/`) and first tile+sprite video hardware (`src/machines/pacman/`), with fully synthesized Namco WSG sound — built from scratch against the real ROM/PROM dump and verified against MAME's driver source; see its README for citations. |
+| Galaga | [`galaga_fruitjam/`](examples/Games/galaga_fruitjam/README.md) | The project's first **multi-CPU** machine — three Z80s sharing RAM — plus a Namco 06XX/51XX/54XX custom I/O chain and a fourth video layer (the 05XX starfield). Synthesized WSG *and* 54XX explosion audio. |
+| Ms. Pac-Man | [`mspacman_fruitjam/`](examples/Games/mspacman_fruitjam/README.md) | The project's first machine that is another machine **plus a daughterboard**: stock Pac-Man hardware with the aux board's three extra ROMs, an address/data-line **encrypted** program bank, and eight address ranges that flip banks on any access. First **banked** address space and first ROM decode in the project. |
+| Donkey Kong | [`dkong_fruitjam/`](examples/Games/dkong_fruitjam/README.md) | The project's first **Nintendo** board and first **DMA-driven** sprites — the Z80 never writes sprite RAM, an i8257 controller does. Also its first **active-high** inputs, first **NMI** interrupt, and first **resistor-network** palette. Sound is an emulated **8035 sound CPU** (`src/cpu/mcs48/`, the project's third CPU axis) driving a DAC, plus approximations of its discrete analog channels tuned against recordings of a real machine. |
+| Burger Time | [`btime_fruitjam/`](examples/Games/btime_fruitjam/README.md) | The project's first **6502** machine (`src/cpu/m6502/`), first **encrypted-opcode** CPU (a DECO CPU-7, descrambled in the fetch path rather than at load time), first game with **no vblank interrupt at all** — it polls a vblank bit wired into a DIP-switch port — and first **palette held in RAM** rather than a PROM. Two 6502s driving two emulated **AY-3-8910s** — the project's first PSG — through a band-pass filter derived from the board's measured component values. Needed a real optimisation pass to fit the frame (23.6ms → 14ms); see `extras/DEVNOTES.md` §59-64. |
 
 Each game's own README covers its specific ROM/sample layout, controls, and
 any known quirks. They all share the building steps below.
@@ -81,10 +83,10 @@ close to 4:3).
 
 **None of the three settings is remembered across a power cycle yet** —
 rotation, mirror and aspect correction all reset to their defaults at boot.
-Persisting them is planned future work; see `DISPLAY_GEOMETRY.md` section 8
-and `DEVNOTES.md` #91 for the design and the one hazard it has to avoid.
+Persisting them is planned future work; see `extras/DISPLAY_GEOMETRY.md` section 8
+and `extras/DEVNOTES.md` #91 for the design and the one hazard it has to avoid.
 
-`DISPLAY_GEOMETRY.md` has the derivation, the per-game measurements, and the
+`extras/DISPLAY_GEOMETRY.md` has the derivation, the per-game measurements, and the
 frame-budget cost of each option.
 
 ### Prebuilt firmware
@@ -102,10 +104,10 @@ not the same for every game; see below.
 To build the whole set yourself, ready to attach to a release:
 
 ```bash
-./dist/build_all.sh      # writes dist/<game>_fruitjam.uf2 for all seven
+./extras/dist/build_all.sh      # writes extras/dist/<game>_fruitjam.uf2 for all seven
 ```
 
-`dist/` is gitignored apart from that script and its README — the binaries
+`extras/dist/` is gitignored apart from that script and its README — the binaries
 belong on a release, not in the tree.
 
 ## Building
@@ -116,36 +118,48 @@ belong on a release, not in the tree.
    Philhower's, via Boards Manager — add
    `https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json`
    as an additional board URL first).
-2. Install these libraries (Library Manager):
-   `PicoDVI - Adafruit Fork`, `Adafruit TLV320 I2S`, `SdFat - Adafruit Fork`.
-3. Set **Preferences → Sketchbook location** to this repo's root.
-4. Select board **Adafruit Fruit Jam RP2350**. Each sketch pins its own
-   required **Tools → Optimize** level via a `sketch.yaml` (see
-   `DEVNOTES.md` #11 and #16 for why this differs per game — the default
-   `-Os` is not fast enough for any of them), so you generally don't need
-   to set this by hand, but double-check it matches that sketch's
-   `sketch.yaml` if the IDE doesn't pick it up automatically.
-   **This failure looks like a hardware fault, not a build setting.** At
-   `-Os` Ms. Pac-Man needs 19.5ms of a 16.66ms frame and goes solid red
-   (`DEVNOTES.md` #49); Galaga needs 17.8ms and flashes red throughout play
-   (#35). Red means *either* a missing SD card *or* a starved DVI queue, so
-   check the serial heartbeat before suspecting the card — and check the
-   optimisation level before suspecting the emulation. `arduino-cli` reads
-   `sketch.yaml` automatically; the IDE does not always.
+2. Install this library. Either **Sketch → Include Library → Add .ZIP
+   Library** on a download of this repo, or clone it into your sketchbook's
+   `libraries/` folder. Its one dependency, `PicoDVI - Adafruit Fork`, comes
+   from Library Manager (it is listed in `library.properties`, so the IDE
+   offers to install it for you).
+
+   > **Upgrading from an earlier checkout? Undo the old sketchbook setting.**
+   > This repo used to be an Arduino *sketchbook*, and the old instructions
+   > said to point **Preferences → Sketchbook location** at its root. That is
+   > now wrong and produces
+   > `fatal error: Adafruit_Arcade_Machines.h: No such file or directory` — the IDE
+   > looks for libraries in `<sketchbook>/libraries/`, and this repo *is* the
+   > library, so it cannot be inside its own `libraries/` folder. Set
+   > Sketchbook location back to your normal one (`~/Documents/Arduino` on
+   > macOS) and install the library as above.
+3. Select board **Adafruit Fruit Jam RP2350**.
+4. Set **Tools → Optimize** to `-O2` or `-O3` — each example's `sketch.yaml`
+   says which, and the header comment at the top of every `.ino` repeats it.
+   The core's default `-Os` is not fast enough for any game here.
+   **If you get this wrong the build now stops with an explanatory error**
+   rather than producing firmware that looks broken: at `-Os` Ms. Pac-Man
+   needs 19.5ms of a 16.66ms frame and goes solid red (`extras/DEVNOTES.md` #49),
+   Galaga needs 17.8ms and flashes red throughout play (#35) — and red on
+   this board is *also* the missing-SD-card colour, which made it an
+   expensive mistake to diagnose. `arduino-cli` reads `sketch.yaml`
+   automatically; the IDE does not always.
 5. Prepare an SD card (FAT32, **MBR** partition scheme — not GPT/exFAT,
    which macOS Disk Utility defaults to on "Erase") with that game's own
    ROM/sample layout — see its README.
-6. Open that game's `.ino` and upload.
+6. **File → Examples → Adafruit Arcade Machines → Games →** your game, and
+   upload.
 
-Before a full game, it's worth flashing the standalone smoke tests in
-order to confirm each subsystem independently: `input_test_fruitjam` →
-`dvi_test_fruitjam` → `audio_test_fruitjam` → `sd_test_fruitjam`.
+Before a full game, it's worth flashing the standalone tests under
+**Examples → Adafruit Arcade Machines → SelfTest** to confirm each subsystem
+independently: `input_test_fruitjam` → `dvi_test_fruitjam` →
+`audio_test_fruitjam` → `sd_test_fruitjam`.
 
 There is also `input_bounce_test_fruitjam`, which is not a smoke test but a
 contact profiler: it samples every button at 10kHz and reports what a
 once-per-frame sampler would have seen. Reach for it when an input misbehaves
 in a way `input_test_fruitjam` (which polls at 50Hz behind a `delay(20)`, and
-so is deliberately blind to bounce) cannot show. Read `DEVNOTES.md` #32 before
+so is deliberately blind to bounce) cannot show. Read `extras/DEVNOTES.md` #32 before
 trusting what it tells you.
 
 ### arduino-cli
@@ -153,38 +167,170 @@ trusting what it tells you.
 ```bash
 arduino-cli core install rp2040:rp2040 \
   --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
-arduino-cli lib install "PicoDVI - Adafruit Fork" "Adafruit TLV320 I2S" \
-  "SdFat - Adafruit Fork"
-arduino-cli compile invaders_fruitjam   # or: lrescue_fruitjam, etc.
+arduino-cli lib install "PicoDVI - Adafruit Fork"
+
+# --library points the builder at this checkout, since the repo IS the
+# library rather than something installed under your sketchbook.
+arduino-cli compile --library . examples/Games/invaders_fruitjam
 ```
 
-(Each sketch's `sketch.yaml` pins its own required `opt=` level as the
-default `--fqbn`, so it can be omitted once `arduino-cli`'s config points
-its `directories.user` at this repo.)
+(Each example's `sketch.yaml` pins its own required `opt=` level as the
+default `--fqbn`, so it can be omitted. `./extras/dist/build_all.sh` builds all
+seven games this way.)
+
+### Working in a checkout (rather than on an installed copy)
+
+If you are editing this library, do not point the IDE's sketchbook at the
+repo — see the note above. Symlink the checkout into your real sketchbook
+instead, so edits are live in the IDE with no copying:
+
+```bash
+ln -s "$PWD" ~/Documents/Arduino/libraries/Adafruit_Arcade_Machines
+arduino-cli lib install "PicoDVI - Adafruit Fork"   # into that same sketchbook
+```
+
+Then **File → Examples → Adafruit Arcade Machines** lists every example, and
+opening an
+example's `.ino` directly from the checkout works too, because the include
+resolves through the installed link.
+
+Opening an example `.ino` from a checkout that is *not* installed anywhere
+does **not** work: the builder does not infer the enclosing library from an
+`examples/` path. That is why `arduino-cli` needs `--library .` above.
+
+### Continuous integration — not set up yet
+
+There is no `.github/workflows/` here; everything is run by hand. What
+follows is what it would take, because it is not quite drop-in.
+
+The right tool is Adafruit's standard
+[ci-arduino](https://github.com/adafruit/ci-arduino): copy its
+`example_actions.yml` to `.github/workflows/githubci.yml` and set
+`PRETTYNAME`. It runs clang-format, Doxygen, and an example build per
+platform, and it installs whatever `library.properties` lists in `depends`
+automatically — which only works at all now that there *is* a
+`library.properties`.
+
+**The restructure is what makes it reachable.** `build_platform.py` starts at
+`<repo>/examples` and recurses into subdirectories, so `examples/Games/` and
+`examples/SelfTest/` are both found. Before, the sketches sat at the top
+level with no `examples/` directory, so it would have discovered zero of
+them — and the `.fruit_jam.test.only` markers beside each sketch, which
+ci-arduino looks for in each example's own directory, were inert.
+
+Four things have to be settled before turning it on:
+
+1. **`fruit_jam` is a valid platform id, but it is not in the default
+   `main_platforms` group** (that is uno, leonardo, mega2560, zero, qtpy_m0,
+   esp8266, esp32, metro_m4, trinket_m0). The workflow has to name
+   `fruit_jam` explicitly. Left on the default, every example with a
+   `.fruit_jam.test.only` marker is skipped for every platform in the group,
+   and CI passes green having built nothing.
+2. **The blocker: ci-arduino's stock `fruit_jam` FQBN carries no `opt=`
+   field**, so it builds at the core default `-Os` — which trips the
+   optimisation guard in `src/Adafruit_Arcade_Machines.h` and fails all 13
+   examples.
+   That is the guard doing its job, not a false alarm: an `-Os` build of any
+   game here red-screens on hardware. Resolving it means either getting
+   `opt=Optimize3` into that FQBN upstream, or writing a small local workflow
+   that honours each example's own `sketch.yaml`. There is no per-example
+   FQBN override in ci-arduino.
+3. **clang-format and Doxygen would both need switching off** (`#` them out
+   in the YAML). There is no `.clang-format` and no Doxyfile in this repo,
+   and the source is not clang-formatted.
+4. `.fruit_jam.generate` produces UF2 binaries in CI, which could replace
+   `extras/dist/build_all.sh` for release artefacts — but only once point 2 is
+   fixed, or the UF2s it produced would be the red-screening `-Os` builds.
+
+Two checks worth adding alongside it, both seconds long and neither part of
+ci-arduino: `reuse lint`, and `arduino-lint --library-manager submit` run
+against a clean export (see below for why the export matters). Building the
+host harnesses under `extras/tools/` is worth adding too — they are what
+enforces the architecture rule now that separate libraries no longer do: a
+machine that reached into `src/boards/` would compile fine as part of the
+library and fail against the host stub.
+
+Three failures this project has already had are the kind CI catches, all of
+them invisible until something is built from a clean checkout: thirteen
+broken symlinks that reached `main` (a local tree had real directories in
+their place, so nobody saw it); a symbol collision between two machines that
+only appears once both are in one build, which is now every build; and bare
+`#include "z80.h"` instead of `#include "cpu/z80/z80.h"`, since `src/`
+subdirectories are not on the include path.
+
+**Be clear about what it would not cover.** No ROMs live in this repo and no
+runner has a Fruit Jam, so CI can compile the examples and build the host
+harnesses but never run a game: no frame timing, no starvation counts, no
+audio, no digest A/Bs. A green check would mean "still compiles," never
+"still works." The hardware loop in *Debugging on hardware* below stays the
+only real verification — every game in the table above was checked by
+flashing it.
+
+### `arduino-lint`, and the two ways to run it wrong
+
+`arduino-lint` is what Library Manager submissions are checked against. As of
+the `extras/` reorganisation this library **passes**: 0 errors, 1 warning,
+exit 0, with all 13 examples clean.
+
+```bash
+# lint what the registry would actually clone, NOT the working tree
+git archive HEAD | tar -x -C /tmp/aam-clean
+arduino-lint --library-manager submit /tmp/aam-clean
+```
+
+Two things will give you a false failure if you skip that first line, and
+both cost time here before being understood:
+
+1. **Run it on a clean export, not the working directory.** `arduino-lint`
+   walks the filesystem rather than git, so the gitignored `libraries/`
+   folder — where `arduino-cli lib install` puts third-party dependencies
+   when this repo is your sketchbook — gets linted as if it were ours. That
+   produces a wall of *"Sketch(es) found outside examples and extras
+   folders"* naming `Adafruit_NeoPixel/examples/…` and friends. None of it is
+   in the repo.
+2. **Do not pass `--compliance strict`.** The registry does not, and strict
+   promotes rule LP015 to an error: *"library.properties name Adafruit Arcade
+   Machines contains spaces."* At the default level it is a warning, and its
+   own text says spaces are supported. Every Adafruit library in the index
+   has them ("Adafruit GFX Library", "Adafruit NeoPixel"), so the name
+   follows the catalogue rather than the lint hint. That single warning is
+   the only finding.
+
+The layout is what unblocked this: everything the Arduino spec does not
+recognise at the top level (development notes, host harnesses, release
+staging) now lives under `extras/`, which the spec reserves for exactly that
+and the IDE ignores entirely. Root is `src/`, `examples/`, `extras/`,
+`library.properties`, `README.md`, `PORTING.md` and the licence files.
+
+Submission itself is a separate decision: a PR to
+[`arduino/library-registry`](https://github.com/arduino/library-registry)
+adding this repo's URL to `repositories.txt`. The release tags already line
+up (`v1.2.0` matches `version=1.2.0` in `library.properties`), and the sole
+dependency is itself in Library Manager.
 
 ## Host test harnesses
 
-`tools/` builds any `ArcadeMachine_*` library into a **native executable**
+`extras/tools/` builds any `src/machines/<game>/` into a **native executable**
 that runs the real machine — actual CPU cores, real ROMs, real port decode,
 real per-scanline interleaving — on your development machine, against a stub
-ArcadeHAL. This works only because SAMP's architecture rule holds: a machine
-library talks exclusively through ArcadeHAL's 13 functions, so the host stub
+the HAL. This works only because SAMP's architecture rule holds: a machine
+talks exclusively through the HAL's 21 functions, so the host stub
 is just a fourth "board".
 
 ```sh
-./tools/galaga_host/build.sh   && ./tools/galaga_host/galaga_host     --frames 5000
-./tools/pacman_host/build.sh   && ./tools/pacman_host/pacman_host     --frames 5000
-./tools/invaders_host/build.sh && ./tools/invaders_host/invaders_host --frames 5000
-./tools/mspacman_host/build.sh && ./tools/mspacman_host/mspacman_host --frames 5000
-./tools/dkong_host/build.sh    && ./tools/dkong_host/dkong_host       --frames 5000
-./tools/btime_host/build.sh    && ./tools/btime_host/btime_host       --frames 5000 \
+./extras/tools/galaga_host/build.sh   && ./extras/tools/galaga_host/galaga_host     --frames 5000
+./extras/tools/pacman_host/build.sh   && ./extras/tools/pacman_host/pacman_host     --frames 5000
+./extras/tools/invaders_host/build.sh && ./extras/tools/invaders_host/invaders_host --frames 5000
+./extras/tools/mspacman_host/build.sh && ./extras/tools/mspacman_host/mspacman_host --frames 5000
+./extras/tools/dkong_host/build.sh    && ./extras/tools/dkong_host/dkong_host       --frames 5000
+./extras/tools/btime_host/build.sh    && ./extras/tools/btime_host/btime_host       --frames 5000 \
                                     --rom ../btime_assets/rom
 ```
 
 A hardware iteration costs minutes; this costs about a second, with unlimited
 tracing, real frame rendering to PPM, and audio captured to WAV. Most of the
 hard bugs in this project turned out to live in the emulated machine, where
-this is by far the fastest place to find them. See `tools/README.md`.
+this is by far the fastest place to find them. See `extras/tools/README.md`.
 
 ## Debugging on hardware
 
@@ -194,7 +340,7 @@ seconds (a 1200-baud touch into BOOTSEL, then a UF2 copy), so this is faster
 than attaching a debugger and it leaves the instrument behind for next time.
 
 **No SWD/OpenOCD/Debug Probe is needed or used** — earlier sessions fought
-75–200 second SWD loads before working this out. See `DEVNOTES.md`'s "How
+75–200 second SWD loads before working this out. See `extras/DEVNOTES.md`'s "How
 hardware debugging actually works on this project".
 
 Each sketch prints a once-per-second heartbeat:
@@ -205,46 +351,57 @@ Each sketch prints a once-per-second heartbeat:
 
 `frame` on its own tells you nothing — `hal_video_acquire_scanline()`
 blocks, so it pins at the DVI frame period as soon as the work fits.
-**`work` is the real cost** and `blocked` is the slack (`DEVNOTES.md` #25).
+**`work` is the real cost** and `blocked` is the slack (`extras/DEVNOTES.md` #25).
 Reading it while a serial monitor is open needs the port free — see
-`DEVNOTES.md` for the Arduino IDE Serial Monitor conflict.
+`extras/DEVNOTES.md` for the Arduino IDE Serial Monitor conflict.
 
 For anything about the emulated machine rather than the board, use the host
 harnesses above instead; they answer the same questions in about a second.
 
+## Porting a new machine
+
+`PORTING.md` is the distilled method — the order of work that has produced
+seven ports (one of them with zero hardware debug cycles), the traps ranked
+by how much time they actually cost, and the performance levers in the order
+they paid off. Read it before starting; it is short, and every rule in it is
+a bug that already shipped once.
+
+A new game is one directory under `src/machines/` and one sketch under
+`examples/Games/`. Nothing else in the tree has to change.
+
 ## More detail
 
-See `DEVNOTES.md` for the full account of every real bug found while
+See `extras/DEVNOTES.md` for the full account of every real bug found while
 bringing this up on actual hardware, across both the shared framework and
 each individual game port — several of the fixes there
 (`dvi_vertical_repeat`, the scanline-buffer ceiling that turned out not to
 be one, the `-Os`-isn't-fast-enough finding, the cycle-vs-real-time
 audio-clock lesson)
-are non-obvious and worth reading before touching `ArcadeBoard_FruitJam`,
-`ArcadeCPU_i8080`, or adding a new synthesized-audio channel to any game.
+are non-obvious and worth reading before touching `src/boards/fruitjam/`,
+`src/cpu/i8080/`, or adding a new synthesized-audio channel to any game.
 
 ## Credits
 
 - Original Space Invaders emulator: [shotto42/invaders](https://github.com/shotto42/invaders)
 - 8080 CPU core: [intarga/i8080e](https://github.com/intarga/i8080e) (MIT)
 - Z80 CPU core: [superzazu/z80](https://github.com/superzazu/z80) (MIT)
-- MCS-48 CPU core (`ArcadeCPU_MCS48`): **ported from**
+- MCS-48 CPU core (`src/cpu/mcs48/`): **ported from**
   [MAME](https://github.com/mamedev/mame)'s `mcs48_cpu_device`
   (`src/devices/cpu/mcs48/mcs48.cpp`) — **BSD-3-Clause**, copyright Dan
   Boris, Mirko Buffoni, Aaron Giles, Couriersud. This is the one library
   here that follows MAME's *code* rather than only its documented hardware
   facts, so it carries MAME's licence instead of this project's MIT; see
-  `ArcadeCPU_MCS48/src/mcs48.c`'s header for exactly what came from MAME
+  `src/cpu/mcs48/mcs48.c`'s header for exactly what came from MAME
   and what didn't.
 - Pac-Man's memory map, I/O map, tile/sprite/palette decode, and Namco WSG
   sound register map were all verified against
   [MAME](https://github.com/mamedev/mame)'s `pacman` driver source, not
-  ported from any existing emulator — see `ArcadeMachine_Pacman/src/`'s own
+  ported from any existing emulator — see `src/machines/pacman/`'s own
   file-header comments for exact citations.
 - Ms. Pac-Man's aux-board ROM decode (the address/data-line bitswaps and the
   40 eight-byte patches) and its banked address map were transcribed from
   the same driver's `init_mspacman()`, `mspacman_install_patches()` and
-  `mspacman_map()` — see `ArcadeMachine_MsPacman/src/`'s file headers.
+  `mspacman_map()` — see `src/machines/mspacman/`'s file headers.
 - Galaga's memory map, 3-CPU interrupt/NMI scheme, tile/sprite/palette
   decode and discrete audio component values were verified against
   [MAME](https://github.com/mamedev/mame)'s `galaga` driver, its
@@ -255,13 +412,13 @@ are non-obvious and worth reading before touching `ArcadeBoard_FruitJam`,
   real MB8843/MB8844 firmware, which this project has no dump of), those two
   chips are hand-written HLE, with
   [danjulio/gcore_galagino](https://github.com/danjulio/gcore_galagino) as
-  the behavioural reference — see `ArcadeMachine_Galaga/src/`'s file-header
+  the behavioural reference — see `src/machines/galaga/`'s file-header
   comments for what is cited and what is approximated.
-- 6502 CPU core (`ArcadeCPU_M6502`): [superzazu/6502](https://github.com/superzazu/6502) (MIT),
+- 6502 CPU core (`src/cpu/m6502/`): [superzazu/6502](https://github.com/superzazu/6502) (MIT),
   the same author as the Z80 core above. Four documented changes from
   upstream (an `extern "C"` guard, a `uint32_t` cycle counter, an optional
   `read_opcode` hook for Burger Time's encrypted DECO CPU-7, and an
-  illegal-opcode counter); `tools/m6502_test/` runs the standard 6502 test
+  illegal-opcode counter); `extras/tools/m6502_test/` runs the standard 6502 test
   suites against the vendored copy and reports cycle counts against
   upstream's published figures.
 - Burger Time's memory maps, DECO CPU-7 opcode scramble, char/sprite/
@@ -269,12 +426,12 @@ are non-obvious and worth reading before touching `ArcadeBoard_FruitJam`,
   wiring were all verified against [MAME](https://github.com/mamedev/mame)'s
   `btime` driver (`src/mame/dataeast/btime.cpp`, `decocpu7.cpp`) plus
   `ay8910.cpp`, `gen_latch.cpp` and `src/emu/video/generic.cpp` — see
-  `BTIME_PORT_PLAN.md` and `ArcadeMachine_BTime/src/`'s file headers.
+  `extras/BTIME_PORT_PLAN.md` and `src/machines/btime/`'s file headers.
 - Pico SDK port this was ported from: [adafruit/invaders_pico](https://github.com/adafruit/invaders_pico)
 - DVI output: [PicoDVI](https://github.com/Wren6991/PicoDVI) by Luke Wren, via [Adafruit's fork](https://github.com/adafruit/PicoDVI)
 - I2S PIO program: Raspberry Pi's [pico-extras](https://github.com/raspberrypi/pico-extras)
   (`pico_audio_i2s/audio_i2s.pio`, BSD-3-Clause), reached via pico-infoNES —
-  see `ArcadeBoard_FruitJam/src/audio_i2s.pio`'s own header for the
+  see `src/boards/fruitjam/audio_i2s.pio`'s own header for the
   instruction-by-instruction comparison. The state-machine setup in that
   file's `% c-sdk` block is this project's own, written for the
   TLV320DAC3100.
@@ -282,10 +439,10 @@ are non-obvious and worth reading before touching `ArcadeBoard_FruitJam`,
 - FatFs: [ChaN](http://elm-chan.org/fsw/ff/)
 - Lunar Rescue's ROM/color-PROM map and sound-trigger wiring were verified
   against [MAME](https://github.com/mamedev/mame)'s `midw8080` driver
-  source, not inferred by analogy — see `ArcadeMachine_LunarRescue/src/`'s
+  source, not inferred by analogy — see `src/machines/lrescue/`'s
   own file-header comments for the exact formulas and where each came from.
 - Donkey Kong's memory map, i8257 DMA wiring, tile/sprite layouts,
   per-scanline sprite selection and resistor-network palette were verified
   against the same project's `dkong` driver (`dkong.cpp`, `dkong_v.cpp`)
-  plus `i8257.cpp` and `resnet.cpp` — see `ArcadeMachine_DKong/src/`'s own
+  plus `i8257.cpp` and `resnet.cpp` — see `src/machines/dkong/`'s own
   file-header comments.

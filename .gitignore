@@ -3,17 +3,26 @@
 # SPDX-License-Identifier: MIT
 
 # Third-party Arduino libraries -- installed via arduino-cli, not our code.
-# Reinstall with:
-#   arduino-cli lib install "PicoDVI - Adafruit Fork" "Adafruit TLV320 I2S" \
-#     "SdFat - Adafruit Fork"
-# (their own dependencies -- Adafruit GFX Library, Adafruit BusIO, etc. --
-# are pulled in automatically)
-libraries/Adafruit_*/
-libraries/PicoDVI_-_Adafruit_Fork/
-libraries/SdFat_-_Adafruit_Fork/
-libraries/Bounce2/
-libraries/MIDI_Library/
-libraries/FlashStorage/
+# This library has exactly ONE dependency (see library.properties); reinstall
+# with:
+#   arduino-cli lib install "PicoDVI - Adafruit Fork"
+# (its own dependencies -- Adafruit GFX Library, Adafruit BusIO, Adafruit
+# CPFS -- are pulled in automatically. Nothing here uses SdFat or the TLV320
+# library: audio talks to the DAC over raw hardware/i2c.h and storage is a
+# raw SPI driver plus vendored FatFs under src/boards/fruitjam/.)
+#
+# NOTE: no trailing slashes. A trailing slash matches directories ONLY, so
+# these patterns silently stopped ignoring these paths the moment they became
+# symlinks rather than real directories -- which is how 13 broken, absolute,
+# self-referential symlinks (libraries/Adafruit_BusIO -> /Volumes/.../
+# libraries/Adafruit_BusIO) got committed and published. Anyone cloning got 13
+# dangling links. Leave these unslashed so both forms stay ignored.
+libraries/Adafruit_*
+libraries/PicoDVI_-_Adafruit_Fork
+libraries/SdFat_-_Adafruit_Fork
+libraries/Bounce2
+libraries/MIDI_Library
+libraries/FlashStorage
 
 # Build output / caches
 build/
@@ -25,22 +34,22 @@ build/
 # macOS
 .DS_Store
 
-# Host test harness build output (tools/*_host/) -- native binaries and
+# Host test harness build output (extras/tools/*_host/) -- native binaries and
 # macOS debug bundles. `build/` above already covers their object dirs.
-tools/*_host/*_host
-tools/*_host/*.dSYM/
+extras/tools/*_host/*_host
+extras/tools/*_host/*.dSYM/
 
-# Screen-geometry conformance runner (tools/geom_test/) -- its binary and
+# Screen-geometry conformance runner (extras/tools/geom_test/) -- its binary and
 # macOS debug bundle. Same shape as the m6502 runner below.
-tools/geom_test/geom_test
-tools/geom_test/*.dSYM/
+extras/tools/geom_test/geom_test
+extras/tools/geom_test/*.dSYM/
 
-# CPU conformance runner (tools/m6502_test/) -- its binary, and the
+# CPU conformance runner (extras/tools/m6502_test/) -- its binary, and the
 # third-party 6502 test programs it runs, which are fetched rather than
 # vendored (see that tool's main.cpp header).
-tools/m6502_test/m6502_test
-tools/m6502_test/*.dSYM/
-tools/m6502_test/programs/
+extras/tools/m6502_test/m6502_test
+extras/tools/m6502_test/*.dSYM/
+extras/tools/m6502_test/programs/
 
 # Claude Code worktrees -- transient checkouts with their own build output.
 # Narrow on purpose: a future tracked .claude/settings.json stays visible.
@@ -49,6 +58,6 @@ tools/m6502_test/programs/
 # Built firmware for testing / GitHub release assets. The binaries are
 # build output and belong on a release, not in the tree; the directory's
 # own README and build script are tracked.
-dist/*
-!dist/README.md
-!dist/build_all.sh
+extras/dist/*
+!extras/dist/README.md
+!extras/dist/build_all.sh
