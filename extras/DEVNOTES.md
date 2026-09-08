@@ -392,7 +392,7 @@ the level at that cycle." Two distinct real bugs surfaced getting the two
 sides of that scheme to actually agree on "now":
 
 **15a — an isolation test's own clock had the wrong epoch.** A standalone
-test sketch (`lrescue_speaker_isolation_test`, driving the real production
+test sketch (`lrescue_audio_test_fruitjam`, driving the real production
 mixer with a synthetic event pattern, no CPU emulator) derived its cycle
 timestamps from `micros()` since *boot*. The audio ISR's own cycle clock
 starts counting from 0 only once it's first invoked — some ~645ms *after*
@@ -2349,7 +2349,7 @@ deprioritised.
 
 
 `lrescue_fruitjam` (the full Lunar Rescue game, two-player, extended
-sessions) and `lrescue_speaker_isolation_test` (a standalone diagnostic
+sessions) and `lrescue_audio_test_fruitjam` (a standalone diagnostic
 sketch exercising the real production speaker-synthesis mixer against a
 synthetic event pattern, no CPU emulator or SD card involved), with the
 real Lunar Rescue ROM/sample set — audio confirmed clean end-to-end;

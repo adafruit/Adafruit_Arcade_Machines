@@ -99,9 +99,9 @@ toggles the speaker channel on/off — it won't catch a regression in the
 actual tune-reconstruction mechanism; see the isolation test below for
 that.
 
-## `lrescue_speaker_isolation_test` — regression check for the synthesized channel
+## `lrescue_audio_test_fruitjam` — regression check for the synthesized channel
 
-A separate sketch (`../lrescue_speaker_isolation_test/`), kept around
+A separate sketch (`../lrescue_audio_test_fruitjam/`), kept around
 specifically for changes to `lrescue_audio.cpp`'s speaker-synthesis
 mechanism. It drives the real production mixer with the actual measured
 bonus1 note sequence — no SD card, no video, no CPU emulator needed — so

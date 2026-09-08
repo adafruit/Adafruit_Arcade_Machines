@@ -13,7 +13,7 @@
 set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-SRC="$HERE/../../src"
+SRC="$HERE/../../../src"
 OBJ="$HERE/build"
 MACHINE_SRC="${MACHINE_SRC:-$SRC/machines/invaders}"
 OUT="${OUT:-$HERE/invaders_host}"

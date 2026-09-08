@@ -7,7 +7,7 @@
 set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-SRC="$HERE/../../src"
+SRC="$HERE/../../../src"
 OBJ="$HERE/build"
 OUT="$HERE/galaga_host"
 

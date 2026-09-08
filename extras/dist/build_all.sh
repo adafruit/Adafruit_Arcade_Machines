@@ -24,7 +24,7 @@
 set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-ROOT=$(cd "$HERE/.." && pwd)
+ROOT=$(cd "$HERE/../.." && pwd)
 GAMES="invaders lrescue pacman mspacman btime dkong galaga"
 
 CFG="$HERE/.arduino-cli.yaml"

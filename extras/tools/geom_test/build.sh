@@ -7,7 +7,7 @@
 set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-SRC="$HERE/../../src"
+SRC="$HERE/../../../src"
 OUT="$HERE/geom_test"
 
 c++ -O1 -g -std=c++17 -Wall \

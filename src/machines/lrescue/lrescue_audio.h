@@ -158,7 +158,7 @@ void lrescue_audio_speaker_event(uint64_t cycle, bool level);
 // uses.
 //
 // This function is still the right tool for: (1) a producer with no
-// frame-batching structure at all (e.g. lrescue_speaker_isolation_test's
+// frame-batching structure at all (e.g. lrescue_audio_test_fruitjam's
 // synthetic event loop, which calls lrescue_audio_speaker_event() directly
 // from Arduino's loop() in real time, with nothing resembling total_cycles
 // to lean on), and (2) diagnostics/calibration -- see

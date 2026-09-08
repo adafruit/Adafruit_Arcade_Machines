@@ -7,7 +7,7 @@ SPDX-License-Identifier: MIT
 
 This is the distilled method for adding an arcade machine to this library —
 the order of work that has now produced seven ports, and the traps that
-actually cost time. It is deliberately short. `DEVNOTES.md` is the full
+actually cost time. It is deliberately short. `extras/DEVNOTES.md` is the full
 record and this file cites it by number; read the cited entry before
 arguing with a rule here, because every one of them is a bug that shipped.
 
@@ -103,12 +103,12 @@ layout, and the `ROT` flag (see *Rotation* below).
 ### 3. Build the host harness before flashing anything
 
 ```
-tools/<game>_host/
+extras/tools/<game>_host/
   build.sh     copy a sibling's; point -I at src/, src/hal, src/cpu/<cpu>, src/machines/<game>
   main.cpp     argument parsing, scripted input, PPM/WAV dumping
 ```
 
-`tools/host_common/` already provides the stub HAL and the
+`extras/tools/host_common/` already provides the stub HAL and the
 `<Arduino.h>`/`<pico.h>` shims. This compiles the **real** machine — real
 CPU core, real ROMs, real port decode, real per-scanline interleave —
 natively, so iteration goes from minutes per hardware cycle to under a
@@ -174,7 +174,7 @@ Three contract details that are not obvious from the signatures:
 
 The instrumentation five of the nine video functions provide is not optional
 padding -- `take_starve_count()`, `valid_level()`, `take_min_valid_level()`
-and `scanbuf_count()` are how every display bug in `DEVNOTES.md` was actually
+and `scanbuf_count()` are how every display bug in `extras/DEVNOTES.md` was actually
 found. A backend that returns 0 from all of them will work and will be
 undebuggable.
 
@@ -325,7 +325,7 @@ The flag is a prediction; the render is the measurement. And check your own
 viewing orientation before diagnosing a rendering bug from a photo — a 180°
 error looks exactly like a flip bug.
 
-`DISPLAY_GEOMETRY.md` has the derivation, per-game measurements, and the
+`extras/DISPLAY_GEOMETRY.md` has the derivation, per-game measurements, and the
 frame-budget cost of each rotation and of aspect correction.
 
 ## Performance levers, in the order they paid off
@@ -388,7 +388,7 @@ two binaries from the same tree with one directory swapped:
 
 ```sh
 MACHINE_SRC=/tmp/old/src/machines/invaders OUT=/tmp/invaders_host_old \
-  ./tools/invaders_host/build.sh
+  ./extras/tools/invaders_host/build.sh
 ```
 
 **Always run a negative control.** The first one tried here (shifting a
@@ -403,7 +403,7 @@ supposed to validate.
 - [ ] Every hardware fact cited to driver, file and function, in the header
 - [ ] Six modules present and named `<game>_*`
 - [ ] Machine includes nothing from `src/boards/`
-- [ ] `tools/<game>_host/` builds and runs
+- [ ] `extras/tools/<game>_host/` builds and runs
 - [ ] Rotation default from the `ROT` flag, then verified by render
 - [ ] Example sketch under `examples/Games/` with a `sketch.yaml` opt level
 - [ ] Interleaved: no gap over ~2ms between scanline submissions
@@ -411,7 +411,7 @@ supposed to validate.
 - [ ] Asset-load failure names the missing files, reported from `loop()`
 - [ ] Verified on hardware in all four rotations, **in gameplay, not attract**
 - [ ] `reuse lint` passes
-- [ ] A `DEVNOTES.md` entry for anything that surprised you
+- [ ] A `extras/DEVNOTES.md` entry for anything that surprised you
 
 ### If you ported a board instead
 

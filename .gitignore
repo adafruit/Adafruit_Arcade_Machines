@@ -34,22 +34,22 @@ build/
 # macOS
 .DS_Store
 
-# Host test harness build output (tools/*_host/) -- native binaries and
+# Host test harness build output (extras/tools/*_host/) -- native binaries and
 # macOS debug bundles. `build/` above already covers their object dirs.
-tools/*_host/*_host
-tools/*_host/*.dSYM/
+extras/tools/*_host/*_host
+extras/tools/*_host/*.dSYM/
 
-# Screen-geometry conformance runner (tools/geom_test/) -- its binary and
+# Screen-geometry conformance runner (extras/tools/geom_test/) -- its binary and
 # macOS debug bundle. Same shape as the m6502 runner below.
-tools/geom_test/geom_test
-tools/geom_test/*.dSYM/
+extras/tools/geom_test/geom_test
+extras/tools/geom_test/*.dSYM/
 
-# CPU conformance runner (tools/m6502_test/) -- its binary, and the
+# CPU conformance runner (extras/tools/m6502_test/) -- its binary, and the
 # third-party 6502 test programs it runs, which are fetched rather than
 # vendored (see that tool's main.cpp header).
-tools/m6502_test/m6502_test
-tools/m6502_test/*.dSYM/
-tools/m6502_test/programs/
+extras/tools/m6502_test/m6502_test
+extras/tools/m6502_test/*.dSYM/
+extras/tools/m6502_test/programs/
 
 # Claude Code worktrees -- transient checkouts with their own build output.
 # Narrow on purpose: a future tracked .claude/settings.json stays visible.
@@ -58,6 +58,6 @@ tools/m6502_test/programs/
 # Built firmware for testing / GitHub release assets. The binaries are
 # build output and belong on a release, not in the tree; the directory's
 # own README and build script are tracked.
-dist/*
-!dist/README.md
-!dist/build_all.sh
+extras/dist/*
+!extras/dist/README.md
+!extras/dist/build_all.sh
