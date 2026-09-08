@@ -123,6 +123,16 @@ belong on a release, not in the tree.
    `libraries/` folder. Its one dependency, `PicoDVI - Adafruit Fork`, comes
    from Library Manager (it is listed in `library.properties`, so the IDE
    offers to install it for you).
+
+   > **Upgrading from an earlier checkout? Undo the old sketchbook setting.**
+   > This repo used to be an Arduino *sketchbook*, and the old instructions
+   > said to point **Preferences → Sketchbook location** at its root. That is
+   > now wrong and produces
+   > `fatal error: ArcadeArduino.h: No such file or directory` — the IDE
+   > looks for libraries in `<sketchbook>/libraries/`, and this repo *is* the
+   > library, so it cannot be inside its own `libraries/` folder. Set
+   > Sketchbook location back to your normal one (`~/Documents/Arduino` on
+   > macOS) and install the library as above.
 3. Select board **Adafruit Fruit Jam RP2350**.
 4. Set **Tools → Optimize** to `-O2` or `-O3` — each example's `sketch.yaml`
    says which, and the header comment at the top of every `.ino` repeats it.
@@ -166,6 +176,25 @@ arduino-cli compile --library . examples/Games/invaders_fruitjam
 (Each example's `sketch.yaml` pins its own required `opt=` level as the
 default `--fqbn`, so it can be omitted. `./dist/build_all.sh` builds all
 seven games this way.)
+
+### Working in a checkout (rather than on an installed copy)
+
+If you are editing this library, do not point the IDE's sketchbook at the
+repo — see the note above. Symlink the checkout into your real sketchbook
+instead, so edits are live in the IDE with no copying:
+
+```bash
+ln -s "$PWD" ~/Documents/Arduino/libraries/arcade_arduino
+arduino-cli lib install "PicoDVI - Adafruit Fork"   # into that same sketchbook
+```
+
+Then **File → Examples → ArcadeArduino** lists every example, and opening an
+example's `.ino` directly from the checkout works too, because the include
+resolves through the installed link.
+
+Opening an example `.ino` from a checkout that is *not* installed anywhere
+does **not** work: the builder does not infer the enclosing library from an
+`examples/` path. That is why `arduino-cli` needs `--library .` above.
 
 ### Continuous integration — not set up yet
 
