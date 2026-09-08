@@ -24,7 +24,7 @@
 // from /rom/invaders.h. "FAILED to mount" almost always means the card
 // isn't MBR/FAT32; "(could not open /rom/)" means the folder is missing or
 // misnamed.
-#include <ArcadeArduino.h>
+#include <Adafruit_Arcade_Machines.h>
 #include <hal/arcade_hal_storage.h>
 // arduino-cli discovers libraries to link by scanning #include directives,
 // not library.properties `depends=` -- this include is what actually pulls

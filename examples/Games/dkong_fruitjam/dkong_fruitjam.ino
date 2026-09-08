@@ -29,7 +29,7 @@
 //
 // Core 0: game emulation, input polling, board-to-game input mapping.
 // Core 1: hal_video_run() -- drives the DVI signal; never returns.
-#include <ArcadeArduino.h>
+#include <Adafruit_Arcade_Machines.h>
 #include <hal/arcade_hal_video.h>
 #include <hal/arcade_video_geom.h>
 #include <hal/arcade_hal_input.h>

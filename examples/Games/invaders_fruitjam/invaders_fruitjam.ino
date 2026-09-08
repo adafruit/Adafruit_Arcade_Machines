@@ -33,7 +33,7 @@
 // the DVI pipeline sits starved for the whole (possibly slow, SD-card-retry
 // laden) asset-load window, which showed up as a spurious colored flash on
 // boot in the original Pico SDK build.
-#include <ArcadeArduino.h>
+#include <Adafruit_Arcade_Machines.h>
 #include <hal/arcade_hal_video.h>
 #include <hal/arcade_video_geom.h>   // av_geom_toggle_on_edge() -- Button 1
 #include <hal/arcade_hal_input.h>

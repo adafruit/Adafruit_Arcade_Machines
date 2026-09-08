@@ -37,7 +37,7 @@
 // future change to lrescue_audio.cpp breaks this, it should be audible
 // here immediately, without needing the full game or a specific in-game
 // trigger.
-#include <ArcadeArduino.h>
+#include <Adafruit_Arcade_Machines.h>
 #include <hal/arcade_hal_audio.h>
 // arduino-cli discovers libraries to link by scanning #include directives.
 // lrescue_audio.h alone pulls in ArcadeCPU_i8080 too (transitively, via

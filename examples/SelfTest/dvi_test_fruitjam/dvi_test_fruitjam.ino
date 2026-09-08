@@ -25,7 +25,7 @@
 // roughly once per second -- if the bars are frozen but the heartbeat is
 // still printing, Core 0 is fine and the problem is downstream in Core 1's
 // hal_video_run() pump; if nothing prints at all, Core 0 is stuck.
-#include <ArcadeArduino.h>
+#include <Adafruit_Arcade_Machines.h>
 #include <hal/arcade_hal_video.h>
 // arduino-cli discovers libraries to link by scanning #include directives,
 // not library.properties `depends=` -- this include is what actually pulls

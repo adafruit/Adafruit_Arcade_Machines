@@ -64,7 +64,7 @@
 //   - a player who has adapted to a firing bug may double-tap without
 //     realising, which looks exactly like a dropout. Note that joystick
 //     directions -- held rather than tapped -- never showed any.
-#include <ArcadeArduino.h>
+#include <Adafruit_Arcade_Machines.h>
 #include <Arduino.h>
 #include <hal/arcade_hal_input.h>
 #include <boards/fruitjam/board_config_fruitjam.h>

@@ -22,7 +22,7 @@
 // second the whole time -- if audio is silent but that keeps printing,
 // Core 0 is fine and the problem is in codec_init()/i2s_init() or the
 // physical DAC wiring, not in this sketch's tone generator.
-#include <ArcadeArduino.h>
+#include <Adafruit_Arcade_Machines.h>
 #include <math.h>
 #include <hal/arcade_hal_audio.h>
 // arduino-cli discovers libraries to link by scanning #include directives,

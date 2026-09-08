@@ -22,7 +22,7 @@
 // baud) for that button and no others -- if a press shows up under the
 // wrong name, double-check the physical wiring against
 // board_config_fruitjam.h's HAL_BTN_* pin table.
-#include <ArcadeArduino.h>
+#include <Adafruit_Arcade_Machines.h>
 #include <hal/arcade_hal_input.h>
 #include <boards/fruitjam/board_config_fruitjam.h>
 

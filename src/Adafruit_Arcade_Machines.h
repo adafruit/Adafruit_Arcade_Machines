@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: MIT
 
-// arcade_arduino -- umbrella header.
+// Adafruit Arcade Machines -- umbrella header.
 //
 // Every sketch includes this FIRST. Two reasons, one of them structural:
 //
@@ -18,14 +18,14 @@
 // It deliberately pulls in ONLY the board-agnostic HAL contracts. A sketch
 // names its own board and machine explicitly:
 //
-//     #include <ArcadeArduino.h>
+//     #include <Adafruit_Arcade_Machines.h>
 //     #include <boards/fruitjam/board_config_fruitjam.h>
 //     #include <machines/invaders/invaders_machine.h>
 //
 // That keeps SAMP's axes visible in the one file that is allowed to know
 // both "this game" and "this board" -- see README.md.
-#ifndef ARCADE_ARDUINO_H
-#define ARCADE_ARDUINO_H
+#ifndef ADAFRUIT_ARCADE_MACHINES_H
+#define ADAFRUIT_ARCADE_MACHINES_H
 
 // -----------------------------------------------------------------------
 // Optimisation guard. Do not remove without reading DEVNOTES.md #35/#49.
@@ -46,7 +46,7 @@
 // are also too slow; they are not a default anyone lands on by accident.
 // -----------------------------------------------------------------------
 #if defined(__OPTIMIZE_SIZE__)
-#error "arcade_arduino: set Tools > Optimize to 'Optimize More (-O2)' or \
+#error "Adafruit Arcade Machines: set Tools > Optimize to 'Optimize More (-O2)' or \
 'Optimize Even More (-O3)'. The default -Os misses the 16.66ms frame budget \
 and the screen goes solid red, which looks exactly like a hardware fault. \
 See each example's sketch.yaml for the level that example needs."

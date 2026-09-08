@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
 SPDX-License-Identifier: MIT
 -->
 
-# arcade_arduino
+# Adafruit Arcade Machines
 
 Classic arcade games for the [Adafruit Fruit Jam](https://www.adafruit.com/product/6200)
 (RP2350B), running under the Arduino framework instead of the raw Pico SDK.
@@ -128,7 +128,7 @@ belong on a release, not in the tree.
    > This repo used to be an Arduino *sketchbook*, and the old instructions
    > said to point **Preferences → Sketchbook location** at its root. That is
    > now wrong and produces
-   > `fatal error: ArcadeArduino.h: No such file or directory` — the IDE
+   > `fatal error: Adafruit_Arcade_Machines.h: No such file or directory` — the IDE
    > looks for libraries in `<sketchbook>/libraries/`, and this repo *is* the
    > library, so it cannot be inside its own `libraries/` folder. Set
    > Sketchbook location back to your normal one (`~/Documents/Arduino` on
@@ -147,10 +147,11 @@ belong on a release, not in the tree.
 5. Prepare an SD card (FAT32, **MBR** partition scheme — not GPT/exFAT,
    which macOS Disk Utility defaults to on "Erase") with that game's own
    ROM/sample layout — see its README.
-6. **File → Examples → ArcadeArduino → Games →** your game, and upload.
+6. **File → Examples → Adafruit Arcade Machines → Games →** your game, and
+   upload.
 
 Before a full game, it's worth flashing the standalone tests under
-**Examples → ArcadeArduino → SelfTest** to confirm each subsystem
+**Examples → Adafruit Arcade Machines → SelfTest** to confirm each subsystem
 independently: `input_test_fruitjam` → `dvi_test_fruitjam` →
 `audio_test_fruitjam` → `sd_test_fruitjam`.
 
@@ -184,11 +185,12 @@ repo — see the note above. Symlink the checkout into your real sketchbook
 instead, so edits are live in the IDE with no copying:
 
 ```bash
-ln -s "$PWD" ~/Documents/Arduino/libraries/arcade_arduino
+ln -s "$PWD" ~/Documents/Arduino/libraries/Adafruit_Arcade_Machines
 arduino-cli lib install "PicoDVI - Adafruit Fork"   # into that same sketchbook
 ```
 
-Then **File → Examples → ArcadeArduino** lists every example, and opening an
+Then **File → Examples → Adafruit Arcade Machines** lists every example, and
+opening an
 example's `.ino` directly from the checkout works too, because the include
 resolves through the installed link.
 
@@ -226,7 +228,8 @@ Four things have to be settled before turning it on:
    and CI passes green having built nothing.
 2. **The blocker: ci-arduino's stock `fruit_jam` FQBN carries no `opt=`
    field**, so it builds at the core default `-Os` — which trips the
-   optimisation guard in `src/ArcadeArduino.h` and fails all 13 examples.
+   optimisation guard in `src/Adafruit_Arcade_Machines.h` and fails all 13
+   examples.
    That is the guard doing its job, not a false alarm: an `-Os` build of any
    game here red-screens on hardware. Resolving it means either getting
    `opt=Optimize3` into that FQBN upstream, or writing a small local workflow
