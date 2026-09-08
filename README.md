@@ -167,6 +167,43 @@ arduino-cli compile --library . examples/Games/invaders_fruitjam
 default `--fqbn`, so it can be omitted. `./dist/build_all.sh` builds all
 seven games this way.)
 
+### Continuous integration — not set up yet
+
+There is no CI on this repo. Everything below is run by hand.
+
+The intended shape, when someone gets to it: a GitHub Actions workflow that
+installs `arduino-cli` plus the RP2350 core on a clean runner and, on every
+push and PR, (1) compiles all 13 examples, (2) builds all 8 host harnesses,
+(3) runs `tools/geom_test` and `tools/m6502_test` — the two conformance
+runners that need no ROMs — (4) checks `reuse lint`, and (5) asserts that an
+`opt=Small` build *fails*, so the optimisation guard in
+`src/ArcadeArduino.h` cannot rot.
+
+A clean single-example build is ~13 seconds, so the whole set is a few
+minutes and free for a public repo.
+
+Three failures this project has already had are exactly what that would
+catch, and all three are invisible until something is built from a clean
+checkout: thirteen broken symlinks that reached `main` (a local tree had
+real directories in their place, so nobody saw it); a symbol collision
+between two machines that only appears once both are in one build, which is
+now every build; and bare `#include "z80.h"` instead of
+`#include "cpu/z80/z80.h"`, since `src/` subdirectories are not on the
+include path.
+
+**Be clear about what it would not cover.** No ROMs live in this repo and no
+runner has a Fruit Jam, so CI can build the host harnesses but never run a
+game: no frame timing, no starvation counts, no audio, no digest A/Bs. A
+green check would mean "still compiles and lints," never "still works." The
+hardware loop in *Debugging on hardware* below stays the only real
+verification — every game in the table above was checked by flashing it.
+
+Running `arduino-lint` is a separate question. It is what Library Manager
+submissions are checked against, so it would say whether this repo is
+submittable — but it will likely object to `tools/`, `dist/` and the loose
+`.md` files at the top level, which the Arduino library spec wants under
+`extras/`. That is a real cleanup, and a different one.
+
 ## Host test harnesses
 
 `tools/` builds any `ArcadeMachine_*` library into a **native executable**
