@@ -242,6 +242,14 @@ Four things have to be settled before turning it on:
    `extras/dist/build_all.sh` for release artefacts — but only once point 2 is
    fixed, or the UF2s it produced would be the red-screening `-Os` builds.
 
+Two checks worth adding alongside it, both seconds long and neither part of
+ci-arduino: `reuse lint`, and `arduino-lint --library-manager submit` run
+against a clean export (see below for why the export matters). Building the
+host harnesses under `extras/tools/` is worth adding too — they are what
+enforces the architecture rule now that separate libraries no longer do: a
+machine that reached into `src/boards/` would compile fine as part of the
+library and fail against the host stub.
+
 Three failures this project has already had are the kind CI catches, all of
 them invisible until something is built from a clean checkout: thirteen
 broken symlinks that reached `main` (a local tree had real directories in
@@ -258,14 +266,47 @@ audio, no digest A/Bs. A green check would mean "still compiles," never
 only real verification — every game in the table above was checked by
 flashing it.
 
-Running `arduino-lint` is a separate question — it is what Library Manager
-submissions are checked against, so it would say whether this repo is
-submittable. The layout no longer stands in its way: everything the Arduino
-spec does not recognise at the top level (the development notes, the host
-harnesses, the release staging directory) now lives under `extras/`, which
-the spec reserves for exactly that and the IDE ignores entirely. Root is
-`src/`, `examples/`, `library.properties`, `README.md`, `PORTING.md` and the
-licence files.
+### `arduino-lint`, and the two ways to run it wrong
+
+`arduino-lint` is what Library Manager submissions are checked against. As of
+the `extras/` reorganisation this library **passes**: 0 errors, 1 warning,
+exit 0, with all 13 examples clean.
+
+```bash
+# lint what the registry would actually clone, NOT the working tree
+git archive HEAD | tar -x -C /tmp/aam-clean
+arduino-lint --library-manager submit /tmp/aam-clean
+```
+
+Two things will give you a false failure if you skip that first line, and
+both cost time here before being understood:
+
+1. **Run it on a clean export, not the working directory.** `arduino-lint`
+   walks the filesystem rather than git, so the gitignored `libraries/`
+   folder — where `arduino-cli lib install` puts third-party dependencies
+   when this repo is your sketchbook — gets linted as if it were ours. That
+   produces a wall of *"Sketch(es) found outside examples and extras
+   folders"* naming `Adafruit_NeoPixel/examples/…` and friends. None of it is
+   in the repo.
+2. **Do not pass `--compliance strict`.** The registry does not, and strict
+   promotes rule LP015 to an error: *"library.properties name Adafruit Arcade
+   Machines contains spaces."* At the default level it is a warning, and its
+   own text says spaces are supported. Every Adafruit library in the index
+   has them ("Adafruit GFX Library", "Adafruit NeoPixel"), so the name
+   follows the catalogue rather than the lint hint. That single warning is
+   the only finding.
+
+The layout is what unblocked this: everything the Arduino spec does not
+recognise at the top level (development notes, host harnesses, release
+staging) now lives under `extras/`, which the spec reserves for exactly that
+and the IDE ignores entirely. Root is `src/`, `examples/`, `extras/`,
+`library.properties`, `README.md`, `PORTING.md` and the licence files.
+
+Submission itself is a separate decision: a PR to
+[`arduino/library-registry`](https://github.com/arduino/library-registry)
+adding this repo's URL to `repositories.txt`. The release tags already line
+up (`v1.2.0` matches `version=1.2.0` in `library.properties`), and the sole
+dependency is itself in Library Manager.
 
 ## Host test harnesses
 
