@@ -61,12 +61,13 @@ bool hal_input_read_raw(uint8_t index);
 #define FRUITJAM_I2S_DIN_PIN     24
 #define FRUITJAM_I2S_BCLK_PIN    26 // WS = BCLK + 1 = 27
 
-// SPI0 -- microSD card (wili8jam SD driver, see sdcard.c)
-#define FRUITJAM_SD_SCK_PIN      34
-#define FRUITJAM_SD_MOSI_PIN     35
-#define FRUITJAM_SD_MISO_PIN     36
-#define FRUITJAM_SD_CS_PIN       39
-#define FRUITJAM_SD_CD_PIN       33
+// SPI0 -- microSD card (SdFat, see hal_storage_fruitjam.cpp)
+// SD card pins are NOT defined here. The arduino-pico Fruit Jam variant
+// already exports them -- PIN_SD_CLK (34), PIN_SD_CMD_MOSI (35),
+// PIN_SD_DAT0_MISO (36), PIN_SD_DAT3_CS (39), PIN_SD_DETECT (33) -- and
+// they are the same pins as its default SPI0, so hal_storage_fruitjam.cpp
+// uses the variant's names against the stock `SPI` object. One place for a
+// wiring fact, and it is the board support package's.
 
 #ifdef __cplusplus
 }
