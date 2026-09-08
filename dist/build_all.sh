@@ -13,11 +13,14 @@
 #    this video pipeline and shows up as red screens rather than as a
 #    slower picture. See DEVNOTES.md.
 #
-# 2. A throwaway arduino-cli config pointing directories.user at this repo,
-#    rather than relying on the caller having configured that globally (as
-#    README.md's arduino-cli section describes). That makes the script work
-#    from a fresh checkout, or from a secondary checkout, without touching
-#    the caller's own arduino-cli setup.
+# 2. --library "$ROOT". This repo IS the Arduino library, so the examples
+#    cannot find it the way an installed library would be found; --library
+#    points the builder at the checkout. A throwaway arduino-cli config
+#    still sets directories.user, which is only how the third-party
+#    dependency (PicoDVI - Adafruit Fork) gets discovered when it has been
+#    installed into this repo's own gitignored libraries/ dir. If yours
+#    lives in your normal sketchbook instead, that works too -- set
+#    ARDUINO_DIRECTORIES_USER and this script will not override it.
 set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -30,14 +33,15 @@ CFG="$HERE/.arduino-cli.yaml"
     echo "    additional_urls:"
     echo "        - https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json"
     echo "directories:"
-    echo "    user: $ROOT"
+    echo "    user: ${ARDUINO_DIRECTORIES_USER:-$ROOT}"
 } > "$CFG"
 
 cd "$ROOT"
 for g in $GAMES; do
     sk="${g}_fruitjam"
     printf '%-20s ' "$sk"
-    if ! arduino-cli --config-file "$CFG" compile --output-dir "$HERE" "$sk" \
+    if ! arduino-cli --config-file "$CFG" compile --library "$ROOT" \
+            --output-dir "$HERE" "examples/Games/$sk" \
             > "$HERE/.$g.log" 2>&1; then
         echo "FAILED -- see $HERE/.$g.log"
         exit 1

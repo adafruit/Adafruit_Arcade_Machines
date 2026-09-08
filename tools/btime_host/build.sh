@@ -7,26 +7,27 @@
 set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-LIBS="$HERE/../../libraries"
+SRC="$HERE/../../src"
 OBJ="$HERE/build"
 OUT="$HERE/btime_host"
 
-INC="-I$HERE/../host_common/shim \
+INC="-I$SRC \
+     -I$HERE/../host_common/shim \
      -I$HERE/../host_common \
-     -I$LIBS/ArcadeHAL/src \
-     -I$LIBS/ArcadeCPU_M6502/src \
-     -I$LIBS/ArcadeMachine_BTime/src"
+     -I$SRC/hal \
+     -I$SRC/cpu/m6502 \
+     -I$SRC/machines/btime"
 
 mkdir -p "$OBJ"
 
 # m6502.c is C (m6502.h carries its own extern "C" guards), so build it as C
 # and link -- same split the Arduino build uses. Both of this machine's CPUs
 # are instances of this one core.
-cc -O2 -g -std=c11 -Wall $INC -c "$LIBS/ArcadeCPU_M6502/src/m6502.c" -o "$OBJ/m6502.o"
+cc -O2 -g -std=c11 -Wall $INC -c "$SRC/cpu/m6502/m6502.c" -o "$OBJ/m6502.o"
 
 c++ -O2 -g -std=c++17 -Wall -Wno-unused-parameter $INC \
-    "$LIBS/ArcadeMachine_BTime/src"/*.cpp \
-    "$LIBS/ArcadeHAL/src"/*.cpp \
+    "$SRC/machines/btime"/*.cpp \
+    "$SRC/hal"/*.cpp \
     "$HERE/../host_common/hal_host.cpp" \
     "$HERE/../host_common/host_ppm.cpp" \
     "$HERE/main.cpp" \

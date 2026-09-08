@@ -14,22 +14,24 @@ Single Arcade Machine Port — a small framework for building one-game,
 one-board arcade firmware, organized so the pieces that *aren't* specific
 to one game or one board are reusable for the next port:
 
-- **`ArcadeCPU_i8080`** — the Intel 8080 CPU interpreter. No hardware or
-  game knowledge at all. `ArcadeCPU_Z80`, `ArcadeCPU_MCS48` and
-  `ArcadeCPU_M6502` are its siblings, added for the Namco/Nintendo games,
-  for Donkey Kong's sound board, and for Burger Time.
-- **`ArcadeHAL`** — plain C function contracts (video/audio/input/storage).
+- **`src/cpu/`** — CPU interpreters, with no hardware or game knowledge at
+  all: `i8080`, plus `z80`, `mcs48` and `m6502`, added for the
+  Namco/Nintendo games, for Donkey Kong's sound board, and for Burger Time.
+- **`src/hal/`** — plain C function contracts (video/audio/input/storage).
   No implementation lives here.
-- **`ArcadeMachine_*`** — one library per game (`ArcadeMachine_Invaders`,
-  `ArcadeMachine_LunarRescue`, ...): that game's own port wiring, VRAM
-  renderer, sound, and ROM/asset manifest. Board-agnostic — talks only to
-  `ArcadeHAL`.
-- **`ArcadeBoard_FruitJam`** — the Fruit Jam's implementation of
-  `ArcadeHAL`: PicoDVI video, TLV320DAC3100 + I2S audio, GPIO input, SD card
+- **`src/machines/`** — one directory per game (`invaders/`, `lrescue/`,
+  ...): that game's own port wiring, VRAM renderer, sound, and ROM/asset
+  manifest. Board-agnostic — talks only to the HAL.
+- **`src/boards/fruitjam/`** — the Fruit Jam's implementation of those
+  contracts: PicoDVI video, TLV320DAC3100 + I2S audio, GPIO input, SD card
   storage via FatFs.
-- **One sketch per game** (`invaders_fruitjam/`, `lrescue_fruitjam/`, ...) —
-  the one place that knows both "this game" and "this board," wiring the
-  two together.
+- **`examples/Games/`** — one sketch per game, each the one place that knows
+  both "this game" and "this board," wiring the two together.
+
+This is a single Arduino library: install it, then open an example. The
+three axes above are directories inside `src/`, not separate libraries, so
+every example compiles the whole tree and the linker discards what that
+game does not use — verified byte-for-byte, it costs nothing.
 
 `ArcadeCPU_Z80`/`ArcadeMachine_Pacman` (below) added the project's first
 Z80-based game this way — a sibling library alongside the i8080 axis, not a
@@ -42,13 +44,13 @@ just read `ArcadeHAL/src/*.h` for the contracts themselves.
 
 | Game | Sketch | Notes |
 |---|---|---|
-| Space Invaders | [`invaders_fruitjam/`](invaders_fruitjam/README.md) | The original port; sample-based sound only. |
-| Lunar Rescue | [`lrescue_fruitjam/`](lrescue_fruitjam/README.md) | Same "8080bw" board family, plus one genuinely *synthesized* (bit-banged) audio channel — see its README and `DEVNOTES.md` problems #12-17 for what that took. |
-| Pac-Man | [`pacman_fruitjam/`](pacman_fruitjam/README.md) | The project's first **Z80**-based port (`ArcadeCPU_Z80`) and first tile+sprite video hardware (`ArcadeMachine_Pacman`), with fully synthesized Namco WSG sound — built from scratch against the real ROM/PROM dump and verified against MAME's driver source; see its README for citations. |
-| Galaga | [`galaga_fruitjam/`](galaga_fruitjam/README.md) | The project's first **multi-CPU** machine — three Z80s sharing RAM — plus a Namco 06XX/51XX/54XX custom I/O chain and a fourth video layer (the 05XX starfield). Synthesized WSG *and* 54XX explosion audio. |
-| Ms. Pac-Man | [`mspacman_fruitjam/`](mspacman_fruitjam/README.md) | The project's first machine that is another machine **plus a daughterboard**: stock Pac-Man hardware with the aux board's three extra ROMs, an address/data-line **encrypted** program bank, and eight address ranges that flip banks on any access. First **banked** address space and first ROM decode in the project. |
-| Donkey Kong | [`dkong_fruitjam/`](dkong_fruitjam/README.md) | The project's first **Nintendo** board and first **DMA-driven** sprites — the Z80 never writes sprite RAM, an i8257 controller does. Also its first **active-high** inputs, first **NMI** interrupt, and first **resistor-network** palette. Sound is an emulated **8035 sound CPU** (`ArcadeCPU_MCS48`, the project's third CPU axis) driving a DAC, plus approximations of its discrete analog channels tuned against recordings of a real machine. |
-| Burger Time | [`btime_fruitjam/`](btime_fruitjam/README.md) | The project's first **6502** machine (`ArcadeCPU_M6502`), first **encrypted-opcode** CPU (a DECO CPU-7, descrambled in the fetch path rather than at load time), first game with **no vblank interrupt at all** — it polls a vblank bit wired into a DIP-switch port — and first **palette held in RAM** rather than a PROM. Two 6502s driving two emulated **AY-3-8910s** — the project's first PSG — through a band-pass filter derived from the board's measured component values. Needed a real optimisation pass to fit the frame (23.6ms → 14ms); see `DEVNOTES.md` §59-64. |
+| Space Invaders | [`invaders_fruitjam/`](examples/Games/invaders_fruitjam/README.md) | The original port; sample-based sound only. |
+| Lunar Rescue | [`lrescue_fruitjam/`](examples/Games/lrescue_fruitjam/README.md) | Same "8080bw" board family, plus one genuinely *synthesized* (bit-banged) audio channel — see its README and `DEVNOTES.md` problems #12-17 for what that took. |
+| Pac-Man | [`pacman_fruitjam/`](examples/Games/pacman_fruitjam/README.md) | The project's first **Z80**-based port (`ArcadeCPU_Z80`) and first tile+sprite video hardware (`ArcadeMachine_Pacman`), with fully synthesized Namco WSG sound — built from scratch against the real ROM/PROM dump and verified against MAME's driver source; see its README for citations. |
+| Galaga | [`galaga_fruitjam/`](examples/Games/galaga_fruitjam/README.md) | The project's first **multi-CPU** machine — three Z80s sharing RAM — plus a Namco 06XX/51XX/54XX custom I/O chain and a fourth video layer (the 05XX starfield). Synthesized WSG *and* 54XX explosion audio. |
+| Ms. Pac-Man | [`mspacman_fruitjam/`](examples/Games/mspacman_fruitjam/README.md) | The project's first machine that is another machine **plus a daughterboard**: stock Pac-Man hardware with the aux board's three extra ROMs, an address/data-line **encrypted** program bank, and eight address ranges that flip banks on any access. First **banked** address space and first ROM decode in the project. |
+| Donkey Kong | [`dkong_fruitjam/`](examples/Games/dkong_fruitjam/README.md) | The project's first **Nintendo** board and first **DMA-driven** sprites — the Z80 never writes sprite RAM, an i8257 controller does. Also its first **active-high** inputs, first **NMI** interrupt, and first **resistor-network** palette. Sound is an emulated **8035 sound CPU** (`ArcadeCPU_MCS48`, the project's third CPU axis) driving a DAC, plus approximations of its discrete analog channels tuned against recordings of a real machine. |
+| Burger Time | [`btime_fruitjam/`](examples/Games/btime_fruitjam/README.md) | The project's first **6502** machine (`ArcadeCPU_M6502`), first **encrypted-opcode** CPU (a DECO CPU-7, descrambled in the fetch path rather than at load time), first game with **no vblank interrupt at all** — it polls a vblank bit wired into a DIP-switch port — and first **palette held in RAM** rather than a PROM. Two 6502s driving two emulated **AY-3-8910s** — the project's first PSG — through a band-pass filter derived from the board's measured component values. Needed a real optimisation pass to fit the frame (23.6ms → 14ms); see `DEVNOTES.md` §59-64. |
 
 Each game's own README covers its specific ROM/sample layout, controls, and
 any known quirks. They all share the building steps below.
@@ -116,30 +118,31 @@ belong on a release, not in the tree.
    Philhower's, via Boards Manager — add
    `https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json`
    as an additional board URL first).
-2. Install these libraries (Library Manager):
-   `PicoDVI - Adafruit Fork`, `Adafruit TLV320 I2S`, `SdFat - Adafruit Fork`.
-3. Set **Preferences → Sketchbook location** to this repo's root.
-4. Select board **Adafruit Fruit Jam RP2350**. Each sketch pins its own
-   required **Tools → Optimize** level via a `sketch.yaml` (see
-   `DEVNOTES.md` #11 and #16 for why this differs per game — the default
-   `-Os` is not fast enough for any of them), so you generally don't need
-   to set this by hand, but double-check it matches that sketch's
-   `sketch.yaml` if the IDE doesn't pick it up automatically.
-   **This failure looks like a hardware fault, not a build setting.** At
-   `-Os` Ms. Pac-Man needs 19.5ms of a 16.66ms frame and goes solid red
-   (`DEVNOTES.md` #49); Galaga needs 17.8ms and flashes red throughout play
-   (#35). Red means *either* a missing SD card *or* a starved DVI queue, so
-   check the serial heartbeat before suspecting the card — and check the
-   optimisation level before suspecting the emulation. `arduino-cli` reads
-   `sketch.yaml` automatically; the IDE does not always.
+2. Install this library. Either **Sketch → Include Library → Add .ZIP
+   Library** on a download of this repo, or clone it into your sketchbook's
+   `libraries/` folder. Its one dependency, `PicoDVI - Adafruit Fork`, comes
+   from Library Manager (it is listed in `library.properties`, so the IDE
+   offers to install it for you).
+3. Select board **Adafruit Fruit Jam RP2350**.
+4. Set **Tools → Optimize** to `-O2` or `-O3` — each example's `sketch.yaml`
+   says which, and the header comment at the top of every `.ino` repeats it.
+   The core's default `-Os` is not fast enough for any game here.
+   **If you get this wrong the build now stops with an explanatory error**
+   rather than producing firmware that looks broken: at `-Os` Ms. Pac-Man
+   needs 19.5ms of a 16.66ms frame and goes solid red (`DEVNOTES.md` #49),
+   Galaga needs 17.8ms and flashes red throughout play (#35) — and red on
+   this board is *also* the missing-SD-card colour, which made it an
+   expensive mistake to diagnose. `arduino-cli` reads `sketch.yaml`
+   automatically; the IDE does not always.
 5. Prepare an SD card (FAT32, **MBR** partition scheme — not GPT/exFAT,
    which macOS Disk Utility defaults to on "Erase") with that game's own
    ROM/sample layout — see its README.
-6. Open that game's `.ino` and upload.
+6. **File → Examples → ArcadeArduino → Games →** your game, and upload.
 
-Before a full game, it's worth flashing the standalone smoke tests in
-order to confirm each subsystem independently: `input_test_fruitjam` →
-`dvi_test_fruitjam` → `audio_test_fruitjam` → `sd_test_fruitjam`.
+Before a full game, it's worth flashing the standalone tests under
+**Examples → ArcadeArduino → SelfTest** to confirm each subsystem
+independently: `input_test_fruitjam` → `dvi_test_fruitjam` →
+`audio_test_fruitjam` → `sd_test_fruitjam`.
 
 There is also `input_bounce_test_fruitjam`, which is not a smoke test but a
 contact profiler: it samples every button at 10kHz and reports what a
@@ -153,14 +156,16 @@ trusting what it tells you.
 ```bash
 arduino-cli core install rp2040:rp2040 \
   --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
-arduino-cli lib install "PicoDVI - Adafruit Fork" "Adafruit TLV320 I2S" \
-  "SdFat - Adafruit Fork"
-arduino-cli compile invaders_fruitjam   # or: lrescue_fruitjam, etc.
+arduino-cli lib install "PicoDVI - Adafruit Fork"
+
+# --library points the builder at this checkout, since the repo IS the
+# library rather than something installed under your sketchbook.
+arduino-cli compile --library . examples/Games/invaders_fruitjam
 ```
 
-(Each sketch's `sketch.yaml` pins its own required `opt=` level as the
-default `--fqbn`, so it can be omitted once `arduino-cli`'s config points
-its `directories.user` at this repo.)
+(Each example's `sketch.yaml` pins its own required `opt=` level as the
+default `--fqbn`, so it can be omitted. `./dist/build_all.sh` builds all
+seven games this way.)
 
 ## Host test harnesses
 

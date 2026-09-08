@@ -5,6 +5,15 @@ SPDX-License-Identifier: MIT
 
 # Burger Time port plan (`btime`, Data East 1982)
 
+> **Note on paths.** This file is a historical record, and its path
+> references predate the single-library restructure. What it calls
+> `libraries/ArcadeHAL/src/` is now `src/hal/`, `libraries/ArcadeCPU_Z80/src/`
+> is `src/cpu/z80/`, `libraries/ArcadeMachine_Pacman/src/` is
+> `src/machines/pacman/`, `libraries/ArcadeBoard_FruitJam/src/` is
+> `src/boards/fruitjam/`, and each `<game>_fruitjam/` sketch now lives under
+> `examples/Games/`. File names themselves are unchanged. The prose is left
+> as written -- it records what was true when each problem was found.
+
 **STATUS: the port is written and runs.** This file is kept as the
 pre-implementation research it was — every hardware fact below was read out of
 MAME's actual driver source (fetched, not recalled), and every citation names

@@ -7,12 +7,13 @@
 set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-LIBS="$HERE/../../libraries"
+SRC="$HERE/../../src"
 OUT="$HERE/geom_test"
 
 c++ -O1 -g -std=c++17 -Wall \
-    -I"$LIBS/ArcadeHAL/src" \
-    "$LIBS/ArcadeHAL/src/arcade_video_geom.cpp" \
+    -I"$SRC" \
+    -I"$SRC/hal" \
+    "$SRC/hal/arcade_video_geom.cpp" \
     "$HERE/main.cpp" \
     -o "$OUT"
 

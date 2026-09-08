@@ -3,11 +3,13 @@
 # SPDX-License-Identifier: MIT
 
 # Third-party Arduino libraries -- installed via arduino-cli, not our code.
-# Reinstall with:
-#   arduino-cli lib install "PicoDVI - Adafruit Fork" "Adafruit TLV320 I2S" \
-#     "SdFat - Adafruit Fork"
-# (their own dependencies -- Adafruit GFX Library, Adafruit BusIO, etc. --
-# are pulled in automatically)
+# This library has exactly ONE dependency (see library.properties); reinstall
+# with:
+#   arduino-cli lib install "PicoDVI - Adafruit Fork"
+# (its own dependencies -- Adafruit GFX Library, Adafruit BusIO, Adafruit
+# CPFS -- are pulled in automatically. Nothing here uses SdFat or the TLV320
+# library: audio talks to the DAC over raw hardware/i2c.h and storage is a
+# raw SPI driver plus vendored FatFs under src/boards/fruitjam/.)
 #
 # NOTE: no trailing slashes. A trailing slash matches directories ONLY, so
 # these patterns silently stopped ignoring these paths the moment they became

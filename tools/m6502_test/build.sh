@@ -8,17 +8,18 @@
 set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-LIBS="$HERE/../../libraries"
+SRC="$HERE/../../src"
 OBJ="$HERE/build"
 OUT="$HERE/m6502_test"
 
-INC="-I$LIBS/ArcadeCPU_M6502/src"
+INC="-I$SRC \
+     -I$SRC/cpu/m6502"
 
 mkdir -p "$OBJ"
 
 # m6502.c is C (m6502.h carries its own extern "C" guards), so build it as C
 # and link -- same split the Arduino build and every other harness here use.
-cc -O2 -g -std=c11 -Wall $INC -c "$LIBS/ArcadeCPU_M6502/src/m6502.c" -o "$OBJ/m6502.o"
+cc -O2 -g -std=c11 -Wall $INC -c "$SRC/cpu/m6502/m6502.c" -o "$OBJ/m6502.o"
 
 c++ -O2 -g -std=c++17 -Wall -Wno-unused-parameter $INC \
     "$HERE/main.cpp" \

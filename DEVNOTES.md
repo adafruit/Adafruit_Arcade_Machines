@@ -5,6 +5,15 @@ SPDX-License-Identifier: MIT
 
 # arcade_arduino — Development Notes
 
+> **Note on paths.** This file is a historical record, and its path
+> references predate the single-library restructure. What it calls
+> `libraries/ArcadeHAL/src/` is now `src/hal/`, `libraries/ArcadeCPU_Z80/src/`
+> is `src/cpu/z80/`, `libraries/ArcadeMachine_Pacman/src/` is
+> `src/machines/pacman/`, `libraries/ArcadeBoard_FruitJam/src/` is
+> `src/boards/fruitjam/`, and each `<game>_fruitjam/` sketch now lives under
+> `examples/Games/`. File names themselves are unchanged. The prose is left
+> as written -- it records what was true when each problem was found.
+
 Port of [adafruit/invaders_pico](../invaders_pico) (itself a Pico SDK port of
 [shotto42/invaders](https://github.com/shotto42/invaders)) from the raw Pico
 SDK to the Arduino framework, restructured as a SAMP (Single Arcade Machine
