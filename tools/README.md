@@ -5,19 +5,19 @@ SPDX-License-Identifier: MIT
 
 # Host test harnesses
 
-Each `*_host/` directory builds one ArcadeMachine_* library into a native
+Each `*_host/` directory builds one `src/machines/<game>/` into a native
 executable that runs the **real** machine code — actual CPU cores, real
 ROMs, real port decode, real per-scanline frame interleaving — on your
 development machine.
 
 ```
-host_common/     shared stub ArcadeHAL + <Arduino.h>/<pico.h>/<pico/stdlib.h> shims
-galaga_host/     ArcadeMachine_Galaga   (3x Z80)
-pacman_host/     ArcadeMachine_Pacman   (1x Z80)
-invaders_host/   ArcadeMachine_Invaders (1x i8080)
-mspacman_host/   ArcadeMachine_MsPacman (1x Z80, banked/encrypted ROM)
-dkong_host/      ArcadeMachine_DKong    (1x Z80 + i8257 DMA + 8035 sound CPU)
-btime_host/      ArcadeMachine_BTime    (2x 6502, one of them encrypted)
+host_common/     shared stub HAL + <Arduino.h>/<pico.h>/<pico/stdlib.h> shims
+galaga_host/     src/machines/galaga   (3x Z80)
+pacman_host/     src/machines/pacman   (1x Z80)
+invaders_host/   src/machines/invaders (1x i8080)
+mspacman_host/   src/machines/mspacman (1x Z80, banked/encrypted ROM)
+dkong_host/      src/machines/dkong    (1x Z80 + i8257 DMA + 8035 sound CPU)
+btime_host/      src/machines/btime    (2x 6502, one of them encrypted)
 m6502_test/      ArcadeCPU_M6502 conformance runner -- NOT a machine harness
 geom_test/       arcade_video_geom conformance runner -- NOT a machine harness
 ```
@@ -32,7 +32,7 @@ geom_test/       arcade_video_geom conformance runner -- NOT a machine harness
                               --rom ../../btime_assets/rom
 ```
 
-`geom_test/` checks ArcadeHAL's shared screen geometry
+`geom_test/` checks `src/hal`'s shared screen geometry
 (`arcade_video_geom.*`) directly, with no machine attached:
 
 ```sh
@@ -77,8 +77,8 @@ doing", which is where most of the hard bugs turned out to live.
 
 ## Why this works at all
 
-SAMP's architecture rule does the heavy lifting: every `ArcadeMachine_*`
-library is board-agnostic and talks **only** through ArcadeHAL — 13
+SAMP's architecture rule does the heavy lifting: every `src/machines/<game>/`
+is board-agnostic and talks **only** through the `src/hal/` contracts — 21
 functions. So `host_common/hal_host.cpp` is simply a fourth "board"
 alongside `ArcadeBoard_FruitJam`, backed by stdio and plain memory instead
 of DVI/GPIO/SD, and an entire machine compiles and runs unmodified.

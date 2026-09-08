@@ -217,6 +217,17 @@ Reading it while a serial monitor is open needs the port free — see
 For anything about the emulated machine rather than the board, use the host
 harnesses above instead; they answer the same questions in about a second.
 
+## Porting a new machine
+
+`PORTING.md` is the distilled method — the order of work that has produced
+seven ports (one of them with zero hardware debug cycles), the traps ranked
+by how much time they actually cost, and the performance levers in the order
+they paid off. Read it before starting; it is short, and every rule in it is
+a bug that already shipped once.
+
+A new game is one directory under `src/machines/` and one sketch under
+`examples/Games/`. Nothing else in the tree has to change.
+
 ## More detail
 
 See `DEVNOTES.md` for the full account of every real bug found while
