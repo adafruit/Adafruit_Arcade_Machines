@@ -169,34 +169,62 @@ seven games this way.)
 
 ### Continuous integration — not set up yet
 
-There is no CI on this repo. Everything below is run by hand.
+There is no `.github/workflows/` here; everything is run by hand. What
+follows is what it would take, because it is not quite drop-in.
 
-The intended shape, when someone gets to it: a GitHub Actions workflow that
-installs `arduino-cli` plus the RP2350 core on a clean runner and, on every
-push and PR, (1) compiles all 13 examples, (2) builds all 8 host harnesses,
-(3) runs `tools/geom_test` and `tools/m6502_test` — the two conformance
-runners that need no ROMs — (4) checks `reuse lint`, and (5) asserts that an
-`opt=Small` build *fails*, so the optimisation guard in
-`src/ArcadeArduino.h` cannot rot.
+The right tool is Adafruit's standard
+[ci-arduino](https://github.com/adafruit/ci-arduino): copy its
+`example_actions.yml` to `.github/workflows/githubci.yml` and set
+`PRETTYNAME`. It runs clang-format, Doxygen, and an example build per
+platform, and it installs whatever `library.properties` lists in `depends`
+automatically — which only works at all now that there *is* a
+`library.properties`.
 
-A clean single-example build is ~13 seconds, so the whole set is a few
-minutes and free for a public repo.
+**The restructure is what makes it reachable.** `build_platform.py` starts at
+`<repo>/examples` and recurses into subdirectories, so `examples/Games/` and
+`examples/SelfTest/` are both found. Before, the sketches sat at the top
+level with no `examples/` directory, so it would have discovered zero of
+them — and the `.fruit_jam.test.only` markers beside each sketch, which
+ci-arduino looks for in each example's own directory, were inert.
 
-Three failures this project has already had are exactly what that would
-catch, and all three are invisible until something is built from a clean
-checkout: thirteen broken symlinks that reached `main` (a local tree had
-real directories in their place, so nobody saw it); a symbol collision
-between two machines that only appears once both are in one build, which is
-now every build; and bare `#include "z80.h"` instead of
-`#include "cpu/z80/z80.h"`, since `src/` subdirectories are not on the
-include path.
+Four things have to be settled before turning it on:
+
+1. **`fruit_jam` is a valid platform id, but it is not in the default
+   `main_platforms` group** (that is uno, leonardo, mega2560, zero, qtpy_m0,
+   esp8266, esp32, metro_m4, trinket_m0). The workflow has to name
+   `fruit_jam` explicitly. Left on the default, every example with a
+   `.fruit_jam.test.only` marker is skipped for every platform in the group,
+   and CI passes green having built nothing.
+2. **The blocker: ci-arduino's stock `fruit_jam` FQBN carries no `opt=`
+   field**, so it builds at the core default `-Os` — which trips the
+   optimisation guard in `src/ArcadeArduino.h` and fails all 13 examples.
+   That is the guard doing its job, not a false alarm: an `-Os` build of any
+   game here red-screens on hardware. Resolving it means either getting
+   `opt=Optimize3` into that FQBN upstream, or writing a small local workflow
+   that honours each example's own `sketch.yaml`. There is no per-example
+   FQBN override in ci-arduino.
+3. **clang-format and Doxygen would both need switching off** (`#` them out
+   in the YAML). There is no `.clang-format` and no Doxyfile in this repo,
+   and the source is not clang-formatted.
+4. `.fruit_jam.generate` produces UF2 binaries in CI, which could replace
+   `dist/build_all.sh` for release artefacts — but only once point 2 is
+   fixed, or the UF2s it produced would be the red-screening `-Os` builds.
+
+Three failures this project has already had are the kind CI catches, all of
+them invisible until something is built from a clean checkout: thirteen
+broken symlinks that reached `main` (a local tree had real directories in
+their place, so nobody saw it); a symbol collision between two machines that
+only appears once both are in one build, which is now every build; and bare
+`#include "z80.h"` instead of `#include "cpu/z80/z80.h"`, since `src/`
+subdirectories are not on the include path.
 
 **Be clear about what it would not cover.** No ROMs live in this repo and no
-runner has a Fruit Jam, so CI can build the host harnesses but never run a
-game: no frame timing, no starvation counts, no audio, no digest A/Bs. A
-green check would mean "still compiles and lints," never "still works." The
-hardware loop in *Debugging on hardware* below stays the only real
-verification — every game in the table above was checked by flashing it.
+runner has a Fruit Jam, so CI can compile the examples and build the host
+harnesses but never run a game: no frame timing, no starvation counts, no
+audio, no digest A/Bs. A green check would mean "still compiles," never
+"still works." The hardware loop in *Debugging on hardware* below stays the
+only real verification — every game in the table above was checked by
+flashing it.
 
 Running `arduino-lint` is a separate question. It is what Library Manager
 submissions are checked against, so it would say whether this repo is
