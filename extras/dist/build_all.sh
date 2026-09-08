@@ -13,34 +13,30 @@
 #    this video pipeline and shows up as red screens rather than as a
 #    slower picture. See DEVNOTES.md.
 #
-# 2. --library "$ROOT". This repo IS the Arduino library, so the examples
-#    cannot find it the way an installed library would be found; --library
-#    points the builder at the checkout. A throwaway arduino-cli config
-#    still sets directories.user, which is only how the third-party
-#    dependency (PicoDVI - Adafruit Fork) gets discovered when it has been
-#    installed into this repo's own gitignored libraries/ dir. If yours
-#    lives in your normal sketchbook instead, that works too -- set
-#    ARDUINO_DIRECTORIES_USER and this script will not override it.
+# 2. --library "$ROOT", and NO config override. This repo IS the Arduino
+#    library, so the examples cannot find it the way an installed one would
+#    be; --library points the builder at the checkout. Everything else --
+#    notably the one dependency, PicoDVI - Adafruit Fork -- comes from your
+#    normal sketchbook, so install it the usual way:
+#        arduino-cli lib install "PicoDVI - Adafruit Fork"
+#
+#    This script used to write a throwaway config pinning directories.user
+#    to $ROOT, which made sense only while the repo was itself a sketchbook
+#    with a libraries/ dir inside it. After the single-library restructure
+#    that directory is gone, and the override silently pointed the builder
+#    at a sketchbook with no libraries in it -- "PicoDVI.h: No such file or
+#    directory" on the first game.
 set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 GAMES="invaders lrescue pacman mspacman btime dkong galaga"
 
-CFG="$HERE/.arduino-cli.yaml"
-{
-    echo "board_manager:"
-    echo "    additional_urls:"
-    echo "        - https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json"
-    echo "directories:"
-    echo "    user: ${ARDUINO_DIRECTORIES_USER:-$ROOT}"
-} > "$CFG"
-
 cd "$ROOT"
 for g in $GAMES; do
     sk="${g}_fruitjam"
     printf '%-20s ' "$sk"
-    if ! arduino-cli --config-file "$CFG" compile --library "$ROOT" \
+    if ! arduino-cli compile --library "$ROOT" \
             --output-dir "$HERE" "examples/Games/$sk" \
             > "$HERE/.$g.log" 2>&1; then
         echo "FAILED -- see $HERE/.$g.log"
@@ -52,7 +48,6 @@ for g in $GAMES; do
     rm -f "$HERE/$sk.ino."* "$HERE/.$g.log"
     printf 'ok   %s\n' "$(du -h "$HERE/$sk.uf2" | cut -f1 | tr -d ' ')"
 done
-rm -f "$CFG"
 
 echo
 echo "built into $HERE:"
