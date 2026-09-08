@@ -23,8 +23,8 @@ Three axes meet in every build, and a new machine only touches one of them:
 |---|---|---|
 | CPU core | `src/cpu/<cpu>/` | nothing, if your CPU is already there |
 | Machine | `src/machines/<game>/` | **this is the port** |
-| Board | `src/boards/<board>/` | nothing |
-| Composition root | `examples/Games/<game>_fruitjam/` | a thin sketch |
+| Board | `src/boards/<board>/` | nothing — unless you are porting to new hardware, which is a different job: see *Porting to a new board* |
+| Composition root | `examples/Games/<game>_<board>/` | a thin sketch |
 
 Available CPU cores: `i8080`, `z80`, `m6502`, `mcs48`. A new CPU family is a
 sibling directory under `src/cpu/`, with no hardware or game knowledge in
@@ -126,6 +126,119 @@ point — both were attract screens. Cost of that control: one command.
 Add the example sketch under `examples/Games/`, with a `sketch.yaml` pinning
 `opt=Optimize2` or `Optimize3`. See `README.md` for the flash-and-read-serial
 loop; no debug probe is used or needed.
+
+## Porting to a new board
+
+Everything above is a *machine* port. A **board** port is the other axis, and
+it is a different job: implement the HAL contracts once and every existing
+game runs on the new hardware without a line changing in `src/machines/`.
+`src/boards/fruitjam/` is the only one so far and is the reference.
+
+### What you implement
+
+All 21 functions in `src/hal/`. Read those headers -- each one documents its
+own contract -- but the shape is:
+
+```
+video (9)    init, acquire_scanline, submit_scanline, run,
+             take_blocked_us, take_starve_count, valid_level,
+             take_min_valid_level, scanbuf_count
+audio (4)    init(sample_rate), set_fill_callback, enter_critical, exit_critical
+input (2)    init, read(index)
+storage (6)  mount, unmount, list_dir, open, read, close
+```
+
+Plus two things easy to miss:
+
+- **`HAL_VIDEO_WIDTH` / `HAL_VIDEO_HEIGHT`.** These are `extern const uint32_t`
+  declared in the HAL and **defined by the board** -- the board decides the
+  canvas every machine renders into. The Fruit Jam derives them from its DVI
+  mode and pixel-repeat factors.
+- **A `board_config_<board>.h`** giving the `HAL_BTN_*` enum (the indices
+  `hal_input_read()` takes) and whatever pin constants the backend needs. A
+  sketch includes this directly, because mapping a physical button to a game
+  action is the composition root's job, not the machine's.
+
+Three contract details that are not obvious from the signatures:
+
+- `hal_video_submit_scanline()` takes **no y coordinate**. The backend tracks
+  scan position from call order: exactly `HAL_VIDEO_HEIGHT` submits per frame,
+  forever, one per `acquire`.
+- `hal_video_run()` **never returns** and runs on whatever context drives
+  display timing (the second core, here). Start it only once the caller is
+  already feeding continuously -- earlier and the display starves, which
+  looks like a glitch or a blank screen rather than a bug.
+- `hal_video_acquire_scanline()` is allowed to **block**, and the Fruit Jam's
+  does. That is what paces frames; there is no timer. If yours does not
+  block, return 0 from `take_blocked_us()` and say so.
+
+The instrumentation five of the nine video functions provide is not optional
+padding -- `take_starve_count()`, `valid_level()`, `take_min_valid_level()`
+and `scanbuf_count()` are how every display bug in `DEVNOTES.md` was actually
+found. A backend that returns 0 from all of them will work and will be
+undebuggable.
+
+### The board guard -- do this first, not last
+
+Every example compiles **all** of `src/`, so the moment a second board
+directory exists both backends compile into every build and all 21 functions
+collide at link time. Wrap each backend's implementation in its own board
+macro:
+
+```c
+#if defined(ARDUINO_ADAFRUIT_FRUITJAM_RP2350)
+...the whole implementation...
+#endif
+```
+
+arduino-pico turns each board's `build.board` into `-DARDUINO_<build.board>`,
+so selecting the board in **Tools > Board** picks the backend automatically
+with no sketch edit and no build flag. (A Feather RP2350 HSTX, for instance,
+is `ARDUINO_ADAFRUIT_FEATHER_RP2350_HSTX`.) `src/boards/fruitjam/` has no
+guard yet only because it is currently alone; adding a second board means
+adding one to it in the same change.
+
+A missing or misspelled guard fails as **21 undefined references at link
+time**, not as a warning. Loud, but only if you are expecting it.
+
+### Naming, and one sketch per pair
+
+A sketch is inherently a *(game x board)* pair -- it is the one file allowed
+to know both. So examples are named `<game>_<board>`:
+
+```
+examples/Games/invaders_fruitjam/
+examples/Games/invaders_featherRP2350/     a second board, same machine
+```
+
+Each example also needs its own CI marker beside the `.ino` --
+`.<platform>.test.only`, where `<platform>` is the id
+`adafruit/ci-arduino` knows for that board (`fruit_jam` for this one). It is
+looked up per example directory; there is no repo-wide fallback. See
+README.md's CI section for the rest, including why the stock Fruit Jam FQBN
+does not currently build these examples.
+
+### Order of work
+
+The `examples/SelfTest/` sketches exist for exactly this and are the bring-up
+ladder -- each exercises one subsystem against the real backend with no
+emulator, no ROM and no other hardware in the way:
+
+```
+input_test -> dvi_test -> audio_test -> sd_test -> a game
+```
+
+Get them passing in that order. Then flash a game -- Space Invaders is the
+cheapest (simplest machine, ~32% of the frame budget on the Fruit Jam), and
+Burger Time or Galaga last, since they have the least headroom and will fail
+first if the new backend is slower.
+
+Board work has its own trap that machine work does not: **boot order is
+load-bearing.** Initialise video (struct/queue setup only), then load assets
+from storage, and only then start the display pump -- storage can be slow, and
+a display started before the producer is ready shows a spurious flash that
+reads as a real error. Every sketch here documents that ordering in its
+`setup()`; copy it rather than rediscovering it.
 
 ## The traps, ranked by time cost
 
@@ -299,3 +412,16 @@ supposed to validate.
 - [ ] Verified on hardware in all four rotations, **in gameplay, not attract**
 - [ ] `reuse lint` passes
 - [ ] A `DEVNOTES.md` entry for anything that surprised you
+
+### If you ported a board instead
+
+- [ ] All 21 HAL functions implemented, instrumentation included
+- [ ] `HAL_VIDEO_WIDTH`/`HAL_VIDEO_HEIGHT` defined, `board_config_<board>.h` added
+- [ ] **Every backend wrapped in its own `ARDUINO_<BOARD>` guard**, the existing
+      one included
+- [ ] One example per (game, board) pair, named `<game>_<board>`
+- [ ] A `.<platform>.test.only` beside each new `.ino`
+- [ ] `examples/SelfTest/` ladder passes: input, dvi, audio, sd
+- [ ] Boot order matches the existing sketches: video init, assets, *then* the
+      display pump
+- [ ] The two tightest games (Burger Time, Galaga) checked last and measured
