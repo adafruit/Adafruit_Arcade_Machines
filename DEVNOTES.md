@@ -4997,3 +4997,61 @@ long as it was skipping the clear. Any time an optimisation makes something
 newly affordable, check that it still produces the right pixels -- the host
 poison of #100 is exactly that check, and it is why that change matters more
 than this one.
+
+### 102. Galaga's audio ISR triples during attract -- pre-existing, frame-locked, and it fits
+
+Found while re-verifying all seven games on hardware after the single-library
+restructure. Galaga's per-window worst ISR duration is not flat:
+
+| frames | isr worst-single | vs baseline |
+|---|---|---|
+| up to ~660 | 88-94us | 1.0x |
+| **720-960** | **287-295us** | **3.3x** |
+| 1020-1320 | 200-203us | 2.2x |
+| after ~1320 | 88-94us | 1.0x |
+
+The bands are **identical in all four rotations** and land on the **same
+frame numbers** every run. That is the tell: attract is a deterministic
+sequence, so this is the attract demo bringing WSG voices and the 54XX
+explosion channel online, not a rotation or a rendering effect. More active
+channels, more work in the fill callback.
+
+**It is pre-existing.** A/B against a build from before the restructure, same
+card, same board, same capture length:
+
+| | pre | post |
+|---|---|---|
+| isr worst, frames 720-960 | 285/289/289/288/289us | 287/294/294/294/295us |
+| isr worst, frames 1020-1320 | 202/203/202/202/203us | 201us x6 |
+| isr worst, median over run | 93us | 92us |
+| starve / DEFICIT_MAX / checksum fails | 0 / 0 / 0 | 0 / 0 / 0 |
+
+Same spike, same frames, within ~6us. Nothing here is new.
+
+**Why it is worth recording anyway.** Core 1 can only coast on its 8 buffers
+for ~555us (#18/#48). A 295us ISR therefore consumes **just over half the
+entire starvation margin in a single call**, during the window where Galaga
+is already the most expensive machine in the project. It fits -- `starve` 0
+and `DEFICIT_MAX` 0us across every rotation -- but the headroom that makes it
+fit is about 2x, not 10x. This is the number to look at first if anything in
+Galaga's frame or audio ever gets more expensive, and it is a second reason
+(alongside #101's 4/32 runway) to treat this game as the one with no slack
+left.
+
+**Two method notes, both self-inflicted during this measurement.**
+
+First: the aggregate that surfaced this ALSO reported "checksum FAIL" in all
+four rotations. That was a regex whose capture groups spanned the wrong
+fields -- the checksums were passing the whole time (`pass=7 fail=0`). A
+scripted extraction over a 20-field heartbeat is itself an instrument, and it
+needs the same suspicion as any other; the fix was one independent pattern
+per field instead of one long expression with `.*?` between groups.
+
+Second: the bare maximum said `isr worst 295us` and nothing else. That number
+alone is unreadable -- it could have been one boot-time outlier or a
+sustained cost. Only the distribution beside the frame numbers
+(`{88:7, 89:5, ..., 200:3, 294:3}` plus "occurs at frames 720-1320") showed
+the shape. Bare maxima have nearly produced a wrong conclusion here several
+times now, which is why #94 added "totals-beside-maxima" to the sketches in
+the first place -- the same discipline applies to whatever reads the
+heartbeat back out.
