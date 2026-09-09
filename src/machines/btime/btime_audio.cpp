@@ -28,7 +28,7 @@
 // exception ArcadeMachine_Invaders's and _Pacman's audio files document in
 // full (see those files and DEVNOTES.md problem #7). On RP2350,
 // pico/platform.h refuses direct inclusion, so this goes through pico.h.
-#include "pico.h"
+#include "arcade_portability.h"
 
 // SRAM placement for the SYNTHESIS, not just the ISR copy-out. Measured on
 // device: the audio was 6442us of a 23.6ms frame -- 27% -- while the same
@@ -42,11 +42,7 @@
 // unchanged. (fill_audio() below keeps __not_in_flash_func() instead: it
 // runs in the audio ISR, where the requirement is absolute rather than a
 // performance preference -- see DEVNOTES.md #3/#7.)
-#if defined(ARDUINO_ARCH_RP2040) || defined(PICO_ON_DEVICE)
-#define BTIME_ARAMFUNC __attribute__((section(".time_critical.btimesnd")))
-#else
-#define BTIME_ARAMFUNC
-#endif
+#define BTIME_ARAMFUNC ARCADE_FAST_SECTION("btimesnd")
 #include <Arduino.h> // micros(), for the cost measurement below -- the same
                      // instrumentation dkong_machine.cpp carries, because
                      // DEVNOTES.md #48 was caused by an audio cost nobody
@@ -684,7 +680,7 @@ void btime_audio_set_reg_trace(btime_audio_reg_trace_cb cb) { g_reg_trace = cb; 
 //
 // All it does is copy: the synthesis happens on Core 0 (see
 // btime_audio_run_slice()).
-static void __not_in_flash_func(fill_audio)(int32_t *out, int count) {
+static void ARCADE_FAST_FUNC(fill_audio)(int32_t *out, int count) {
     uint32_t tail = g_ring_tail;
     const uint32_t head = g_ring_head;
 

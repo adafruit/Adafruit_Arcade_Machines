@@ -56,11 +56,8 @@
 // scripts, the same mechanism pico-sdk's __not_in_flash_func() uses;
 // spelled out as a raw section attribute so this stays a portable C file
 // with no pico-sdk include (the host harnesses compile it natively).
-#if defined(ARDUINO_ARCH_RP2040) || defined(PICO_ON_DEVICE)
-#define MCS48_RAMFUNC __attribute__((section(".time_critical.mcs48")))
-#else
-#define MCS48_RAMFUNC
-#endif
+#include "arcade_portability.h"
+#define MCS48_RAMFUNC ARCADE_FAST_SECTION("mcs48")
 
 #define C_FLAG 0x80
 #define A_FLAG 0x40

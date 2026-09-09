@@ -333,9 +333,16 @@ frame-budget cost of each rotation and of aspect correction.
 Reach for these only against a measurement. Note which are still unapplied
 — those are the cheap wins left in the tree.
 
-1. **Move the CPU interpreter and hot paths to SRAM** (`__not_in_flash` /
-   time-critical sections). Biggest single win on Galaga: 54–57fps decaying
-   → flat 59. Done for `z80`, `m6502`, `mcs48`; **not done for `i8080`.**
+1. **Move the CPU interpreter and hot paths to SRAM**
+   (`ARCADE_FAST_FUNC` / `ARCADE_FAST_SECTION`, see
+   `src/arcade_portability.h`). Biggest single win on Galaga: 54–57fps
+   decaying → flat 59. Done for `z80`, `m6502`, `mcs48`.
+   **But not universally positive, and this is the one lever with a
+   measured counterexample.** Applied to `i8080` it made Space Invaders 5.0%
+   faster and Lunar Rescue 2.5% *slower* — same core, same one-line change,
+   both results at >8 sigma — so it was reverted. Full numbers in
+   `extras/DEVNOTES.md` #103. Measure the machine you are changing; a lever
+   proven on one game here is not proven for the next.
 2. **Decode sprites once per frame, not per scanline.**
 3. **Interleave CPU with the scanline pump** — also a correctness fix, see
    the trap above.

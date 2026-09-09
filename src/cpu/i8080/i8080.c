@@ -9,12 +9,21 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include "pico/stdlib.h"
 #include "i8080.h"
 
+// Halt on an illegal or unimplemented opcode. This used to spin on
+// tight_loop_contents() from "pico/stdlib.h", which was the only thing in
+// any CPU core naming a vendor SDK -- a portable 8080 interpreter has no
+// business doing that. A plain empty spin is the same instruction sequence
+// on every target that matters here; the `volatile` keeps the compiler from
+// deciding an infinite loop with no side effects can be removed.
+//
+// In practice this is close to dead code: exec_opcode() treats undocumented
+// opcodes and HLT as 4-cycle NOPs rather than calling this, precisely
+// because the original panic used to hang the core outright (extras/
+// DEVNOTES.md #1).
 static inline void cpu_panic(void) {
-    // Halt core on illegal or unimplemented opcode — blinks onboard LED if available
-    while (1) tight_loop_contents();
+    for (volatile int spin = 1; spin;) { }
 }
 
 uint8_t check_parity(uint8_t res, int bits) {
