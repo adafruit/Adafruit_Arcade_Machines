@@ -5117,3 +5117,74 @@ Two measurement notes from the same session, both of them mine:
   Pooling a second alternating pair took the same -288us to 8.9 sigma. One
   run of a noisy measurement is not evidence of the size of an effect even
   when it happens to be the right sign.
+
+### 104. The ESP32's frame cost was 45% overhead, and DMA's real prize was not the overhead
+
+**Symptom.** Pac-Man on the Feather ESP32 V2 + 2.4" TFT FeatherWing ran at
+16.8fps: 59,689us per frame, of which 44,600us was pushing pixels and
+15,100us was Z80 emulation. A 320x240 RGB565 frame is 153,600 bytes and the
+bus runs at 40MHz, so the *unavoidable* wire time is 30,720us. Something was
+adding 14ms per frame.
+
+**Cause.** `Adafruit_SPITFT::writePixels()` lands in the Arduino core's
+`spiWritePixelsNL()` (`cores/esp32/esp32-hal-spi.c`), which is a **64-byte
+poll loop**: for every 64 bytes it byte-swaps 16 words into the SPI FIFO
+registers, writes the transfer length, sets `cmd.usr` and spins until the
+peripheral clears it. A 640-byte scanline is ten of those round-trips, 2,400
+per frame. That is the 14ms.
+
+**Fix.** `src/arch/esp32/arch_spi_dma.{h,cpp}` -- a transmit-DMA transport
+that hands one whole scanline to the chip's SPI DMA engine.
+
+**16.8fps -> 31.8fps. 59,689us -> 31,428us.**
+
+**The number that matters is not 14ms.** Removing the overhead alone predicts
+~30.7 + 15.1 = 45.8ms, or 21.8fps. The measured 31,428us is *below* that and
+within 2.3% of the bare 30,720us wire time, which means the emulation is no
+longer being paid for at all. `arch_spi_dma_write_async()` **returns
+immediately**, so with two line buffers the machine renders scanline N+1 and
+runs its slice of Z80 cycles while scanline N is still going out. Pac-Man's
+frame loop is already per-scanline interleaved (problem #19), so the overlap
+needed no restructuring -- it is the same win the Fruit Jam gets from a
+second core, bought with a second buffer instead. **Asynchrony was worth more
+than throughput: 3.4x the frame-time saving of the overhead removal.**
+
+**Four things that are easy to get wrong here, all silent:**
+
+1. **The byte swap moved.** The FIFO path swapped each RGB565 pixel into
+   wire order for free on its way into the SPI registers (`MSB_PIX_SET`).
+   DMA reads memory verbatim, so the backend now swaps the row itself --
+   160 32-bit ops, about 1us against a 130us transfer. Skipping this does
+   not fail, it just renders in the wrong colours at full speed.
+2. **`cmd.usr`, not the EOF interrupt, is completion.** The DMA EOF fires
+   when the engine has finished filling the SPI FIFO, not when the last bit
+   is on the wire. Returning on EOF would let the caller drop CS or
+   overwrite the buffer with bytes still queued.
+3. **The peripheral has to be handed back.** The Arduino core, SdFat and
+   Adafruit_ILI9341's command writes all use the CPU-FIFO path on the same
+   bus. `arch_spi_dma_wait()` stops the outlink and resets the channel, or
+   the next command byte transmits whatever DMA left staged.
+4. **The host-to-channel mapping lives outside the SPI block**, in a DPORT
+   register. Getting it wrong does not error -- the transfer starts and
+   never completes, which reads as a hang. This is why the code goes through
+   `spicommon_dma_chan_alloc()` rather than poking DPORT: the IDF sets the
+   mapping, enables the DMA clock and refcounts the channel so nothing else
+   can be handed the same one.
+
+**Architecture.** This is the same split as the audio path and for the same
+reason. `Adafruit_ILI9341` still owns the panel -- init sequence, rotation,
+address window. What no library covers is the chip's DMA engine, so that is
+hand-written and lives in `src/arch/esp32/` next to where the RP2's I2S PIO
+transport sits beside `Adafruit_TLV320_I2S`. **"Use a library" applies to
+device configuration; a silicon data path with no library to use is a
+different question, and putting it under `arch/` is what keeps the answer
+from leaking into board code.**
+
+**What is left.** 31.4ms is now essentially the 40MHz wire time, so the only
+remaining lever on this board is the clock. The divider comes off the 80MHz
+APB clock, so the next step up is 80MHz -- which would halve the wire time
+to 15.4ms and land near the 15.1ms emulation cost, i.e. roughly 60fps.
+Whether the GPIO matrix tolerates 80MHz on this wing is an open question and
+has to be answered by looking at the panel, not at a number. (These are not
+the ESP32's IOMUX SPI pins; the matrix adds delay. The display is written to
+and never read from, which is the case where that matters least.)

@@ -12,9 +12,13 @@
 // --- TFT FeatherWing V1: fixed by the wing, not reassignable ---------------
 // Shared hardware SPI: SCK 5, MOSI 19, MISO 21 (the variant's defaults).
 // NOTE these are NOT the ESP32's IOMUX SPI pins, so the signals route via the
-// GPIO matrix, which caps SPI at 40MHz. Measured ceiling on this wiring is
-// 3.44 MB/s -- 22.4fps for a full 320x240 frame. Asking for 60MHz returns
-// exactly what 40MHz does. That is a property of the wing, not a setting.
+// GPIO matrix. The bus runs at 40MHz, which is 5 MB/s, which is 30.7ms for a
+// 320x240 RGB565 frame and therefore a hard 32.6fps ceiling for any game
+// that repaints the whole screen. Asking for 60MHz gets you 40MHz: the
+// divider is off the 80MHz APB clock, so the reachable steps are 80, 40,
+// 26.7, 20 and down. 80MHz through the GPIO matrix is the one untried lever
+// -- it would halve the wire time, and the panel is written to and never
+// read from, which is the case where matrix delay matters least.
 #define FEATHER_TFT_CS    15
 #define FEATHER_TFT_DC    33
 #define FEATHER_SD_CS     14

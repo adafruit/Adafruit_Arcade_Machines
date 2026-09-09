@@ -6,11 +6,19 @@
 // 2.4" TFT FeatherWing. The SAMP composition root for this pair: the only
 // place that knows both "this game" and "this board".
 //
-// FIRST LIGHT. Expect ~22fps, not 60. The wing's SPI pins are not the
-// ESP32's IOMUX pins, so the GPIO matrix caps the bus at a measured
-// 3.44 MB/s, and a full 320x240 frame is 153,600 bytes -- 44.6ms of pure
-// transfer before any emulation happens. The heartbeat below separates
-// those two costs, which is the number that decides what to do next.
+// ~32fps, not 60, and the reason is arithmetic rather than anything
+// fixable in this sketch. The wing's SPI pins are not the ESP32's IOMUX
+// pins, so the GPIO matrix caps the bus at 40MHz; a 320x240 RGB565 frame is
+// 153,600 bytes, which is 30.7ms of clocking that has to happen no matter
+// what the CPU is doing. Measured frame time is 31.4ms -- within 2% of that
+// ceiling, because the scanlines go out by DMA and the Z80 emulation now
+// runs underneath the transfer instead of after it (see
+// src/arch/esp32/arch_spi_dma.h). Emulation is 15.1ms of that 31.4 and is
+// essentially free now; the only lever left is the clock.
+//
+// For scale: the same code on the FIFO path the Arduino core provides ran
+// 59.7ms/frame at 16.8fps, because a 64-byte poll loop added 14ms of pure
+// overhead AND could not overlap with anything.
 //
 // Audio is a silent stub on this board for now (see
 // hal_audio_feather_esp32.cpp).
@@ -78,12 +86,13 @@ void loop() {
     pacman_input_update(&g_system, coin, start1, start2,
                         up, down, left, right, rotate, mirror);
 
-    // THE measurement this build exists for. `emul` is everything except
-    // pushing pixels; `push` is the SPI transfer. On the Fruit Jam those are
-    // overlapped across two cores and the DVI queue hides the second one.
-    // Here they are strictly serial on one core, so the split says directly
-    // whether the display or the emulator is the ceiling -- and therefore
-    // whether dirty-rectangle updates would actually buy anything.
+    // Whole-frame time: emulation and pixel-pushing together, because they
+    // are no longer separable. submit_scanline() hands the row to DMA and
+    // returns, so the next scanline's Z80 cycles run while it is still on
+    // the wire -- the same overlap the Fruit Jam gets from a second core,
+    // bought here with a second buffer instead. A number close to 30.7ms
+    // means the transfer is the whole cost and the emulator is hidden
+    // inside it; a number well above that means something stopped fitting.
     static uint32_t frame = 0, emul_us = 0, push_us = 0, t_prev = 0;
     uint32_t t0 = micros();
     pacman_run_frame(&g_system);     // emulation AND scanline submission
@@ -95,7 +104,7 @@ void loop() {
         float fps = 30000.0f / (float)(now - t_prev);
         t_prev = now;
         Serial.printf("[pacman-esp32] frame %lu  %.1f fps  frame %lu us  "
-                      "(a full 320x240 push alone measured 44,600us)\n",
+                      "(40MHz wire time for 320x240 is 30,720us)\n",
                       (unsigned long)frame, fps,
                       (unsigned long)(emul_us / 30u));
         emul_us = 0; push_us = 0;
