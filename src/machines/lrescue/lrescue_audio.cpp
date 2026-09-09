@@ -33,7 +33,7 @@
 // from flash -- an XIP cache-miss stall there is long enough to starve the
 // PicoDVI scanline queue (invaders_pico's DEVNOTES.md "Red horizontal lines
 // when sounds play").
-#include "arcade_portability.h"
+#include "arch/arch.h"
 
 // LRESCUE_CPU_HZ/LRESCUE_AUDIO_SAMPLE_RATE as an exact integer-plus-
 // remainder split, both halves compile-time constants (all four operands

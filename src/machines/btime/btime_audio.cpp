@@ -28,7 +28,7 @@
 // exception ArcadeMachine_Invaders's and _Pacman's audio files document in
 // full (see those files and DEVNOTES.md problem #7). On RP2350,
 // pico/platform.h refuses direct inclusion, so this goes through pico.h.
-#include "arcade_portability.h"
+#include "arch/arch.h"
 
 // SRAM placement for the SYNTHESIS, not just the ISR copy-out. Measured on
 // device: the audio was 6442us of a 23.6ms frame -- 27% -- while the same

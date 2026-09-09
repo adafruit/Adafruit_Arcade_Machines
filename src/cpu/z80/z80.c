@@ -28,7 +28,7 @@
 // Costs SRAM -- check the "Global variables use ..." line after building,
 // and see the cyc_* tables below, which are deliberately left in flash
 // since sequential table lookups cache well.
-#include "arcade_portability.h"
+#include "arch/arch.h"
 #define Z80_RAMFUNC ARCADE_FAST_SECTION("z80")
 
 // MARK: timings

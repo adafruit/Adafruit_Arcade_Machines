@@ -24,7 +24,7 @@
 // family), so this is a pragmatic compromise rather than a generic
 // portability abstraction; a board on a genuinely different toolchain
 // would need an equivalent placement mechanism at this exact spot.
-#include "arcade_portability.h"
+#include "arch/arch.h"
                    // pico/platform.h refuses direct inclusion and requires this
 
 // MAME sample file index for each game sound slot.

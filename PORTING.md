@@ -178,6 +178,32 @@ and `scanbuf_count()` are how every display bug in `extras/DEVNOTES.md` was actu
 found. A backend that returns 0 from all of them will work and will be
 undebuggable.
 
+### arch versus board
+
+Two layers, and confusing them is what makes a second board expensive:
+
+| | | example |
+|---|---|---|
+| **arch** | the silicon | fast-RAM placement, timer registers, PIO, DMA |
+| **board** | the product | which pins, which DAC and its address, which display |
+
+A Fruit Jam and a Feather RP2350 are two boards on one arch. An ESP32 board
+is a different arch as well. `src/arch/` holds the first, `src/boards/` the
+second.
+
+Adding an architecture is `src/arch/<name>.h` implementing the contract in
+`src/arch/arch.h`, guarded so it selects itself, plus one `#include` in the
+dispatcher. Nothing in `src/cpu/` or `src/machines/` should need to change;
+if it does, the contract is wrong and that is the thing to fix.
+
+**Why those are headers and not `.c` files.** Arduino compiles every source
+under `src/` regardless of which board is selected -- there is no per-arch
+source selection. So each arm is a header that guards its own contents and
+expands to nothing when it does not match.
+`Adafruit_Protomatter`'s `src/arch/` is the precedent: fourteen headers,
+zero sources. Arch code that genuinely must live in a `.cpp` has to wrap the
+whole file in the same guard, exactly like a board backend.
+
 ### The board guard -- do this first, not last
 
 Every example compiles **all** of `src/`, so the moment a second board
@@ -335,7 +361,7 @@ Reach for these only against a measurement. Note which are still unapplied
 
 1. **Move the CPU interpreter and hot paths to SRAM**
    (`ARCADE_FAST_FUNC` / `ARCADE_FAST_SECTION`, see
-   `src/arcade_portability.h`). Biggest single win on Galaga: 54–57fps
+   `src/arch/arch.h`). Biggest single win on Galaga: 54–57fps
    decaying → flat 59. Done for `z80`, `m6502`, `mcs48`.
    **But not universally positive, and this is the one lever with a
    measured counterexample.** Applied to `i8080` it made Space Invaders 5.0%

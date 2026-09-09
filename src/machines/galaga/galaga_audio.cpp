@@ -37,7 +37,7 @@
 // an XIP cache miss would stall it. (This machine leans on that mechanism
 // elsewhere too: see galaga_machine.cpp's GALAGA_M_RAMFUNC.)
 #include <Arduino.h> // micros() for the ISR instrument below
-#include "arcade_portability.h"
+#include "arch/arch.h"
                    // RP2350, pico/platform.h refuses direct inclusion.
 
 uint8_t galaga_wave_prom[GALAGA_WAVE_PROM_SIZE];
