@@ -24,7 +24,7 @@
 // family), so this is a pragmatic compromise rather than a generic
 // portability abstraction; a board on a genuinely different toolchain
 // would need an equivalent placement mechanism at this exact spot.
-#include "pico.h" // pulls in pico/platform.h (__not_in_flash_func) -- on RP2350,
+#include "arcade_portability.h"
                    // pico/platform.h refuses direct inclusion and requires this
 
 // MAME sample file index for each game sound slot.
@@ -104,7 +104,7 @@ static bool parse_wav(const uint8_t *data, size_t size, uint32_t out_sample_rate
 
 // Runs in the board's audio ISR/DMA-completion handler (registered below
 // via hal_audio_set_fill_callback) -- must stay in RAM, no flash/XIP reads.
-static void __not_in_flash_func(fill_audio_buffer)(int32_t *buf, int count) {
+static void ARCADE_FAST_FUNC(fill_audio_buffer)(int32_t *buf, int count) {
     for (int i = 0; i < count; i++) {
         int32_t mix = 0;
         for (int c = 0; c < MAX_CHANNELS; c++) {

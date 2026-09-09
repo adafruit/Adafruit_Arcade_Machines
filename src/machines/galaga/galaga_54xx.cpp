@@ -29,7 +29,7 @@
 // and must never execute from flash -- same deliberate, isolated exception
 // documented in ArcadeMachine_Invaders's invaders_audio.cpp and
 // arcade_arduino/DEVNOTES.md problem #7.
-#include "pico.h"
+#include "arcade_portability.h"
 #ifdef GALAGA_54XX_TRACE
 #include <stdio.h>
 #endif
@@ -220,7 +220,7 @@ void galaga_54xx_take_trigger(galaga_54xx_state *s) {
 #endif
 }
 
-int32_t __not_in_flash_func(galaga_54xx_sample)(galaga_54xx_state *s) {
+int32_t ARCADE_FAST_FUNC(galaga_54xx_sample)(galaga_54xx_state *s) {
     if (s->voice[0].env <= 0 && s->voice[1].env <= 0) return 0;
 
     // Band-pass corners and mixer weights computed from the literal

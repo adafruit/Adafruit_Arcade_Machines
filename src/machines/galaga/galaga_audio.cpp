@@ -37,7 +37,7 @@
 // an XIP cache miss would stall it. (This machine leans on that mechanism
 // elsewhere too: see galaga_machine.cpp's GALAGA_M_RAMFUNC.)
 #include <Arduino.h> // micros() for the ISR instrument below
-#include "pico.h" // pulls in pico/platform.h (__not_in_flash_func) -- on
+#include "arcade_portability.h"
                    // RP2350, pico/platform.h refuses direct inclusion.
 
 uint8_t galaga_wave_prom[GALAGA_WAVE_PROM_SIZE];
@@ -80,7 +80,7 @@ void galaga_audio_debug_take_isr_stats(uint32_t *total_us, uint32_t *calls,
     g_isr_us = g_isr_calls = g_isr_max_us = 0;
 }
 
-static void __not_in_flash_func(galaga_audio_fill)(int32_t *out, int count) {
+static void ARCADE_FAST_FUNC(galaga_audio_fill)(int32_t *out, int count) {
     uint32_t isr_t0 = micros();
     uint8_t regs[0x20];
 

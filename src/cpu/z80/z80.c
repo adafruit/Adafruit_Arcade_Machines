@@ -28,11 +28,8 @@
 // Costs SRAM -- check the "Global variables use ..." line after building,
 // and see the cyc_* tables below, which are deliberately left in flash
 // since sequential table lookups cache well.
-#if defined(ARDUINO_ARCH_RP2040) || defined(PICO_ON_DEVICE)
-#define Z80_RAMFUNC __attribute__((section(".time_critical.z80")))
-#else
-#define Z80_RAMFUNC
-#endif
+#include "arcade_portability.h"
+#define Z80_RAMFUNC ARCADE_FAST_SECTION("z80")
 
 // MARK: timings
 static const uint8_t cyc_00[256] = {4, 10, 7, 6, 4, 4, 7, 4, 4, 11, 7, 6, 4, 4,

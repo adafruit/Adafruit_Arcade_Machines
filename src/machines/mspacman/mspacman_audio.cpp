@@ -52,7 +52,7 @@
 // ArcadeMachine_Invaders's invaders_audio.cpp documents in full (see that
 // file and arcade_arduino/DEVNOTES.md problem #7) -- mspacman_audio_fill()
 // below runs in the board's audio ISR and must never execute from flash.
-#include "pico.h" // pulls in pico/platform.h (__not_in_flash_func) -- on
+#include "arcade_portability.h"
                    // RP2350, pico/platform.h refuses direct inclusion.
 
 uint8_t mspacman_wave_prom[MSPACMAN_WAVE_PROM_SIZE];
@@ -73,7 +73,7 @@ uint8_t mspacman_wave_prom[MSPACMAN_WAVE_PROM_SIZE];
 
 static mspacman_system *g_system;
 
-static void __not_in_flash_func(mspacman_audio_fill)(int32_t *out, int count) {
+static void ARCADE_FAST_FUNC(mspacman_audio_fill)(int32_t *out, int count) {
     uint8_t regs[MSPACMAN_SOUND_REG_SIZE];
     bool enabled;
 

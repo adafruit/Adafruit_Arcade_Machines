@@ -10,18 +10,14 @@
 #include "hal/arcade_hal_audio.h"
 #include "cpu/mcs48/mcs48.h"
 #include <Arduino.h> // micros() for the cost instrument below
-#include "pico.h" // __not_in_flash_func -- a deliberate, documented
+#include "arcade_portability.h"
                   // exception to board-agnosticism (DEVNOTES.md problem #7)
 
 // The per-sample synthesis and the 8035 callbacks around it run ~364 times
 // per frame inside an already-tight budget, so they belong in SRAM for the
 // same reason the CPU cores do. Raw section attribute rather than
 // __not_in_flash_func() so the host harness still compiles this file.
-#if defined(ARDUINO_ARCH_RP2040) || defined(PICO_ON_DEVICE)
-#define DKA_RAMFUNC __attribute__((section(".time_critical.dkonga")))
-#else
-#define DKA_RAMFUNC
-#endif
+#define DKA_RAMFUNC ARCADE_FAST_SECTION("dkonga")
 
 uint8_t dkong_sound_rom[DKONG_SOUND_ROM_SIZE];
 uint8_t dkong_tune_rom[DKONG_TUNE_ROM_SIZE];
@@ -534,7 +530,7 @@ DKA_RAMFUNC void dkong_audio_run_frame(dkong_system *system) {
 // up as coloured glitch lines (DEVNOTES.md problem #7). It does no
 // synthesis -- all of that happens on the main core in run_frame -- so it
 // stays short by construction.
-static void __not_in_flash_func(dkong_audio_fill)(int32_t *out, int count) {
+static void ARCADE_FAST_FUNC(dkong_audio_fill)(int32_t *out, int count) {
     for (int i = 0; i < count; i++) {
         int16_t s;
         if (g_fifo_tail == g_fifo_head) {

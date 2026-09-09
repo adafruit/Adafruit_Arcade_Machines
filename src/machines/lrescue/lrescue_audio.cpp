@@ -33,9 +33,7 @@
 // from flash -- an XIP cache-miss stall there is long enough to starve the
 // PicoDVI scanline queue (invaders_pico's DEVNOTES.md "Red horizontal lines
 // when sounds play").
-#include "pico.h"
-#include "pico/time.h"     // time_us_64() -- see lrescue_audio_now_cycles() below (Core-0-normal-path only, NOT the ISR)
-#include "hardware/timer.h" // timer_hw->timerawl -- see g_isr_time_us_accum's doc comment below for why the ISR uses this instead
+#include "arcade_portability.h"
 
 // LRESCUE_CPU_HZ/LRESCUE_AUDIO_SAMPLE_RATE as an exact integer-plus-
 // remainder split, both halves compile-time constants (all four operands
@@ -316,7 +314,7 @@ static volatile uint32_t g_speaker_events_dropped_total = 0;
 static volatile uint32_t g_speaker_queue_peak_depth = 0;
 static volatile uint32_t g_speaker_drain_limit_hits = 0;
 
-static inline bool __not_in_flash_func(speaker_level_at)(uint64_t target_cycle) {
+static inline bool ARCADE_FAST_FUNC(speaker_level_at)(uint64_t target_cycle) {
     const int DRAIN_LIMIT = 8;
     int n;
     for (n = 0; n < DRAIN_LIMIT
@@ -368,7 +366,7 @@ uint64_t lrescue_audio_debug_target_cycle(void) {
 static uint64_t g_audio_epoch_us = 0;
 
 uint64_t lrescue_audio_now_cycles(void) {
-    uint64_t elapsed_us = time_us_64() - g_audio_epoch_us;
+    uint64_t elapsed_us = ARCADE_TIME_US64() - g_audio_epoch_us;
     // Plain multiply+divide -- fine here (unlike inside fill_audio_buffer):
     // this runs on Core 0's normal call path from lrescue_ports.cpp, not
     // the audio ISR, so a software-division XIP call costs nothing this
@@ -384,7 +382,7 @@ uint64_t lrescue_audio_now_cycles(void) {
 // its own per-call cost scales with active-channel count (the per-sample
 // mixing loop below).
 //
-// IMPORTANT: measuring this call's own duration must NOT use time_us_64()
+// IMPORTANT: measuring this call's own duration must NOT use ARCADE_TIME_US64()
 // (or time_us_32()) -- checked via `nm` on the linked .elf, both turned out
 // to be real, separately-compiled pico-sdk functions placed in FLASH
 // (0x10xxxxxx, not the 0x20xxxxxx SRAM range __not_in_flash_func()'d code
@@ -393,7 +391,7 @@ uint64_t lrescue_audio_now_cycles(void) {
 // often assumed to be. Calling either from here would silently reintroduce
 // exactly the XIP-call-inside-the-audio-ISR bug class this whole
 // investigation exists to avoid -- an early version of this instrumentation
-// did exactly that before being caught. timer_hw->timerawl (from
+// did exactly that before being caught. ARCADE_ISR_TIME_US() (from
 // hardware/timer.h) is what those functions themselves read internally: a
 // direct MMIO register load, no function call at all, genuinely RAM-safe.
 // 32 bits (microseconds, wraps every ~71 minutes) is plenty for timing a
@@ -406,7 +404,7 @@ static volatile uint32_t g_isr_invocation_count = 0;
 
 // Runs in the board's audio ISR/DMA-completion handler -- must stay in RAM,
 // no flash/XIP reads.
-static void __not_in_flash_func(fill_audio_buffer)(int32_t *buf, int count) {
+static void ARCADE_FAST_FUNC(fill_audio_buffer)(int32_t *buf, int count) {
     // This used to be computed fresh each sample via a 64-bit multiply and
     // DIVIDE. The RP2350's Cortex-M33 has no hardware 64-bit divide, so
     // that called a software division routine likely living in flash --
@@ -420,7 +418,7 @@ static void __not_in_flash_func(fill_audio_buffer)(int32_t *buf, int count) {
     // carryover already uses) still stands on its own merits: no division
     // anywhere in this function, compile-time-constant or otherwise.
 
-    uint32_t isr_t0 = timer_hw->timerawl; // DEBUG -- see g_isr_time_us_accum's doc comment above for why NOT time_us_64()
+    uint32_t isr_t0 = ARCADE_ISR_TIME_US(); // DEBUG -- see g_isr_time_us_accum's doc comment above for why NOT ARCADE_TIME_US64()
     uint32_t active_now = 0;              // DEBUG: counted once per call, not per sample -- channels[] doesn't change composition mid-call
     for (int c = 0; c < MAX_CHANNELS; c++) if (channels[c].active) active_now++;
     if (active_now > g_isr_max_active_channels) g_isr_max_active_channels = active_now;
@@ -486,7 +484,7 @@ static void __not_in_flash_func(fill_audio_buffer)(int32_t *buf, int count) {
         buf[i] = ((int32_t)s << 16) | (uint16_t)s;
     }
 
-    uint32_t isr_dur = timer_hw->timerawl - isr_t0; // DEBUG -- unsigned subtraction, wrap-safe
+    uint32_t isr_dur = ARCADE_ISR_TIME_US() - isr_t0; // DEBUG -- unsigned subtraction, wrap-safe
     g_isr_time_us_accum += isr_dur;
     if (isr_dur > g_isr_max_single_call_us) g_isr_max_single_call_us = isr_dur;
     g_isr_invocation_count++;
@@ -563,7 +561,7 @@ int lrescue_audio_load_samples(void) {
     // counting from 0 (the audio ISR's first invocation, which follows
     // shortly after the callback below is registered) for the two clocks to
     // agree on "now" from the start.
-    g_audio_epoch_us = time_us_64();
+    g_audio_epoch_us = ARCADE_TIME_US64();
     hal_audio_set_fill_callback(fill_audio_buffer);
     g_loaded_count = loaded;
     return loaded;
