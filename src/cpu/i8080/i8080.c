@@ -10,18 +10,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "i8080.h"
-#include "arcade_portability.h"
-
-// Run the interpreter out of fast RAM. This is the project's
-// biggest single performance lever (PORTING.md lists it first, from
-// Galaga: 54-57fps decaying to a flat 59), and the i8080 was the one
-// core it had never been applied to -- noted there as an outstanding
-// item. It costs SRAM: check the "Global variables use ..." line, and
-// note Lunar Rescue is the tightest user of this core.
-//
-// The cycle/flag lookup helpers stay wherever the compiler puts them;
-// only exec_opcode() and interrupt(), the two functions a machine
-// calls per frame, are placed here.
 
 // Halt on an illegal or unimplemented opcode. This used to spin on
 // tight_loop_contents() from "pico/stdlib.h", which was the only thing in
@@ -577,7 +565,7 @@ void write_memory(Cpu_state *state, uint16_t address, uint8_t value) {
     state->memory[address] = value;
 }
 
-ARCADE_FAST_SECTION("i8080") int interrupt(Cpu_state *state, uint16_t offset) {
+int interrupt(Cpu_state *state, uint16_t offset) {
     if (state->int_enable) {
         state->pc -= 3;
         state->int_enable = 0;
@@ -586,7 +574,7 @@ ARCADE_FAST_SECTION("i8080") int interrupt(Cpu_state *state, uint16_t offset) {
     return 0;
 }
 
-ARCADE_FAST_SECTION("i8080") int exec_opcode(Cpu_state *state) {
+int exec_opcode(Cpu_state *state) {
     uint8_t op = read_memory(state, state->pc);
     int cyc = 0;
 

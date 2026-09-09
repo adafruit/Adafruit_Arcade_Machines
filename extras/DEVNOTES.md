@@ -5055,3 +5055,65 @@ the shape. Bare maxima have nearly produced a wrong conclusion here several
 times now, which is why #94 added "totals-beside-maxima" to the sketches in
 the first place -- the same discipline applies to whatever reads the
 heartbeat back out.
+
+### 103. The SRAM lever is not universally positive: it measured NEGATIVE on Lunar Rescue
+
+Lever 1 in PORTING.md -- move the CPU interpreter into SRAM so it does not
+execute from XIP flash -- is described there as the project's biggest single
+performance win, on the strength of Galaga (54-57fps decaying, to a flat 59).
+`ArcadeCPU_i8080` was the one core it had never been applied to, listed as an
+outstanding item. Applying it is now one line (`ARCADE_FAST_SECTION("i8080")`
+on `exec_opcode` and `interrupt`).
+
+Measured on hardware, TEST_AUTOSTART scripted play on both sides so the
+workload is identical, two alternating runs each, pooled:
+
+| | Space Invaders | Lunar Rescue |
+|---|---|---|
+| work_MEAN, interpreter in FLASH | 5,708us | 4,991us |
+| work_MEAN, interpreter in SRAM | **5,421us** | **5,118us** |
+| change | **-288us (-5.0%)** | **+126us (+2.5%)** |
+| significance | 8.9 sigma | 8.3 sigma |
+| work_MEAN sd | 258 -> 123 | 91 -> 74 |
+| SRAM cost | +8.2KB (48% -> 49%) | +18.3KB (74% -> **77%**) |
+
+**Two games, the same core, the same one-line change, opposite signs.** Both
+results are far outside noise.
+
+The standard deviation drops on BOTH, which says the XIP stalls genuinely do
+go away in both cases -- that part of the mechanism is real and behaves as
+advertised. On Lunar Rescue something else more than eats the gain. Untested
+hypothesis: the RP2350 has banked SRAM, Core 1 is streaming scanlines out of
+it continuously, and Lunar Rescue has this project's heaviest audio ISR, so
+18KB of additional Core-0 instruction traffic in SRAM may simply be
+contending for banks. That is a guess and is written here as one; nobody has
+measured it.
+
+**Reverted.** Not because the Invaders gain is not real, but because nothing
+was asking for it: Invaders sits at about a third of its frame budget, and
+the price was making the TIGHTER game 2.5% slower while spending 18.3KB more
+of its RAM. PORTING.md's own rule is to reach for a lever against a
+measurement; here a measurement argued against.
+
+**The lesson worth keeping, and it generalises past this one lever:** a
+performance technique validated on one machine in this project is not
+thereby validated for the others. The machines differ in exactly the ways
+that decide whether a given lever pays -- audio ISR weight, how much SRAM
+they already hold, how much of the frame is CPU versus render. Measure the
+machine you are changing. `--census`-style totals on one game are evidence
+about that game.
+
+Two measurement notes from the same session, both of them mine:
+
+- The bare minimum of `min_lead` read 499 (flash) versus 52 (SRAM), which
+  looked like the speaker channel's safety margin collapsing. It is not a
+  margin, it is a **cumulative minimum since boot** that climbs
+  monotonically, so the number is dominated by wherever the capture started.
+  The progressions track each other within ~0.2ms and `dropped=0` throughout
+  both. Third time in this file a bare maximum or minimum nearly produced a
+  wrong conclusion -- see #94 and #102.
+- The first Invaders comparison was a single run: -289us against a
+  within-condition sd of 255us, about 1.1 sigma, which is not a result.
+  Pooling a second alternating pair took the same -288us to 8.9 sigma. One
+  run of a noisy measurement is not evidence of the size of an effect even
+  when it happens to be the right sign.
