@@ -30,7 +30,7 @@
 // here. Arch code that must live in a .cpp has to wrap the whole file in the
 // same guard.
 //
-// ADDING AN ARCHITECTURE: write src/arch/<name>.h implementing the contract
+// ADDING AN ARCHITECTURE: write src/arch/<name>/<name>.h implementing the contract
 // below, guard it, and add one #include here. Nothing in src/cpu/ or
 // src/machines/ should need to change -- if it does, the contract is wrong
 // and is the thing to fix.
@@ -68,8 +68,8 @@
 #include <stdint.h>
 
 // Every arm is included unconditionally; each selects itself.
-#include "arch/rp2040.h"
-#include "arch/esp32.h"
+#include "arch/rp2040/rp2040.h"
+#include "arch/esp32/esp32.h"
 
 // No arm matched. Host builds (extras/tools/*_host) land here and are
 // expected to: a laptop has no XIP stall to avoid and no ISR to be safe

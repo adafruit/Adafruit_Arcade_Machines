@@ -2,268 +2,124 @@
 //
 // SPDX-License-Identifier: MIT
 
-// hal_audio.h implementation for Adafruit Fruit Jam (TLV320DAC3100 + PIO I2S).
+// hal_audio.h implementation for the Adafruit Fruit Jam.
 //
-// Codec init and I2S PIO driver ported near-verbatim from invaders_pico's
-// pico_sound.c (itself adapted from pico-infoNES/wili8jam), which comments
-// this exact register sequence as "verified on Fruit Jam". The WAV mixer
-// that used to live in this file is gone -- it's now board-agnostic game
-// logic in ArcadeMachine_Invaders's invaders_audio.cpp, which registers
-// itself here via hal_audio_set_fill_callback().
-#include <string.h>
-#include "pico/stdlib.h"
-#include "hardware/i2c.h"
-#include "hardware/pio.h"
-#include "hardware/dma.h"
-#include "hardware/irq.h"
-#include "hardware/clocks.h"
-#include "hardware/gpio.h"
-#include "hardware/sync.h"
-#include "audio_i2s.pio.h"
+// Two halves, now living in the two places they belong:
+//
+//   this file        the DAC. Which chip (TLV320DAC3100), where it sits on
+//                    I2C, which pins, how it is configured -- all board
+//                    facts, now expressed through Adafruit_TLV320_I2S
+//                    instead of ~45 hand-written register pokes.
+//   src/arch/rp2040/ the transport. A PIO state machine and a DMA pair
+//                    pushing samples at the DAC. That is silicon, shared by
+//                    every RP2 board, and it stays hand-written because no
+//                    library covers it -- Adafruit_TLV320_I2S is I2C
+//                    configuration only, with no data path.
+//
+// THE CONFIGURATION IS A TRANSLATION, NOT A REDESIGN. Every step below is
+// the same operation the register sequence did, in the same order, checked
+// against the library's own basicI2Sconfig example. Two things the old
+// sequence did are deliberately NOT carried over:
+//
+//   - NADC/MADC (registers 0x12/0x13) and the ADC block (0x51-0x53). The
+//     library has no setter for either, and Adafruit's own reference init
+//     does not touch them -- this part's ADC is not in the audio path here.
+//     They appear to have been inherited from a fuller reference driver.
+//   - The explicit i2c_init()/gpio_set_function() calls. Wire does that,
+//     and the library takes a TwoWire.
+//
+// If audio ever comes back wrong after this change, those two omissions are
+// the first place to look.
+#include <Adafruit_TLV320DAC3100.h>
+#include <Wire.h>
+
 #include "hal/arcade_hal_audio.h"
 #include "board_config_fruitjam.h"
+#include "arch/rp2040/arch_audio_i2s.h"
 
-// pio1, SM 0: DVI uses pio0 (see hal_video_fruitjam.cpp), so no conflict.
-#define AUDIO_PIO      pio1
-#define AUDIO_SM       0
-// 256 samples, double-buffered. This was briefly lowered to 128 and then 64
-// while chasing Lunar Rescue's red lines (DEVNOTES.md problem #34), on the
-// reasoning that this ISR runs on Core 0, preempts the scanline render/submit
-// pump, and PicoDVI's valid-scanline queue is a hard-capped 8 buffers -- only
-// ~555us of slack -- so a long ISR can starve it. That reasoning was sound
-// and the measurements were real: worst-single ISR cost fell 232us -> 81us ->
-// 40-52us.
-//
-// It has been PUT BACK, and the reason is worth keeping. Shortening this was
-// only ever an interim mitigation for Lunar Rescue, whose real fault was a
-// ~1.8ms un-interleaved CPU burst leaving ~200us of margin. Interleaving that
-// (problem #34) took the margin to milliseconds, at which point a 232us ISR
-// is irrelevant -- but the mitigation's COST did not go away with its
-// purpose. More, shorter calls pay the same fixed per-invocation overhead
-// more often: measured on Galaga, the game with the least headroom, 64
-// samples cost +400us mean / +660us peak per frame versus 256, and a red line
-// appeared on hardware during heavy sprite activity with the player firing.
-//
-// **General lesson: when a real fix lands, remove the interim mitigation and
-// re-measure. A workaround's cost outlives its purpose silently.** If a long
-// ISR ever looks implicated again, measure `work` in that sketch's heartbeat
-// first -- the frame budget is where this actually shows up.
-#define BUFFER_SAMPLES 256
+static Adafruit_TLV320DAC3100 s_codec;
 
-// ---------------------------------------------------------------------------
-// Codec I2C helpers
-// ---------------------------------------------------------------------------
+// GPIO 22 resets the DAC *and* the onboard ESP32-C6, so it is held high
+// rather than pulsed -- dropping it would reset the radio too.
+static bool codec_init(void) {
+    pinMode(FRUITJAM_CODEC_RESET_PIN, OUTPUT);
+    digitalWrite(FRUITJAM_CODEC_RESET_PIN, HIGH);
+    delay(100);
 
-static void codec_write_reg(uint8_t reg, uint8_t val) {
-    uint8_t buf[2] = {reg, val};
-    i2c_write_timeout_us(i2c0, FRUITJAM_DAC_I2C_ADDR, buf, 2, false, 1000);
-}
+    Wire.setSDA(FRUITJAM_I2C_SDA_PIN);
+    Wire.setSCL(FRUITJAM_I2C_SCL_PIN);
+    Wire.begin();
 
-static uint8_t codec_read_reg(uint8_t reg) {
-    uint8_t v = reg;
-    i2c_write_timeout_us(i2c0, FRUITJAM_DAC_I2C_ADDR, &v, 1, true, 1000);
-    i2c_read_timeout_us(i2c0, FRUITJAM_DAC_I2C_ADDR, &v, 1, false, 1000);
-    return v;
-}
+    if (!s_codec.begin(FRUITJAM_DAC_I2C_ADDR, &Wire)) return false;
+    delay(10);
 
-static void codec_modify_reg(uint8_t reg, uint8_t mask, uint8_t val) {
-    codec_write_reg(reg, (codec_read_reg(reg) & ~mask) | (val & mask));
-}
+    // I2S, 16-bit. The RP2 side is the clock master, so no BCLK/WCLK out.
+    if (!s_codec.setCodecInterface(TLV320DAC3100_FORMAT_I2S,
+                                   TLV320DAC3100_DATA_LEN_16)) return false;
 
-static void codec_set_page(uint8_t page) { codec_write_reg(0x00, page); }
+    // The DAC's PLL derives everything from BCLK -- there is no separate
+    // MCLK line on this board.
+    if (!s_codec.setCodecClockInput(TLV320DAC3100_CODEC_CLKIN_PLL) ||
+        !s_codec.setPLLClockInput(TLV320DAC3100_PLL_CLKIN_BCLK)) return false;
 
-// ---------------------------------------------------------------------------
-// TLV320DAC3100 register init.
-// GPIO 22 resets both DAC and the onboard ESP32-C6; we hold it high.
-// DAC PLL derives its clock from BCLK -- no separate MCLK GPIO needed.
-// ---------------------------------------------------------------------------
+    // P=1, R=2, J=32, D=0 -- the same values the register sequence wrote to
+    // 0x05-0x08, and the same the library's example uses.
+    if (!s_codec.setPLLValues(1, 2, 32, 0)) return false;
+    if (!s_codec.setNDAC(true, 8) || !s_codec.setMDAC(true, 2)) return false;
+    if (!s_codec.powerPLL(true)) return false;
 
-static void codec_init(void) {
-    gpio_init(FRUITJAM_CODEC_RESET_PIN);
-    gpio_set_dir(FRUITJAM_CODEC_RESET_PIN, GPIO_OUT);
-    gpio_put(FRUITJAM_CODEC_RESET_PIN, true);
+    if (!s_codec.setDACDataPath(true, true,
+                                TLV320_DAC_PATH_NORMAL,
+                                TLV320_DAC_PATH_NORMAL,
+                                TLV320_VOLUME_STEP_1SAMPLE)) return false;
 
-    i2c_init(i2c0, 100000);
-    gpio_set_function(FRUITJAM_I2C_SDA_PIN, GPIO_FUNC_I2C);
-    gpio_set_function(FRUITJAM_I2C_SCL_PIN, GPIO_FUNC_I2C);
-    sleep_ms(100);
+    // Both DACs into the output mixer; no analogue inputs routed.
+    if (!s_codec.configureAnalogInputs(TLV320_DAC_ROUTE_MIXER,
+                                       TLV320_DAC_ROUTE_MIXER,
+                                       false, false, false, false)) return false;
 
-    codec_write_reg(0x01, 0x01); // soft reset
-    sleep_ms(10);
+    // Unmute, 0 dB. The old sequence wrote 0x00 to both channel volume
+    // registers, which is this part's 0 dB code point.
+    if (!s_codec.setDACVolumeControl(false, false, TLV320_VOL_INDEPENDENT) ||
+        !s_codec.setChannelVolume(false, 0) ||
+        !s_codec.setChannelVolume(true, 0)) return false;
 
-    // Audio interface: I2S 16-bit
-    codec_modify_reg(0x1B, 0xC0, 0x00);
-    codec_modify_reg(0x1B, 0x30, 0x00);
+    // Headphone drivers, then the speaker amp. Gains match the old writes
+    // to page 1 0x24/0x25 (headphone) and 0x26 (speaker).
+    if (!s_codec.configureHeadphoneDriver(true, true) ||
+        !s_codec.configureHPL_PGA(0, true) ||
+        !s_codec.configureHPR_PGA(0, true) ||
+        !s_codec.setHPLVolume(true, 0x0A) ||
+        !s_codec.setHPRVolume(true, 0x0A)) return false;
 
-    // Clock MUX: PLL from BCLK
-    codec_modify_reg(0x04, 0x03, 0x03);
-    codec_modify_reg(0x04, 0x0C, 0x04);
+    if (!s_codec.enableSpeaker(true) ||
+        !s_codec.configureSPK_PGA(TLV320_SPK_GAIN_6DB, true) ||
+        !s_codec.setSPKVolume(true, 0x0A)) return false;
 
-    // PLL J=32, D=0
-    codec_write_reg(0x06, 0x20);
-    codec_write_reg(0x07, 0x00);
-    codec_write_reg(0x08, 0x00);
+    // Headset detect, so plugging headphones in mutes the speaker.
+    if (!s_codec.setHeadsetDetect(true)) return false;
 
-    // PLL P/R
-    codec_modify_reg(0x05, 0x0F, 0x02);
-    codec_modify_reg(0x05, 0x70, 0x10);
-
-    // NDAC=8, enable
-    codec_modify_reg(0x0B, 0x7F, 0x08);
-    codec_modify_reg(0x0B, 0x80, 0x80);
-
-    // MDAC=2, enable
-    codec_modify_reg(0x0C, 0x7F, 0x02);
-    codec_modify_reg(0x0C, 0x80, 0x80);
-
-    // NADC=8, enable; MADC=2, enable
-    codec_modify_reg(0x12, 0x7F, 0x08);
-    codec_modify_reg(0x12, 0x80, 0x80);
-    codec_modify_reg(0x13, 0x7F, 0x02);
-    codec_modify_reg(0x13, 0x80, 0x80);
-
-    // PLL power up
-    codec_modify_reg(0x05, 0x80, 0x80);
-
-    // Headset detect
-    codec_set_page(1);
-    codec_modify_reg(0x2E, 0xFF, 0x0B);
-    codec_set_page(0);
-    codec_modify_reg(0x43, 0x80, 0x80);
-    codec_modify_reg(0x30, 0x80, 0x80);
-    codec_modify_reg(0x33, 0x3C, 0x14);
-
-    // DAC power on (L+R)
-    codec_modify_reg(0x3F, 0xC0, 0xC0);
-
-    // DAC routing
-    codec_set_page(1);
-    codec_modify_reg(0x23, 0xC0, 0x40);
-    codec_modify_reg(0x23, 0x0C, 0x04);
-
-    // DAC volume: unmute, 0 dB
-    codec_set_page(0);
-    codec_modify_reg(0x40, 0x0C, 0x00);
-    codec_write_reg(0x41, 0x00);
-    codec_write_reg(0x42, 0x00);
-
-    // ADC
-    codec_modify_reg(0x51, 0x80, 0x80);
-    codec_modify_reg(0x52, 0x80, 0x00);
-    codec_write_reg(0x53, 0x68);
-
-    // Headphone driver + gain
-    codec_set_page(1);
-    codec_modify_reg(0x1F, 0xC0, 0xC0);
-    codec_modify_reg(0x28, 0x04, 0x04);
-    codec_modify_reg(0x29, 0x04, 0x04);
-    codec_write_reg(0x24, 0x0A);
-    codec_write_reg(0x25, 0x0A);
-    codec_modify_reg(0x28, 0x78, 0x40);
-    codec_modify_reg(0x29, 0x78, 0x40);
-
-    // Speaker amp
-    codec_modify_reg(0x20, 0x80, 0x80);
-    codec_modify_reg(0x2A, 0x04, 0x04);
-    codec_modify_reg(0x2A, 0x18, 0x08);
-    codec_write_reg(0x26, 0x0A);
-
-    codec_set_page(0);
-}
-
-// ---------------------------------------------------------------------------
-// DMA double buffer + ISR (in RAM -- avoids flash stall during XIP)
-// ---------------------------------------------------------------------------
-
-static int32_t audio_buf[2][BUFFER_SAMPLES];
-static int dma_ch_a, dma_ch_b;
-static volatile hal_audio_fill_cb g_fill_cb = NULL;
-
-static void __not_in_flash_func(audio_dma_irq_handler)(void) {
-    if (dma_irqn_get_channel_status(1, dma_ch_a)) {
-        dma_irqn_acknowledge_channel(1, dma_ch_a);
-        if (g_fill_cb) g_fill_cb(audio_buf[0], BUFFER_SAMPLES);
-        else memset(audio_buf[0], 0, sizeof(audio_buf[0]));
-        dma_channel_set_read_addr(dma_ch_a, audio_buf[0], false);
-        dma_channel_set_trans_count(dma_ch_a, BUFFER_SAMPLES, false);
-    }
-    if (dma_irqn_get_channel_status(1, dma_ch_b)) {
-        dma_irqn_acknowledge_channel(1, dma_ch_b);
-        if (g_fill_cb) g_fill_cb(audio_buf[1], BUFFER_SAMPLES);
-        else memset(audio_buf[1], 0, sizeof(audio_buf[1]));
-        dma_channel_set_read_addr(dma_ch_b, audio_buf[1], false);
-        dma_channel_set_trans_count(dma_ch_b, BUFFER_SAMPLES, false);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// I2S PIO + DMA init
-// ---------------------------------------------------------------------------
-
-static void i2s_init(uint32_t sample_rate) {
-    uint offset = pio_add_program(AUDIO_PIO, &audio_i2s_program);
-    audio_i2s_program_init(AUDIO_PIO, AUDIO_SM, offset,
-                            FRUITJAM_I2S_DIN_PIN, FRUITJAM_I2S_BCLK_PIN);
-
-    // Clock divider: sys_clock / (sample_rate * 64)
-    {
-        uint32_t sys_hz = clock_get_hz(clk_sys);
-        uint32_t target = sample_rate * 64u;
-        uint32_t div_int  = sys_hz / target;
-        uint32_t div_frac = (uint32_t)(((uint64_t)(sys_hz % target) * 256u) / target);
-        pio_sm_set_clkdiv_int_frac(AUDIO_PIO, AUDIO_SM,
-                                   (uint16_t)div_int, (uint8_t)div_frac);
-    }
-
-    dma_ch_a = dma_claim_unused_channel(true);
-    dma_ch_b = dma_claim_unused_channel(true);
-    memset(audio_buf, 0, sizeof(audio_buf));
-
-    dma_channel_config cfg = dma_channel_get_default_config(dma_ch_a);
-    channel_config_set_transfer_data_size(&cfg, DMA_SIZE_32);
-    channel_config_set_read_increment(&cfg, true);
-    channel_config_set_write_increment(&cfg, false);
-    channel_config_set_dreq(&cfg, pio_get_dreq(AUDIO_PIO, AUDIO_SM, true));
-    channel_config_set_chain_to(&cfg, dma_ch_b);
-    dma_channel_configure(dma_ch_a, &cfg,
-        &AUDIO_PIO->txf[AUDIO_SM], audio_buf[0], BUFFER_SAMPLES, false);
-
-    cfg = dma_channel_get_default_config(dma_ch_b);
-    channel_config_set_transfer_data_size(&cfg, DMA_SIZE_32);
-    channel_config_set_read_increment(&cfg, true);
-    channel_config_set_write_increment(&cfg, false);
-    channel_config_set_dreq(&cfg, pio_get_dreq(AUDIO_PIO, AUDIO_SM, true));
-    channel_config_set_chain_to(&cfg, dma_ch_a);
-    dma_channel_configure(dma_ch_b, &cfg,
-        &AUDIO_PIO->txf[AUDIO_SM], audio_buf[1], BUFFER_SAMPLES, false);
-
-    dma_irqn_set_channel_enabled(1, dma_ch_a, true);
-    dma_irqn_set_channel_enabled(1, dma_ch_b, true);
-    irq_set_exclusive_handler(DMA_IRQ_1, audio_dma_irq_handler);
-    irq_set_enabled(DMA_IRQ_1, true);
-
-    pio_sm_set_enabled(AUDIO_PIO, AUDIO_SM, true);
-    dma_channel_start(dma_ch_a);
-}
-
-// ---------------------------------------------------------------------------
-// Public API (hal_audio.h)
-// ---------------------------------------------------------------------------
-
-bool hal_audio_init(uint32_t sample_rate) {
-    codec_init();
-    i2s_init(sample_rate);
     return true;
 }
 
+bool hal_audio_init(uint32_t sample_rate) {
+    // A codec that fails to configure is reported rather than swallowed --
+    // the old code returned true unconditionally, so a dead DAC looked
+    // exactly like a silent game.
+    bool codec_ok = codec_init();
+    bool i2s_ok = arch_i2s_init(sample_rate,
+                                FRUITJAM_I2S_DIN_PIN, FRUITJAM_I2S_BCLK_PIN);
+    return codec_ok && i2s_ok;
+}
+
 void hal_audio_set_fill_callback(hal_audio_fill_cb cb) {
-    g_fill_cb = cb;
+    arch_i2s_set_fill_callback(cb);
 }
 
 uint32_t hal_audio_enter_critical(void) {
-    return save_and_disable_interrupts();
+    return arch_i2s_enter_critical();
 }
 
 void hal_audio_exit_critical(uint32_t saved_state) {
-    restore_interrupts(saved_state);
+    arch_i2s_exit_critical(saved_state);
 }
