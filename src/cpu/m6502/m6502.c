@@ -36,7 +36,7 @@
 // tools/m6502_test compile it natively). Costs SRAM -- check the "Global
 // variables use ..." line after building. The CYCLES_* tables below are
 // deliberately left in flash, since sequential table lookups cache well.
-#include "arcade_portability.h"
+#include "arch/arch.h"
 #define M6502_RAMFUNC ARCADE_FAST_SECTION("m6502")
 
 #include "m6502.h"

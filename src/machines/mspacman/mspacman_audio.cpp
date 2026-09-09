@@ -52,7 +52,7 @@
 // ArcadeMachine_Invaders's invaders_audio.cpp documents in full (see that
 // file and arcade_arduino/DEVNOTES.md problem #7) -- mspacman_audio_fill()
 // below runs in the board's audio ISR and must never execute from flash.
-#include "arcade_portability.h"
+#include "arch/arch.h"
                    // RP2350, pico/platform.h refuses direct inclusion.
 
 uint8_t mspacman_wave_prom[MSPACMAN_WAVE_PROM_SIZE];

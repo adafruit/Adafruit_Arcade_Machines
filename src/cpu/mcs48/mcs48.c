@@ -56,7 +56,7 @@
 // scripts, the same mechanism pico-sdk's __not_in_flash_func() uses;
 // spelled out as a raw section attribute so this stays a portable C file
 // with no pico-sdk include (the host harnesses compile it natively).
-#include "arcade_portability.h"
+#include "arch/arch.h"
 #define MCS48_RAMFUNC ARCADE_FAST_SECTION("mcs48")
 
 #define C_FLAG 0x80

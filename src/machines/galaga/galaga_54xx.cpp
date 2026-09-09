@@ -29,7 +29,7 @@
 // and must never execute from flash -- same deliberate, isolated exception
 // documented in ArcadeMachine_Invaders's invaders_audio.cpp and
 // arcade_arduino/DEVNOTES.md problem #7.
-#include "arcade_portability.h"
+#include "arch/arch.h"
 #ifdef GALAGA_54XX_TRACE
 #include <stdio.h>
 #endif

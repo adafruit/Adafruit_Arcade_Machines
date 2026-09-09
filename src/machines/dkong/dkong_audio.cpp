@@ -10,7 +10,7 @@
 #include "hal/arcade_hal_audio.h"
 #include "cpu/mcs48/mcs48.h"
 #include <Arduino.h> // micros() for the cost instrument below
-#include "arcade_portability.h"
+#include "arch/arch.h"
                   // exception to board-agnosticism (DEVNOTES.md problem #7)
 
 // The per-sample synthesis and the 8035 callbacks around it run ~364 times
