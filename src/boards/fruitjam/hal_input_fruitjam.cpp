@@ -13,6 +13,13 @@
 // hal_input_read() once per frame, and 60Hz sampling filters ordinary
 // sub-millisecond contact bounce whether you ask it to or not. See the
 // filter's own comment below for the shape chosen and why it is asymmetric.
+// Whole file guarded on the BOARD, not the architecture. Arduino compiles
+// every source under src/ regardless of the selected board, so a second
+// backend would otherwise collide with this one on all 21 HAL functions.
+// The board macro rather than ARDUINO_ARCH_RP2040 because a Feather RP2350
+// would share the arch and still need its own backend. See PORTING.md.
+#if defined(ARDUINO_ADAFRUIT_FRUITJAM_RP2350)
+
 #include <stdint.h>
 #include "hardware/gpio.h"
 #include "hardware/timer.h"
@@ -129,3 +136,5 @@ bool hal_input_read(uint8_t index) {
     }
     return f->stable;
 }
+
+#endif // ARDUINO_ADAFRUIT_FRUITJAM_RP2350

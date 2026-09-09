@@ -30,6 +30,13 @@
 //
 // If audio ever comes back wrong after this change, those two omissions are
 // the first place to look.
+// Whole file guarded on the BOARD, not the architecture. Arduino compiles
+// every source under src/ regardless of the selected board, so a second
+// backend would otherwise collide with this one on all 21 HAL functions.
+// The board macro rather than ARDUINO_ARCH_RP2040 because a Feather RP2350
+// would share the arch and still need its own backend. See PORTING.md.
+#if defined(ARDUINO_ADAFRUIT_FRUITJAM_RP2350)
+
 #include <Adafruit_TLV320DAC3100.h>
 #include <Wire.h>
 
@@ -123,3 +130,5 @@ uint32_t hal_audio_enter_critical(void) {
 void hal_audio_exit_critical(uint32_t saved_state) {
     arch_i2s_exit_critical(saved_state);
 }
+
+#endif // ARDUINO_ADAFRUIT_FRUITJAM_RP2350

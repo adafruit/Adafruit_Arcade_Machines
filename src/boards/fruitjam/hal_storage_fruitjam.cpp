@@ -29,6 +29,13 @@
 // The card-detect pin (GPIO 33) is not used. The old driver configured it
 // with a pull-up and then never read it; a missing card already surfaces as
 // a failed mount, which is what the boot-error screen keys off.
+// Whole file guarded on the BOARD, not the architecture. Arduino compiles
+// every source under src/ regardless of the selected board, so a second
+// backend would otherwise collide with this one on all 21 HAL functions.
+// The board macro rather than ARDUINO_ARCH_RP2040 because a Feather RP2350
+// would share the arch and still need its own backend. See PORTING.md.
+#if defined(ARDUINO_ADAFRUIT_FRUITJAM_RP2350)
+
 #include <SdFat_Adafruit_Fork.h>
 
 #include "hal/arcade_hal_storage.h"
@@ -124,3 +131,5 @@ void hal_storage_close(hal_file_t *f) {
     f->fil.close();
     f->in_use = false;
 }
+
+#endif // ARDUINO_ADAFRUIT_FRUITJAM_RP2350
