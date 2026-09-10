@@ -770,9 +770,21 @@ void dkong_video_render_scanline(const dkong_system *sys, uint32_t dvi_y, uint16
         // the frame's CPU execution than a re-render would. That is the same
         // kind of intra-frame staleness the interleaved renderer already has
         // by design, at 1/240th of a frame.
+        // Instrumented to match case 1. This is the DEFAULT rotation as of
+        // 2026-09-09 (see dkong_machine.cpp), and DKONG_COST_TRACE exists to
+        // profile the default -- leaving it only in case 1 would have made
+        // the trace silently blind on the path that actually ships.
         static uint32_t last_dx = 0xFFFFFFFFu;
         if (dvi_y == av_tate.y0) last_dx = 0xFFFFFFFFu; // new frame
-        if (dx != last_dx) { render_native_row(sys, dx, row); last_dx = dx; }
+        DK_COUNT(g_lines_n);
+        if (dx != last_dx) {
+            const uint32_t t0 = DK_COST_NOW();
+            render_native_row(sys, dx, row);
+            DK_COST_ADD(g_rows_us, t0);
+            DK_COUNT(g_rows_n);
+            last_dx = dx;
+        }
+        const uint32_t te = DK_COST_NOW();
         if (av_tate.col_1to1) {
             uint16_t *out = buf + av_tate.x0;
             for (uint32_t c = 0; c < (uint32_t)DKONG_GAME_WIDTH; c++)
@@ -780,6 +792,7 @@ void dkong_video_render_scanline(const dkong_system *sys, uint32_t dvi_y, uint16
         } else {
             av_emit_row_wide_rev(buf, row, &av_tate);
         }
+        DK_COST_ADD(g_emit_us, te);
         break;
     }
 

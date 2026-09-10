@@ -5,6 +5,15 @@ SPDX-License-Identifier: MIT
 
 # Burger Time port plan (`btime`, Data East 1982)
 
+> **Note on rotation values.** Also historical: every rotation constant
+> below predates the 2026-09-09 convention inversion (DEVNOTES #106). This
+> file's `ROT270` → 1 / `ROT90` → 3 table is now `ROT270` → 3 / `ROT90` → 1,
+> and Burger Time ships at rotation 3, not 1. **The reasoning is unchanged
+> and still worth reading** — the predictor, the framebuffer invariant and
+> the "verify it in the harness, do not copy a neighbour" method all still
+> hold. Only the constants moved, and the invariant flipped sides. For
+> current values see "WHICH WAY UP" in `src/hal/arcade_video_geom.h`.
+
 > **Note on paths.** This file is a historical record, and its path
 > references predate the single-library restructure. What it calls
 > `libraries/ArcadeHAL/src/` is now `src/hal/`, `libraries/ArcadeCPU_Z80/src/`

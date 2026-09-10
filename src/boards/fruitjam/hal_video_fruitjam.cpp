@@ -21,6 +21,13 @@
 // See ArcadeMachine_Invaders's
 // invaders_video.cpp for the rotation/mirror math this geometry was
 // calibrated against.
+// Whole file guarded on the BOARD, not the architecture. Arduino compiles
+// every source under src/ regardless of the selected board, so a second
+// backend would otherwise collide with this one on all 21 HAL functions.
+// The board macro rather than ARDUINO_ARCH_RP2040 because a Feather RP2350
+// would share the arch and still need its own backend. See PORTING.md.
+#if defined(ARDUINO_ADAFRUIT_FRUITJAM_RP2350)
+
 #include "pico/sync.h"     // next_striped_spin_lock_num()
 #include "pico/platform.h" // __not_in_flash()
 #include "hardware/dma.h"  // DMA_IRQ_0
@@ -212,3 +219,5 @@ void __not_in_flash("dvi") hal_video_run(void) {
     dvi_scanbuf_main_16bpp(&dvi);
     __builtin_unreachable();
 }
+
+#endif // ARDUINO_ADAFRUIT_FRUITJAM_RP2350

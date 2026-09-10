@@ -5117,3 +5117,492 @@ Two measurement notes from the same session, both of them mine:
   Pooling a second alternating pair took the same -288us to 8.9 sigma. One
   run of a noisy measurement is not evidence of the size of an effect even
   when it happens to be the right sign.
+
+### 104. The ESP32's frame cost was 45% overhead, and DMA's real prize was not the overhead
+
+**Symptom.** Pac-Man on the Feather ESP32 V2 + 2.4" TFT FeatherWing ran at
+16.8fps: 59,689us per frame, of which 44,600us was pushing pixels and
+15,100us was Z80 emulation. A 320x240 RGB565 frame is 153,600 bytes and the
+bus runs at 40MHz, so the *unavoidable* wire time is 30,720us. Something was
+adding 14ms per frame.
+
+**Cause.** `Adafruit_SPITFT::writePixels()` lands in the Arduino core's
+`spiWritePixelsNL()` (`cores/esp32/esp32-hal-spi.c`), which is a **64-byte
+poll loop**: for every 64 bytes it byte-swaps 16 words into the SPI FIFO
+registers, writes the transfer length, sets `cmd.usr` and spins until the
+peripheral clears it. A 640-byte scanline is ten of those round-trips, 2,400
+per frame. That is the 14ms.
+
+**Fix.** `src/arch/esp32/arch_spi_dma.{h,cpp}` -- a transmit-DMA transport
+that hands one whole scanline to the chip's SPI DMA engine.
+
+**16.8fps -> 31.8fps. 59,689us -> 31,428us.**
+
+**The number that matters is not 14ms.** Removing the overhead alone predicts
+~30.7 + 15.1 = 45.8ms, or 21.8fps. The measured 31,428us is *below* that and
+within 2.3% of the bare 30,720us wire time, which means the emulation is no
+longer being paid for at all. `arch_spi_dma_write_async()` **returns
+immediately**, so with two line buffers the machine renders scanline N+1 and
+runs its slice of Z80 cycles while scanline N is still going out. Pac-Man's
+frame loop is already per-scanline interleaved (problem #19), so the overlap
+needed no restructuring -- it is the same win the Fruit Jam gets from a
+second core, bought with a second buffer instead. **Asynchrony was worth more
+than throughput: 3.4x the frame-time saving of the overhead removal.**
+
+**Four things that are easy to get wrong here, all silent:**
+
+1. **The byte swap moved.** The FIFO path swapped each RGB565 pixel into
+   wire order for free on its way into the SPI registers (`MSB_PIX_SET`).
+   DMA reads memory verbatim, so the backend now swaps the row itself --
+   160 32-bit ops, about 1us against a 130us transfer. Skipping this does
+   not fail, it just renders in the wrong colours at full speed.
+2. **`cmd.usr`, not the EOF interrupt, is completion.** The DMA EOF fires
+   when the engine has finished filling the SPI FIFO, not when the last bit
+   is on the wire. Returning on EOF would let the caller drop CS or
+   overwrite the buffer with bytes still queued.
+3. **The peripheral has to be handed back.** The Arduino core, SdFat and
+   Adafruit_ILI9341's command writes all use the CPU-FIFO path on the same
+   bus. `arch_spi_dma_wait()` stops the outlink and resets the channel, or
+   the next command byte transmits whatever DMA left staged.
+4. **The host-to-channel mapping lives outside the SPI block**, in a DPORT
+   register. Getting it wrong does not error -- the transfer starts and
+   never completes, which reads as a hang. This is why the code goes through
+   `spicommon_dma_chan_alloc()` rather than poking DPORT: the IDF sets the
+   mapping, enables the DMA clock and refcounts the channel so nothing else
+   can be handed the same one.
+
+**Architecture.** This is the same split as the audio path and for the same
+reason. `Adafruit_ILI9341` still owns the panel -- init sequence, rotation,
+address window. What no library covers is the chip's DMA engine, so that is
+hand-written and lives in `src/arch/esp32/` next to where the RP2's I2S PIO
+transport sits beside `Adafruit_TLV320_I2S`. **"Use a library" applies to
+device configuration; a silicon data path with no library to use is a
+different question, and putting it under `arch/` is what keeps the answer
+from leaking into board code.**
+
+**What is left.** 31.4ms is now essentially the 40MHz wire time, so the only
+remaining lever on this board is the clock. The divider comes off the 80MHz
+APB clock, so the next step up is 80MHz -- which would halve the wire time
+to 15.4ms and land near the 15.1ms emulation cost, i.e. roughly 60fps.
+Whether the GPIO matrix tolerates 80MHz on this wing is an open question and
+has to be answered by looking at the panel, not at a number. (These are not
+the ESP32's IOMUX SPI pins; the matrix adds delay. The display is written to
+and never read from, which is the case where that matters least.)
+
+### 105. 80MHz SPI on the TFT FeatherWing is 48fps of wrong picture
+
+**What was tried.** After DMA took the ESP32 Pac-Man frame to 31,428us
+(problem #104), that number was within 2.3% of the bare 40MHz wire time for
+153,600 bytes, so the transfer was the entire remaining cost and the only
+lever left was the clock. `setSPISpeed(80000000)`.
+
+**It worked, by every number available.** 31,428us -> 20,713us. 31.8fps ->
+**48.2fps**. Stable across 750 frames, no drift, no crash, no boot problem.
+The clock genuinely changed -- this was not a request that silently rounded.
+
+**And the picture was unusable.** The whole image wiggled rapidly left and
+right, "like a faulty horizontal hold knob on an old TV set". The ILI9341 is
+dropping clock edges at 80MHz through the GPIO matrix, so pixels shift within
+a row and the image walks. Reverted.
+
+**THE POINT OF THIS ENTRY: the instrument could not see the fault.** Frame
+time, fps, stability and the serial log all said 48fps and improving. A
+whole class of display faults -- this one, and the byte-swap error in #104 --
+changes *what* is on the panel without changing *how fast* it gets there, so
+the heartbeat is blind to them by construction. Every clock or format change
+on an SPI panel needs a human looking at the screen before it is kept. This
+project's rule about verifying on hardware is usually about timing; here it
+is about the fact that the timing was fine.
+
+**Why 80 and not something in between.** There is nothing in between. The
+ESP32's SPI clock is `APB / ((clkdiv_pre + 1) * (clkcnt_n + 1))`, and the
+core's `_spiFrequencyToClockDivWithSource()` starts its search at
+`clkcnt_n = 1`, so the smallest divisor it will produce is 2. The only way
+to get 80MHz at all is the separate `SPI_CLK_EQU_SYSCLK` bit, taken when the
+requested frequency is >= the source. So the reachable rungs are 80, 40,
+26.67, 20, 16, ... and asking for 53MHz or 60MHz quietly gets 40. (This is
+also why the pre-DMA note that "60MHz measures identically to 40MHz" was
+true and uninteresting: it *was* 40MHz.)
+
+**Where that leaves the board.** 31.4ms against a 30.7ms floor -- the bus is
+98% saturated and full-frame repainting on this wing cannot go faster. The
+remaining levers are about moving fewer bytes, not moving them faster:
+
+  - **Clipping to the active rectangle buys nothing.** See
+    arcade_video_geom.h: in tate the picture fills all 320x240 by
+    construction, so there is no border to skip. It would save 44% in yoko,
+    where the picture is 180 columns pillarboxed inside 320 -- and that was
+    briefly the most promising lever on this board, until yoko was looked at
+    on the actual panel. **CLOSED: yoko was rejected on hardware** ("the yoko
+    is super tiny and looks wrong on this screen"), and this board is run in
+    tate with the Feather held portrait. A lever that only pays in an
+    orientation nobody uses is not a lever.
+  - **Skipping unchanged scanlines** is the only lever with real headroom,
+    and it is orientation-independent. It needs a per-row address window
+    (three commands, cheap against 640 bytes) and a way to know a row is
+    unchanged. A full shadow buffer is 153,600 bytes and will not fit in
+    this chip's DRAM, so it means either PSRAM or a per-row checksum -- and
+    a checksum collision leaves a stale row on screen until its content
+    changes again, which is a correctness cost, not just a risk.
+  - It also makes frame time depend on screen activity, which trades a flat
+    31.4ms for a variable one. For an emulator aiming at a steady 60Hz that
+    is not automatically an improvement.
+
+### 106. Every game's default rotation inverted, because monitor stands only turn one way
+
+**The change.** All seven machines' default rotation swapped to the other
+tate value: Pac-Man, Ms. Pac-Man and Galaga 3 -> 1; Space Invaders, Lunar
+Rescue, Donkey Kong and Burger Time 1 -> 3.
+
+**Why, and it is not an emulation fact.** The house convention was "the TOP
+of the game's picture lands on the RIGHT-hand side of the framebuffer"
+(stated in dkong_machine.cpp, problem #41). Nothing about any cabinet
+required that side rather than the other -- it was simply the first one that
+got confirmed on hardware. But **real portrait monitor stands overwhelmingly
+rotate in one direction**, so a player turning a display to play these games
+turns it that way, and the old convention was the wrong half. Every game
+needed two ROTATE presses at boot on a physically ordinary setup.
+
+The convention is now **TOP on the LEFT**, and it lives in ONE place:
+"WHICH WAY UP" in `src/hal/arcade_video_geom.h`. It had been restated in
+five files, which is exactly the shape of a fact that drifts.
+
+**WHAT DID NOT CHANGE, and this is the part worth understanding.** The
+per-game distinction is untouched. Machines still split 3/4 across the two
+values, still for the same reason -- each game's native raster orientation is
+a fact about how its real cabinet mounted its tube -- and a default still
+cannot be copied from a neighbouring game (#33 and #41 are that mistake,
+made twice, in opposite directions). The MAME ROT predictor still holds
+seven for seven; only the constants it maps to inverted:
+
+    ROT90  -> 1   (was 3) : Pac-Man, Ms. Pac-Man, Galaga
+    ROT270 -> 3   (was 1) : Space Invaders, Lunar Rescue, Donkey Kong,
+                            Burger Time
+
+A house convention and a hardware fact were tangled together in those
+comments. Inverting one and not the other is what separated them.
+
+**The thing that had to be checked first, and nearly bit.**
+`arcade_video_geom.h` warns that a rotation default change once put red bars
+on a real screen (#33): when Galaga's default moved to a rotation with no
+fast path, the extra clear-and-copy per scanline blew its ~3ms of headroom
+outright. So **every renderer's two tate cases were read before any default
+moved**, to confirm 1 and 3 cost the same:
+
+  - **Galaga** -- safe, and only because #33 was already fixed properly:
+    both rotations take the same fast path, rotation 3 rendering reversed
+    directly via `render_native_row()`'s `reverse_x`. The file says so in
+    as many words: "at the same cost as rotation 1".
+  - **Burger Time** -- symmetric by construction, one `emit_tate_row(buf,
+    reverse)` helper for both.
+  - **Donkey Kong, Pac-Man, Ms. Pac-Man** -- forward copy versus reversed
+    copy of the same length, both behind the same `col_1to1` fast branch.
+  - **Space Invaders, Lunar Rescue** -- same loop, one extra subtraction
+    per sample in case 3.
+
+**One real asymmetry found and fixed.** Donkey Kong's `DKONG_COST_TRACE`
+instrumentation existed only in case 1. Rotation 3 is now DK's default, and
+a profiler that is blind on the path that ships is worse than no profiler,
+so case 3 is now instrumented to match. Nothing else differed.
+
+**VERIFIED ON HARDWARE.** Every orientation below was confirmed by looking
+at a real display; every number is from that same session.
+
+    game            rot  work_MEAN   work_max   starve  minq
+    Space Invaders   3      5602        5750       0     28/32
+    Lunar Rescue     3      5511        6341       0     16/32
+    Ms. Pac-Man      1      9642-9859   9987       0     28/32
+    Donkey Kong      3     12945       14828 *     0     21/32
+    Burger Time      3     14664       15494       0 **  21/32
+    Galaga           1     13454-14247 15156 *     0     19/32
+    Pac-Man          1      -- ESP32 only, see below --
+
+     * captured while the game was being PLAYED (problem #107)
+    ** starve held at its 5 boot-window events and never incremented; that
+       counter is CUMULATIVE on this game, which has been misread as a rate
+       here before
+
+All seven hold 60fps with no starvation. Two orientations that had been
+wrong twice historically (#33, #41) came out right.
+
+**Burger Time got a control, because it runs at 93% of budget** and is the
+one place a cost difference between the two tate cases would actually show.
+No rebuild was needed: the ROTATE button cycles 3 -> 0 -> 1 -> 2, so two
+presses put the OLD default on the SAME binary in the SAME session.
+
+    rot 1 (old):  work_MEAN 14736us   work_max 15389us   minq 23/32
+    rot 3 (new):  work_MEAN 14664us   work_max 15494us   minq 21/32
+
+72us one way, 105us the other, against a ~2700us spread within each sample
+set. No systematic difference, which is what the shared
+`emit_tate_row(buf, reverse)` helper predicts.
+
+**That control nearly produced a false regression.** The first comparison
+put the last THREE lines of the rot 3 capture (work_MEAN ~15265us) against
+the full 60-sample rot 1 aggregate (14736us) and appeared to show rot 3
+costing 529us more -- a real regression on the tightest game in the project,
+and entirely an artifact of comparing a tail slice to a full aggregate.
+**Aggregate both sides identically or do not compare them.** This is the
+same failure this file already records against bare aggregates more than
+once.
+
+**The one gap: Pac-Man was never run on a Fruit Jam under the new default.**
+It is confirmed at rotation 1 on the ESP32 Feather, and Ms. Pac-Man -- same
+renderer family, same new default, same rotation value -- is confirmed on
+the Fruit Jam. That is good evidence and it is not the same as having looked
+at it. If Pac-Man ever comes up wrong on a Fruit Jam, this is why.
+
+### 107. Galaga's real worst case is 15156us, and only playing the game finds it
+
+Verifying the rotation inversion (#106) on Galaga, the first capture ran
+during attract and peaked at 14467us. A second capture, taken while the game
+was actually being PLAYED, reached **15156us of the 16660us budget -- 91%,
+with 43 sprites live against attract mode's 24.** starve 0, DEFICIT_MAX 0,
+minq 19/32 at its worst.
+
+Two things follow.
+
+**The recorded peak was low.** 14946us had stood as this game's worst case
+and is quoted in three places as a live fact. The real figure is 15156us.
+Both citations that state it as current are updated; the one in
+galaga_machine.cpp is left alone deliberately, because there the number is
+part of a NARRATIVE about a past investigation ("it peaked at 14946us while
+red lines still appeared") and rewriting it would corrupt the story rather
+than correct a fact.
+
+**Attract mode is not a load test, and this has now cut both ways.** Twice
+earlier in this project a work_MEAN movement was read as a regression when
+it was really the user playing (see the Galaga and Burger Time entries).
+The instinct that followed -- treat "someone was playing" as noise to be
+excluded -- is wrong. Playing is the load. Here it was the only thing that
+reached the game's actual worst case, and a clean result at 43 sprites is
+far stronger evidence than a clean result at 24.
+
+**Rule: for a frame-budget claim on a tight game, capture while the game is
+being played, and say which you did.** An attract-mode number is a floor
+being reported as a ceiling.
+
+### 108. The ESP32 DMA transport displaces every scanline by 16 pixels, and six hypotheses were wrong before the instrument was built
+
+**Symptom.** Sparse speckle over Pac-Man on the Feather ESP32 V2, described
+as "vertical rain… dancing right to left", plus a thin strip along one
+screen edge sitting one row out of step with the rest of the picture. Present
+from the moment the DMA transport landed (#104); absent on the CPU-FIFO path.
+
+**What it actually is.** Every scanline arrives INTACT but displaced exactly
+16 pixels, its last 32 bytes dropped. There is a **constant 32-byte lag in
+the DMA-to-SPI path**: each burst emits the 32 bytes staged by the previous
+burst, then the first 608 of its own, staging its own last 32. It does not
+accumulate -- the panel still receives exactly 640 bytes per row -- so it
+holds a permanent 16-pixel phase error. Each row's first 16 pixels are the
+PREVIOUS row's last 16, which is the edge strip; everywhere else it reads as
+speckle because only lit pixels reveal it.
+
+**WHY IT SURVIVED SO LONG: every cheap test was blind to it.** A 16-pixel
+slide is invisible on flat content. An all-black frame looked perfect. A
+frame of flat-coloured stripes looked perfect. Both were reported as
+evidence that the transport was fine. They were evidence of nothing, because
+displacement and correctness are indistinguishable when adjacent pixels are
+equal. **A test that cannot fail is not a test.**
+
+**The instrument that cracked it.** The ILI9341 can be read back, so a row
+was snapshotted as it was sent and then read out of the panel's own RAM and
+diffed, with a shift search alongside the exact compare. That produced
+"best shift -16 -> 0 mismatches of 320" -- an unambiguous statement that the
+data was perfect and merely late.
+
+**The step that made it trustworthy was calibrating it against the CPU-FIFO
+path, which reports 0/320 exact.** Without that control the readback's own
+error rate would have been indistinguishable from the fault, and an early
+sparse reading (16-38 bad of 320) nearly got reported as a conclusion from
+an uncalibrated instrument.
+
+**Ruled out, each by a discriminating test:** link margin (present at 40,
+26.7 AND 13.3MHz), full duplex, CPU/DMA concurrency (synchronous DMA shows
+it too), renderer overrun (fenced buffers intact), in-flight buffer
+corruption (0 of 230,399 checksum pairs), DMA burst mode, hand-rolled
+descriptor (IDF's spicommon_dma_desc_setup_link is identical), CPU-side FIFO
+residue (a sentinel written to data_buf never reaches the wire), and IDF's
+combined SPI_AHBM_RST|SPI_AHBM_FIFO_RST reset.
+
+**Fixes attempted and why they failed:**
+- *Commands over DMA*, so the peripheral never switches source: single-byte
+  DMA bursts do not come out of this engine and the panel went black.
+- *A throwaway burst with CS high.* Cannot work against a CONSTANT lag: a
+  32-byte flush emits 32 stale bytes and stages 32 fresh ones. It relabels
+  the residue. An earlier version of this also parked CS with
+  endWrite()/startWrite(), which released the SPI transaction, so the flush
+  burst probably never went out at all.
+- *No CPU-FIFO traffic in steady state* (CS and window asserted once,
+  forever). No change, and it removes per-frame resynchronisation, so a
+  single bad burst would skew the stream permanently.
+
+**Disposition: DMA disabled, CPU-FIFO path shipping.** 17.7fps and provably
+correct, against 31.8fps and visibly wrong. The DMA code and the readback
+probe are kept, documented, and switched off.
+
+**Lessons worth more than the bug:**
+1. **Build the instrument earlier.** Six hypotheses were proposed, coded,
+   flashed and eyeballed before anything measured what the panel actually
+   received. Each cost a round trip and a human looking at a screen.
+2. **Calibrate the instrument on a known-good path before trusting it.**
+3. **A "clean" result from a test that cannot express the failure is not
+   evidence.** Black frames and flat stripes both came back clean while the
+   bug was fully present.
+4. **Frequency is data.** 26.7MHz made the artifact intermittent rather than
+   constant; that was recorded as "still present, so not the cause" and the
+   link hypothesis was dropped. A threshold was read as a binary.
+5. **The user saw it first.** The top-edge strip is visible in the stripe
+   photograph, and was dismissed as moire from photographing an LCD.
+
+### 109. The 16-pixel displacement was the hand-written register sequence, not the silicon
+
+Problem #108 ended with the ESP32 DMA transport disabled: it moved a frame
+in 36ms against the CPU-FIFO path's 56ms, and put every scanline on the
+panel displaced by exactly 16 pixels. Nine attempts to flush the 32-byte lag
+failed, and the disposition was "slower and provably correct beats faster
+and visibly wrong".
+
+**What broke the deadlock was an outside data point, not another
+hypothesis.** galagino drives this same ILI9341 at this same 40MHz and
+reaches ~30Hz -- which is 153,600 bytes at 5MB/s, essentially the wire
+limit. So efficient DMA on this exact hardware at this exact clock was
+already proven to work by someone else. The lag could not be a property of
+the chip; it had to be the register sequence, which was written from the
+TRM.
+
+**Fix: use ESP-IDF's spi_master driver.** The displacement is gone --
+confirmed on the panel, where the artifact's clearest signature was a strip
+along one screen edge sitting one row out of step with the rest of the
+picture, and that strip is now flush.
+
+**Three things had to be got right, and each failed loudly first:**
+
+1. **Bus ownership.** The IDF driver wants the bus; Adafruit_ILI9341 needs
+   it to initialise the panel and SdFat needs it to read the ROMs, both
+   through SPIClass. Those happen once at boot in that order, so the bus is
+   handed over exactly once, in `hal_video_run()` -- which the HAL already
+   defines as "ready to feed scanlines continuously". Before it, SPIClass;
+   after it, the IDF driver, permanently. `setAddrWindow` moves into the
+   board (three commands) because Adafruit_ILI9341 cannot reach the bus
+   afterwards; the init sequence, the part worth a library, runs before.
+
+2. **CHIP SELECT MUST BE DRIVEN BY HAND.** Handing the driver
+   `spics_io_num` left the panel completely deaf -- a command-only
+   display-invert self-test produced no flash at all. Holding CS low
+   directly for the life of the program fixed it instantly. **That
+   command-only self-test is the tool to reach for first when an SPI panel
+   shows nothing: it separates "not selected" from "data path wrong"
+   without involving a single pixel.**
+
+3. **ONE TRANSFER IN FLIGHT, because there are two line buffers.** Queueing
+   two transfers means the driver owns both buffers, so the next
+   acquire_scanline() hands back a buffer still being read and the renderer
+   writes into it mid-transfer. On screen: clean at the top, badly broken
+   through the middle once the queue saturated, and colours shifted between
+   adjacent RGB565 fields where a pixel was half-overwritten. **Queue depth
+   and buffer count are the same number.** Three buffers would allow two in
+   flight; two buffers allow one.
+
+**Cost so far: 46.6ms/frame (21.4fps) against the FIFO path's 56.5ms.**
+Correct, but well off the 30.7ms wire floor and slower than the 36ms the
+same driver managed while corrupt, which is unexplained and is the next
+thing to chase.
+
+**The lesson that generalises.** Six hypotheses, nine fix attempts and a
+long stretch of a collaborator's evening went into defending a hand-written
+register sequence against a maintained vendor driver. The reasoning for
+writing it by hand was that no library covered the data path -- which was
+true of the RP2 I2S transport (#104) and simply wrong here. **When a
+transport misbehaves in ways the datasheet does not explain, check whether
+somebody else's working code uses a driver you dismissed.**
+
+### 110. Decoupling game speed from display rate: 40% -> 87% of arcade pace
+
+**The problem nobody had named.** `pacman_run_frame()` advances exactly one
+frame of Z80 time per call, and the ESP32 sketch calls it once per painted
+frame with no wall-clock pacing. So the emulated world advanced at the
+DISPLAY rate. At 24fps that is 40% of a real cabinet's 60.6Hz -- ghosts at
+half speed, the tune slow. On the Fruit Jam this never showed, because
+acquire_scanline() blocks on the DVI queue at a true 60Hz and paces the
+game correctly by accident of architecture.
+
+**It presented as a smoothness problem and it was a speed problem.** "Still
+looks slow to my eye" was read as frame rate for a long time.
+
+**The fix**, taken from galagino via a question the user asked it:
+`pacman_run_frames(system, n)` advances n frames of cycles and fires n
+vblank interrupts while painting ONCE. The Z80 sees the interrupt rate the
+real hardware produced -- timers, animation and game logic all authentic --
+and only the picture is decimated.
+
+    display fps   emulated fps   % of real
+        24.2          24.2          40
+        26.2          52.5          87
+
+**It is nearly free, and that is the whole reason it works.** On an SPI
+panel the transfer dominates: a 320-pixel row is ~128us on the wire against
+~60us of render plus CPU, so ~16ms of every frame was already being spent
+WAITING. A second frame of Z80 fits inside that wait. Frame time did not
+rise; it FELL, 41.4ms -> 38.1ms, which was not predicted. The plausible
+reading is that the extra CPU keeps the transfer queue fuller where the
+renderer previously blocked early, but that is a hypothesis, not a
+measurement.
+
+**Verified on hardware: no tearing on moving sprites.** That was the risk --
+a painted scanline can now reflect state from anywhere in a two-frame span
+rather than one, an extension of the intra-frame staleness this loop
+already has by design. Pac-Man moves slowly enough that it does not show.
+
+**THE ONE THING THAT HAS TO BE SCALED ALONGSIDE IT.** Anything animated by
+the RENDERER rather than by the emulated machine advances once per painted
+frame, not once per emulated frame, so it runs at 1/n speed. Pac-Man has no
+such element. **Galaga's starfield does** -- `galaga_video.cpp` generates
+it, so its scroll step must be multiplied by n. galagino hit exactly this
+and doubles its own star scroll in half-rate mode. The warning is recorded
+at run_frame_interleaved() where someone would trip over it, not only here.
+
+**Remaining gap to authentic speed is now a transport problem, not a
+design one.** 60Hz needs the display at 33.3ms; it is at 38.1ms, and
+30.7ms of that is the unavoidable wire time. Closing ~5ms of the 7.4ms
+overhead would give a true-speed machine.
+
+### 111. Per-transfer overhead, not pixels: 8-row strips take the ESP32 to the wire limit
+
+**The measurement that mattered took ten minutes and should have come
+first.** A one-shot benchmark pushing frames with NO rendering and NO
+emulation isolated the transport: 38,413us against a 30,720us wire floor.
+Two things fell out at once.
+
+1. **Emulation and rendering were already fully hidden.** The full game
+   frame measured 38-39ms -- the same. Every microsecond above the floor
+   was transport.
+2. **7,693us spread across 240 transfers is ~32us each**, which at 240MHz
+   is ~7,700 CPU cycles per transfer. Nothing to do with pixels: FreeRTOS
+   queue round-trips and driver bookkeeping, paid once per
+   `spi_device_queue_trans` / `get_trans_result` pair.
+
+**Fix: batch 8 scanlines into one transfer.** 30 transfers per frame
+instead of 240.
+
+    overhead   frame     display   emulated   % of real
+    7,693us    38.1ms     26.2       52.5        87
+      955us    32.5ms     30.7       61.4       101
+
+**31,675us against a 30,720us floor -- 3% off the physical limit of this
+bus.** There is nothing meaningful left to win here.
+
+**It cost nothing above the HAL.** `acquire_scanline()` hands out a pointer
+INTO the strip being filled, so the machine renders straight into the
+buffer that gets sent. No copy, no contract change, no machine change.
+
+**Three strips, because two transfers are in flight.** Same rule as #109:
+queue depth and buffer count are the same number. 13.4KB of DRAM for a 15%
+frame-time win.
+
+**The lesson.** Two separate sessions of work went into the transport --
+one replacing a FIFO poll loop with DMA, one replacing hand-written
+registers with the vendor driver -- and BOTH left a bigger, simpler win on
+the table: the transfers were too small. A benchmark that isolates one
+layer is worth more than any amount of reasoning about which layer is slow,
+and it is cheap. **Measure the layer, not the whole.**

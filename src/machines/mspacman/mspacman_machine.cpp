@@ -57,23 +57,21 @@ void mspacman_init(mspacman_system *system) {
     // a crash).
     system->bank = MSPACMAN_BANK_DECRYPTED;
 
-    // Screen rotation 3 (90 deg CW), NOT 1. This is the value that puts the
-    // game upright on the same physically-rotated monitor that
-    // ArcadeMachine_Invaders and ArcadeMachine_LunarRescue are upright on
-    // at their own default of 1 -- confirmed on real hardware, where this
-    // machine at rotation 1 came up 180 degrees off and needed two presses
-    // of the ROTATE button to correct.
+    // Rotation 1, and the 8080bw family defaults to 3 -- opposite values,
+    // one physical result. See "WHICH WAY UP" in arcade_video_geom.h for
+    // the house convention both are calibrated against; this game is MAME
+    // ROT90, which is the half that lands on 1.
     //
-    // The two families genuinely differ, so this is not a bug in either
-    // renderer: rotation 1 and rotation 3 are implemented identically in
-    // both (case 3 reverses both axes relative to case 1, i.e. an exact
-    // 180). What differs is which end of each game's NATIVE raster is the
-    // top of the player's screen, because the real cabinets mounted their
-    // monitors in opposite orientations -- the 8080bw games one way, the
-    // Namco games the other. An earlier version of this line copied
-    // Invaders' default with the comment "same convention as Invaders",
-    // which was precisely the wrong assumption.
-    system->rotation = 3;
+    // The two families genuinely differ, and that is not a bug in either
+    // renderer: 1 and 3 are an exact 180 of each other and both are
+    // implemented at equal cost. What differs is which end of each game's
+    // NATIVE raster is the top of the player's screen, because the real
+    // cabinets mounted their tubes in opposite orientations. An earlier
+    // version of this line copied Invaders' default with the comment "same
+    // convention as Invaders", which was precisely the wrong assumption --
+    // and the two have now swapped values without that ever ceasing to be
+    // true, which is the point.
+    system->rotation = 1;
     system->mirror_x = false;
 
     hal_video_init();

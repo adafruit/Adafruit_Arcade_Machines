@@ -28,28 +28,35 @@
 #define ADAFRUIT_ARCADE_MACHINES_H
 
 // -----------------------------------------------------------------------
-// Optimisation guard. Do not remove without reading DEVNOTES.md #35/#49.
+// Optimisation guard. Do not remove without reading extras/DEVNOTES.md
+// #35/#49.
 //
-// The RP2350 core's DEFAULT is "Small (-Os) (standard)", and no game here
-// is fast enough at it: the emulated frame overruns the 16.66ms DVI budget,
-// the scanline queue starves, and the screen goes SOLID RED -- the same red
-// this project uses for "no SD card", which is why the mistake is so
-// expensive to diagnose. Ms. Pac-Man needs 19.5ms at -Os and Galaga 17.8ms.
+// On RP2040/RP2350 this is a hard error, because it is measured: at the
+// core's default "Small (-Os) (standard)" no game here fits the 16.66ms DVI
+// frame budget. The scanline queue starves and the screen goes SOLID RED --
+// the same red this project uses for "no SD card", which is why the mistake
+// is so expensive to diagnose. Ms. Pac-Man needs 19.5ms at -Os, Galaga
+// 17.8ms.
 //
-// Each example's sketch.yaml pins the right level and arduino-cli honours
-// it, but the Arduino IDE does not always, and opening an example from
-// File > Examples uses whatever the board menu currently says. Failing the
-// build with a sentence beats shipping a red screen that looks like broken
-// hardware.
-//
-// -O0 and -Og are not caught here (they define no __OPTIMIZE_SIZE__) and
-// are also too slow; they are not a default anyone lands on by accident.
+// Elsewhere it is only a warning. These are cycle-accurate emulators and
+// -Os is very unlikely to be fast enough on any target, but "unlikely" is
+// not the same as measured, and a hard error would mean a new architecture
+// cannot even be compiled to find out. The ESP32 core defaults to -Os, so
+// erroring there would break the first build of every port before anyone
+// had a number. Raise it to an error for a platform once someone has one.
 // -----------------------------------------------------------------------
 #if defined(__OPTIMIZE_SIZE__)
-#error "Adafruit Arcade Machines: set Tools > Optimize to 'Optimize More (-O2)' or \
+  #if defined(ARDUINO_ARCH_RP2040) || defined(PICO_ON_DEVICE)
+    #error "Adafruit Arcade Machines: set Tools > Optimize to 'Optimize More (-O2)' or \
 'Optimize Even More (-O3)'. The default -Os misses the 16.66ms frame budget \
 and the screen goes solid red, which looks exactly like a hardware fault. \
 See each example's sketch.yaml for the level that example needs."
+  #else
+    #warning "Adafruit Arcade Machines is being built at -Os. These are \
+cycle-accurate emulators; on RP2 that is measurably too slow to hold 60fps, \
+and it is unlikely to be fast enough here either. Raise Tools > Optimize if \
+the frame rate disappoints."
+  #endif
 #endif
 
 #include "hal/ArcadeHAL.h"          // the four video/audio/input/storage contracts

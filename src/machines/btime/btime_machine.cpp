@@ -117,17 +117,21 @@ void btime_init(btime_system *system) {
     // flag in the driver's GAME() line. Checked against every game in this
     // project that is confirmed on hardware, it is six for six --
     //
-    //     ROT270 -> 1 : Space Invaders, Lunar Rescue, Donkey Kong
-    //     ROT90  -> 3 : Pac-Man, Ms. Pac-Man, Galaga
+    //     ROT270 -> 3 : Space Invaders, Lunar Rescue, Donkey Kong
+    //     ROT90  -> 1 : Pac-Man, Ms. Pac-Man, Galaga
     //
-    // -- and btime's GAME() line says ROT270, so 1. That does not
+    // (Those constants inverted on 2026-09-09 with the house convention --
+    // see "WHICH WAY UP" in arcade_video_geom.h. The PREDICTOR did not
+    // change; only what it predicts.)
+    //
+    // -- and btime's GAME() line says ROT270, so 3. That does not
     // contradict "cannot be copied from a neighbour" (neighbours genuinely
     // differ, which is why the DRIVER rather than the neighbour is the
     // source); it does mean the starting guess is evidence-based rather
     // than a coin flip. It is still a prediction: render both candidates in
     // tools/btime_host/ and check where the score text lands before
     // trusting it.
-    system->rotation = 1;
+    system->rotation = 3;
     system->mirror_x = false;
 
     // Inputs are ACTIVE LOW on this board (except the coin bits), so the
