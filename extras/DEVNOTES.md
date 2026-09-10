@@ -5305,12 +5305,52 @@ instrumentation existed only in case 1. Rotation 3 is now DK's default, and
 a profiler that is blind on the path that ships is worse than no profiler,
 so case 3 is now instrumented to match. Nothing else differed.
 
-**Still unverified at the time of writing.** Only the ESP32 Pac-Man build has
-been on a screen (boots to rotation 1, correct). The seven Fruit Jam builds
-compile, and the reasoning above says they are right, but **"1 and 3 are an
-exact 180 and both cost the same" is a claim about the code, not about which
-way up the picture comes out.** That is a thing only a display can answer,
-and each game needs its own SD card to answer it.
+**VERIFIED ON HARDWARE.** Every orientation below was confirmed by looking
+at a real display; every number is from that same session.
+
+    game            rot  work_MEAN   work_max   starve  minq
+    Space Invaders   3      5602        5750       0     28/32
+    Lunar Rescue     3      5511        6341       0     16/32
+    Ms. Pac-Man      1      9642-9859   9987       0     28/32
+    Donkey Kong      3     12945       14828 *     0     21/32
+    Burger Time      3     14664       15494       0 **  21/32
+    Galaga           1     13454-14247 15156 *     0     19/32
+    Pac-Man          1      -- ESP32 only, see below --
+
+     * captured while the game was being PLAYED (problem #107)
+    ** starve held at its 5 boot-window events and never incremented; that
+       counter is CUMULATIVE on this game, which has been misread as a rate
+       here before
+
+All seven hold 60fps with no starvation. Two orientations that had been
+wrong twice historically (#33, #41) came out right.
+
+**Burger Time got a control, because it runs at 93% of budget** and is the
+one place a cost difference between the two tate cases would actually show.
+No rebuild was needed: the ROTATE button cycles 3 -> 0 -> 1 -> 2, so two
+presses put the OLD default on the SAME binary in the SAME session.
+
+    rot 1 (old):  work_MEAN 14736us   work_max 15389us   minq 23/32
+    rot 3 (new):  work_MEAN 14664us   work_max 15494us   minq 21/32
+
+72us one way, 105us the other, against a ~2700us spread within each sample
+set. No systematic difference, which is what the shared
+`emit_tate_row(buf, reverse)` helper predicts.
+
+**That control nearly produced a false regression.** The first comparison
+put the last THREE lines of the rot 3 capture (work_MEAN ~15265us) against
+the full 60-sample rot 1 aggregate (14736us) and appeared to show rot 3
+costing 529us more -- a real regression on the tightest game in the project,
+and entirely an artifact of comparing a tail slice to a full aggregate.
+**Aggregate both sides identically or do not compare them.** This is the
+same failure this file already records against bare aggregates more than
+once.
+
+**The one gap: Pac-Man was never run on a Fruit Jam under the new default.**
+It is confirmed at rotation 1 on the ESP32 Feather, and Ms. Pac-Man -- same
+renderer family, same new default, same rotation value -- is confirmed on
+the Fruit Jam. That is good evidence and it is not the same as having looked
+at it. If Pac-Man ever comes up wrong on a Fruit Jam, this is why.
 
 ### 107. Galaga's real worst case is 15156us, and only playing the game finds it
 
