@@ -842,9 +842,11 @@ GALAGA_VID_RAMFUNC void galaga_video_render_scanline(const galaga_system *sys, u
         // Aspect-corrected: the raster no longer lands one-to-one on the
         // canvas, so it has to go through a scratch row. This costs the
         // extra clear-and-copy that DEVNOTES #33 measured as enough to blow
-        // this game's headroom -- Galaga peaks at 14946us of 16660us, so
+        // this game's headroom -- Galaga peaks at 15156us of 16660us, so
         // MEASURE ON HARDWARE before shipping the stretch on as this
-        // machine's default.
+        // machine's default. And measure it while PLAYING: attract mode
+        // tops out around 14500us, and the 15156 only appears with a full
+        // formation on screen.
         static uint16_t scratch[GALAGA_GAME_WIDTH];
 
         // Skip the render when this canvas row repeats the previous one --

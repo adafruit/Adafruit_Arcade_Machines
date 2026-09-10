@@ -5311,3 +5311,33 @@ compile, and the reasoning above says they are right, but **"1 and 3 are an
 exact 180 and both cost the same" is a claim about the code, not about which
 way up the picture comes out.** That is a thing only a display can answer,
 and each game needs its own SD card to answer it.
+
+### 107. Galaga's real worst case is 15156us, and only playing the game finds it
+
+Verifying the rotation inversion (#106) on Galaga, the first capture ran
+during attract and peaked at 14467us. A second capture, taken while the game
+was actually being PLAYED, reached **15156us of the 16660us budget -- 91%,
+with 43 sprites live against attract mode's 24.** starve 0, DEFICIT_MAX 0,
+minq 19/32 at its worst.
+
+Two things follow.
+
+**The recorded peak was low.** 14946us had stood as this game's worst case
+and is quoted in three places as a live fact. The real figure is 15156us.
+Both citations that state it as current are updated; the one in
+galaga_machine.cpp is left alone deliberately, because there the number is
+part of a NARRATIVE about a past investigation ("it peaked at 14946us while
+red lines still appeared") and rewriting it would corrupt the story rather
+than correct a fact.
+
+**Attract mode is not a load test, and this has now cut both ways.** Twice
+earlier in this project a work_MEAN movement was read as a regression when
+it was really the user playing (see the Galaga and Burger Time entries).
+The instinct that followed -- treat "someone was playing" as noise to be
+excluded -- is wrong. Playing is the load. Here it was the only thing that
+reached the game's actual worst case, and a clean result at 43 sprites is
+far stronger evidence than a clean result at 24.
+
+**Rule: for a frame-budget claim on a tight game, capture while the game is
+being played, and say which you did.** An attract-mode number is a floor
+being reported as a ceiling.

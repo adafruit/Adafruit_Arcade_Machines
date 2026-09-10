@@ -127,8 +127,11 @@ typedef struct {
     // when Galaga's default rotation changed to one WITHOUT a direct path,
     // the extra clear-and-copy per scanline was instantly enough to blow
     // its ~3ms of headroom and put red bars back on a real screen. Galaga
-    // peaks at 14946us of a 16660us budget, so the shortcut is load-bearing
-    // at that game's default.
+    // peaks at 15156us of a 16660us budget -- 91%, measured 2026-09-09
+    // under active play with 43 sprites live -- so the shortcut is
+    // load-bearing at that game's default. (Was 14946us; the higher figure
+    // came from actually playing the game rather than watching attract,
+    // which is the only way this game's worst case shows up.)
     uint8_t  col_1to1;
 
     // The SAME column mapping, inverted: rep[s] is how many canvas columns
