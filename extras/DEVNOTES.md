@@ -5381,3 +5381,76 @@ far stronger evidence than a clean result at 24.
 **Rule: for a frame-budget claim on a tight game, capture while the game is
 being played, and say which you did.** An attract-mode number is a floor
 being reported as a ceiling.
+
+### 108. The ESP32 DMA transport displaces every scanline by 16 pixels, and six hypotheses were wrong before the instrument was built
+
+**Symptom.** Sparse speckle over Pac-Man on the Feather ESP32 V2, described
+as "vertical rain… dancing right to left", plus a thin strip along one
+screen edge sitting one row out of step with the rest of the picture. Present
+from the moment the DMA transport landed (#104); absent on the CPU-FIFO path.
+
+**What it actually is.** Every scanline arrives INTACT but displaced exactly
+16 pixels, its last 32 bytes dropped. There is a **constant 32-byte lag in
+the DMA-to-SPI path**: each burst emits the 32 bytes staged by the previous
+burst, then the first 608 of its own, staging its own last 32. It does not
+accumulate -- the panel still receives exactly 640 bytes per row -- so it
+holds a permanent 16-pixel phase error. Each row's first 16 pixels are the
+PREVIOUS row's last 16, which is the edge strip; everywhere else it reads as
+speckle because only lit pixels reveal it.
+
+**WHY IT SURVIVED SO LONG: every cheap test was blind to it.** A 16-pixel
+slide is invisible on flat content. An all-black frame looked perfect. A
+frame of flat-coloured stripes looked perfect. Both were reported as
+evidence that the transport was fine. They were evidence of nothing, because
+displacement and correctness are indistinguishable when adjacent pixels are
+equal. **A test that cannot fail is not a test.**
+
+**The instrument that cracked it.** The ILI9341 can be read back, so a row
+was snapshotted as it was sent and then read out of the panel's own RAM and
+diffed, with a shift search alongside the exact compare. That produced
+"best shift -16 -> 0 mismatches of 320" -- an unambiguous statement that the
+data was perfect and merely late.
+
+**The step that made it trustworthy was calibrating it against the CPU-FIFO
+path, which reports 0/320 exact.** Without that control the readback's own
+error rate would have been indistinguishable from the fault, and an early
+sparse reading (16-38 bad of 320) nearly got reported as a conclusion from
+an uncalibrated instrument.
+
+**Ruled out, each by a discriminating test:** link margin (present at 40,
+26.7 AND 13.3MHz), full duplex, CPU/DMA concurrency (synchronous DMA shows
+it too), renderer overrun (fenced buffers intact), in-flight buffer
+corruption (0 of 230,399 checksum pairs), DMA burst mode, hand-rolled
+descriptor (IDF's spicommon_dma_desc_setup_link is identical), CPU-side FIFO
+residue (a sentinel written to data_buf never reaches the wire), and IDF's
+combined SPI_AHBM_RST|SPI_AHBM_FIFO_RST reset.
+
+**Fixes attempted and why they failed:**
+- *Commands over DMA*, so the peripheral never switches source: single-byte
+  DMA bursts do not come out of this engine and the panel went black.
+- *A throwaway burst with CS high.* Cannot work against a CONSTANT lag: a
+  32-byte flush emits 32 stale bytes and stages 32 fresh ones. It relabels
+  the residue. An earlier version of this also parked CS with
+  endWrite()/startWrite(), which released the SPI transaction, so the flush
+  burst probably never went out at all.
+- *No CPU-FIFO traffic in steady state* (CS and window asserted once,
+  forever). No change, and it removes per-frame resynchronisation, so a
+  single bad burst would skew the stream permanently.
+
+**Disposition: DMA disabled, CPU-FIFO path shipping.** 17.7fps and provably
+correct, against 31.8fps and visibly wrong. The DMA code and the readback
+probe are kept, documented, and switched off.
+
+**Lessons worth more than the bug:**
+1. **Build the instrument earlier.** Six hypotheses were proposed, coded,
+   flashed and eyeballed before anything measured what the panel actually
+   received. Each cost a round trip and a human looking at a screen.
+2. **Calibrate the instrument on a known-good path before trusting it.**
+3. **A "clean" result from a test that cannot express the failure is not
+   evidence.** Black frames and flat stripes both came back clean while the
+   bug was fully present.
+4. **Frequency is data.** 26.7MHz made the artifact intermittent rather than
+   constant; that was recorded as "still present, so not the cause" and the
+   link hypothesis was dropped. A threshold was read as a binary.
+5. **The user saw it first.** The top-edge strip is visible in the stripe
+   photograph, and was dismissed as moire from photographing an LCD.

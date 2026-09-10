@@ -96,7 +96,9 @@ void loop() {
     // inside it; a number well above that means something stopped fitting.
     static uint32_t frame = 0, emul_us = 0, push_us = 0, t_prev = 0;
     uint32_t t0 = micros();
+
     pacman_run_frame(&g_system);     // emulation AND scanline submission
+
     uint32_t total = micros() - t0;
 
     emul_us += total;

@@ -19,6 +19,7 @@
 #if CONFIG_IDF_TARGET_ESP32
 
 #include "soc/spi_struct.h"
+#include "soc/spi_reg.h"
 #include "esp_rom_lldesc.h"
 #include "esp_private/spi_common_internal.h"
 #include "esp_private/spi_dma.h"
@@ -27,7 +28,7 @@
 // One descriptor is enough and always will be: the caller is a display
 // backend pushing one scanline at a time and a descriptor holds 4092 bytes,
 // which is 2046 RGB565 pixels. The header enforces the limit.
-static lldesc_t s_desc __attribute__((aligned(4)));
+static spi_dma_desc_t s_desc __attribute__((aligned(4)));
 
 static volatile spi_dev_t   *s_dev  = NULL;
 static spi_dma_chan_handle_t s_chan;
@@ -60,9 +61,17 @@ bool arch_spi_dma_init(int spi_host) {
     }
     s_chan = dma_ctx->tx_dma_chan;
 
-    // Burst mode for both the data and the descriptor fetch. Persists for the
-    // life of the channel, so it is set once here rather than per transfer.
-    spi_dma_enable_burst(s_chan, true, true);
+    // BURST MODE OFF -- deliberately, and this is a finding, not a default.
+    //
+    // It was originally enabled for both the data and the descriptor fetch
+    // because it reads as free throughput. It is the one setting in this
+    // file capable of corrupting words WITHIN a transfer while leaving the
+    // source buffer perfectly intact, which is the exact signature of the
+    // artifact this was chased with: rows verified byte-correct in memory
+    // (0 of 230,399 in-flight checks failed), no buffer overrun, unaffected
+    // by clock from 40MHz down to 13.3MHz, and invisible on any content
+    // without within-row variation.
+    spi_dma_enable_burst(s_chan, false, false);
 
     s_dev  = dev;
     s_busy = false;
@@ -78,22 +87,63 @@ void arch_spi_dma_write_async(const void *data, size_t len) {
     // reconfigured underneath it.
     while (dev->cmd.usr) { }
 
-    s_desc.size   = len;
-    s_desc.length = len;
-    s_desc.offset = 0;
-    s_desc.sosf   = 0;
-    s_desc.eof    = 1;       // single descriptor, so it is also the last
-    s_desc.owner  = 1;       // hardware owns it until the burst completes
-    s_desc.buf    = (const uint8_t *)data;
-    s_desc.qe.stqe_next = NULL;
+    // Descriptor built by the IDF's own helper rather than by hand. The
+    // hand-rolled version set the documented fields correctly as far as
+    // reading the TRM goes, and still produced a row displaced by exactly
+    // 16 pixels -- so "as far as reading the TRM goes" was not far enough.
+    spicommon_dma_desc_setup_link(&s_desc, data, (int)len, false);
 
     spi_dma_reset(s_chan);
+
+    // DMA FIFO RESET -- a SEPARATE operation from the channel reset above,
+    // and the one this file was missing.
+    //
+    // spi_dma_reset() resets the DMA channel. The path from that engine
+    // into the SPI transmit FIFO is the AHB master, which has its own two
+    // reset bits, and they must be raised TOGETHER and dropped TOGETHER:
+    // that is what the IDF's spi_ll_dma_tx_fifo_reset() does, via
+    // SPI_LL_DMA_FIFO_RST_MASK. Pulsing them one at a time -- which is what
+    // this code did, on the reasoning that it matched the channel reset's
+    // sequential style -- does not clear the FIFO.
+    //
+    // The symptom of getting it wrong is worth recording, because nothing
+    // about it says "FIFO": every scanline arrived INTACT but displaced
+    // exactly 16 pixels (32 bytes) to the right, with the last 32 bytes
+    // dropped. Each burst left 32 bytes staged; the next burst clocked
+    // those out first and left 32 of its own behind, so the lag sustained
+    // itself forever at exactly one FIFO-load.
+    //
+    // Read back off the panel's own RAM to establish that: best shift -16
+    // gave 0 mismatches of 320, against 0/320 exact on the CPU-FIFO path.
+    // Invisible on flat content -- an all-black frame and a flat-stripe
+    // frame both looked perfect -- which is why it survived as unexplained
+    // "vertical rain" over real game graphics.
+    dev->dma_conf.val |=  (SPI_AHBM_RST | SPI_AHBM_FIFO_RST);
+    dev->dma_conf.val &= ~(SPI_AHBM_RST | SPI_AHBM_FIFO_RST);
 
     // Clear the whole outlink register before arming it. spi_dma_start()
     // writes the address and the start bit as a read-modify-write, so the
     // stop bit arch_spi_dma_wait() set would otherwise survive and the
     // transfer would never begin.
     dev->dma_out_link.val = 0;
+
+    // HALF-DUPLEX, TRANSMIT ONLY, FOR THE DURATION OF THE BURST.
+    //
+    // The Arduino core sets user.doutdin and user.usr_miso once when the bus
+    // starts and never clears them, so the peripheral sits in full duplex.
+    // That is harmless on the CPU-FIFO path -- unwanted receive bits land in
+    // data_buf and nobody reads them, which is why spiWritePixelsNL() can
+    // ignore the whole question. It is NOT harmless with DMA: a TX link
+    // armed, full duplex selected and NO RX link is a combination the IDF
+    // driver never produces, and it corrupts occasional transfers. That was
+    // the "vertical rain" -- single scanlines arriving wrong, drifting
+    // across the picture, visible even on a frozen frame where the same
+    // bytes were sent every time.
+    //
+    // Restored in arch_spi_dma_wait(), because SPIClass and everything built
+    // on it expect to find the bus as they left it.
+    dev->user.doutdin  = 0;
+    dev->user.usr_miso = 0;
 
     // Length is set on the SPI side, not the DMA side: the descriptor says
     // how much to fetch, this says how many bits to clock, and they must
@@ -115,8 +165,19 @@ void arch_spi_dma_wait(void) {
 
     // cmd.usr clears when the last bit is on the wire, not when the DMA
     // engine finished filling the FIFO. That distinction matters: returning
-    // on the EOF interrupt instead would let the caller deassert CS or
-    // overwrite the buffer with bytes still queued.
+    // on an EOF flag instead would let the caller deassert CS or overwrite
+    // the buffer with bytes still queued.
+    //
+    // This IS the whole completion test, and that is not an assumption --
+    // the IDF's own spi_hal_usr_is_done() checks exactly this and nothing
+    // else. An earlier version of this file also spun on
+    // dma_int_raw.out_total_eof, reasoning that the SPI block going idle
+    // need not mean the DMA engine had retired the descriptor. That bit
+    // never fires for a master TX-only burst on this silicon, so the spin
+    // never exited and the board hung after asset load with no frames at
+    // all. If a stricter completion check is ever really needed, out_eof is
+    // the one to try, and it needs a bounded spin so a wrong guess cannot
+    // hang the machine again.
     while (dev->cmd.usr) { }
 
     // Hand the peripheral back. Without this the next CPU-FIFO write on this
@@ -125,6 +186,11 @@ void arch_spi_dma_wait(void) {
     dev->dma_out_link.stop  = 1;
     dev->dma_out_link.start = 0;
     spi_dma_reset(s_chan);
+    dev->dma_int_clr.val = 0xFFFFFFFFu;
+
+    // Full duplex back on, as the Arduino core left it. See write_async().
+    dev->user.doutdin  = 1;
+    dev->user.usr_miso = 1;
 
     s_busy = false;
 }

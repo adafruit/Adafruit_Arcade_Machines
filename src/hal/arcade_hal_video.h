@@ -75,6 +75,10 @@ void hal_video_submit_scanline(uint16_t *buf);
 // "Boot-time error screen" sections for why this ordering matters).
 void hal_video_run(void);
 
+// DIAGNOSTIC, board-optional: read one row back from the display device and
+// compare it against what was sent. Ground truth for what arrived.
+void hal_video_probe_readback(void);
+
 // Microseconds spent BLOCKED inside hal_video_acquire_scanline() since the
 // previous call to this function, then resets the counter.
 //
