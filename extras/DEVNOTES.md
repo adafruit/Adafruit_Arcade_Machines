@@ -5228,10 +5228,15 @@ true and uninteresting: it *was* 40MHz.)
 98% saturated and full-frame repainting on this wing cannot go faster. The
 remaining levers are about moving fewer bytes, not moving them faster:
 
-  - **Clipping to the active rectangle buys nothing in the default tate
-    orientation** -- see arcade_video_geom.h: in tate the picture fills all
-    320x240 by construction. It would save 44% in yoko, where the picture is
-    180 columns pillarboxed inside 320, but that is the non-default case.
+  - **Clipping to the active rectangle buys nothing.** See
+    arcade_video_geom.h: in tate the picture fills all 320x240 by
+    construction, so there is no border to skip. It would save 44% in yoko,
+    where the picture is 180 columns pillarboxed inside 320 -- and that was
+    briefly the most promising lever on this board, until yoko was looked at
+    on the actual panel. **CLOSED: yoko was rejected on hardware** ("the yoko
+    is super tiny and looks wrong on this screen"), and this board is run in
+    tate with the Feather held portrait. A lever that only pays in an
+    orientation nobody uses is not a lever.
   - **Skipping unchanged scanlines** is the only lever with real headroom,
     and it is orientation-independent. It needs a per-row address window
     (three commands, cheap against 640 bytes) and a way to know a row is
