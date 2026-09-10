@@ -5516,3 +5516,53 @@ writing it by hand was that no library covered the data path -- which was
 true of the RP2 I2S transport (#104) and simply wrong here. **When a
 transport misbehaves in ways the datasheet does not explain, check whether
 somebody else's working code uses a driver you dismissed.**
+
+### 110. Decoupling game speed from display rate: 40% -> 87% of arcade pace
+
+**The problem nobody had named.** `pacman_run_frame()` advances exactly one
+frame of Z80 time per call, and the ESP32 sketch calls it once per painted
+frame with no wall-clock pacing. So the emulated world advanced at the
+DISPLAY rate. At 24fps that is 40% of a real cabinet's 60.6Hz -- ghosts at
+half speed, the tune slow. On the Fruit Jam this never showed, because
+acquire_scanline() blocks on the DVI queue at a true 60Hz and paces the
+game correctly by accident of architecture.
+
+**It presented as a smoothness problem and it was a speed problem.** "Still
+looks slow to my eye" was read as frame rate for a long time.
+
+**The fix**, taken from galagino via a question the user asked it:
+`pacman_run_frames(system, n)` advances n frames of cycles and fires n
+vblank interrupts while painting ONCE. The Z80 sees the interrupt rate the
+real hardware produced -- timers, animation and game logic all authentic --
+and only the picture is decimated.
+
+    display fps   emulated fps   % of real
+        24.2          24.2          40
+        26.2          52.5          87
+
+**It is nearly free, and that is the whole reason it works.** On an SPI
+panel the transfer dominates: a 320-pixel row is ~128us on the wire against
+~60us of render plus CPU, so ~16ms of every frame was already being spent
+WAITING. A second frame of Z80 fits inside that wait. Frame time did not
+rise; it FELL, 41.4ms -> 38.1ms, which was not predicted. The plausible
+reading is that the extra CPU keeps the transfer queue fuller where the
+renderer previously blocked early, but that is a hypothesis, not a
+measurement.
+
+**Verified on hardware: no tearing on moving sprites.** That was the risk --
+a painted scanline can now reflect state from anywhere in a two-frame span
+rather than one, an extension of the intra-frame staleness this loop
+already has by design. Pac-Man moves slowly enough that it does not show.
+
+**THE ONE THING THAT HAS TO BE SCALED ALONGSIDE IT.** Anything animated by
+the RENDERER rather than by the emulated machine advances once per painted
+frame, not once per emulated frame, so it runs at 1/n speed. Pac-Man has no
+such element. **Galaga's starfield does** -- `galaga_video.cpp` generates
+it, so its scroll step must be multiplied by n. galagino hit exactly this
+and doubles its own star scroll in half-rate mode. The warning is recorded
+at run_frame_interleaved() where someone would trip over it, not only here.
+
+**Remaining gap to authentic speed is now a transport problem, not a
+design one.** 60Hz needs the display at 33.3ms; it is at 38.1ms, and
+30.7ms of that is the unavoidable wire time. Closing ~5ms of the 7.4ms
+overhead would give a true-speed machine.

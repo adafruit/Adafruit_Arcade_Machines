@@ -134,17 +134,58 @@ bool pacman_load_assets(pacman_system *system, uint16_t *out_error_color) {
 // 2^32 exactly as the counter does. DEVNOTES.md problem #22 is a real
 // permanent hang from getting this wrong, and it is why every local here is
 // uint32_t and not `long`.
-static void run_frame_interleaved(pacman_system *system) {
+// `emulated_frames` DECOUPLES GAME SPEED FROM DISPLAY RATE, and exists for
+// boards whose display cannot keep up with 60Hz.
+//
+// The machine advances that many frames' worth of cycles and fires that
+// many vblank interrupts, while painting the screen ONCE. The Z80 therefore
+// sees the interrupt rate the real hardware produced -- timers, animation
+// and game logic all run at authentic speed -- and only the picture is
+// decimated.
+//
+// It is close to free, which is the point. On an SPI panel the pixel
+// transfer is much slower than the work feeding it: a 320-pixel row is
+// ~128us on the wire against ~60us of render plus CPU, so roughly 16ms of
+// every frame is already spent waiting for the transfer. A second frame's
+// worth of Z80 fits inside that wait. On the Fruit Jam, where DVI paces at
+// a true 60Hz, this stays 1 and nothing changes.
+//
+// The cost is that a painted scanline can reflect state from anywhere in
+// the emulated span rather than from one frame -- an extension of the
+// intra-frame staleness this loop already has by design, just over a wider
+// window. galagino makes the same trade for the same reason, and notes the
+// one place it leaks: anything the RENDERER animates rather than the
+// emulated hardware needs its step scaled to match. Pac-Man has no such
+// element. **Galaga's starfield does** -- it is generated in
+// galaga_video.cpp, not by the emulated machine, so if Galaga is ever run
+// this way its scroll step must be multiplied by `emulated_frames` or the
+// stars will crawl at a fraction of the right speed.
+static void run_frame_interleaved(pacman_system *system,
+                                  uint32_t emulated_frames) {
+    if (emulated_frames < 1u) emulated_frames = 1u;
+    const uint32_t total_cycles = PACMAN_CYCLES_PER_FRAME * emulated_frames;
     uint32_t start = system->cpu.cyc;
+    uint32_t next_int = 1u;   // fire after the 1st, 2nd, ... frame boundary
 
     for (uint32_t i = 0; i < HAL_VIDEO_HEIGHT; i++) {
         // Exact proportional target delta (not repeated addition) so the
-        // final slice lands exactly on PACMAN_CYCLES_PER_FRAME elapsed
-        // regardless of how that divides by the scanline count.
+        // final slice lands exactly on the total elapsed count regardless
+        // of how that divides by the scanline count.
         uint32_t target_delta =
-            (uint32_t)((uint64_t)PACMAN_CYCLES_PER_FRAME * (i + 1) / HAL_VIDEO_HEIGHT);
+            (uint32_t)((uint64_t)total_cycles * (i + 1) / HAL_VIDEO_HEIGHT);
         while ((uint32_t)(system->cpu.cyc - start) < target_delta) {
             z80_step(&system->cpu);
+        }
+
+        // Interior vblanks, at each emulated frame boundary this scanline
+        // has passed. The last one is fired after the loop so it keeps its
+        // original end-of-frame position exactly.
+        while (next_int < emulated_frames &&
+               target_delta >= PACMAN_CYCLES_PER_FRAME * next_int) {
+            if (system->interrupt_enable) {
+                z80_gen_int(&system->cpu, system->interrupt_vector);
+            }
+            next_int++;
         }
 
         uint16_t *buf = hal_video_acquire_scanline();
@@ -152,8 +193,8 @@ static void run_frame_interleaved(pacman_system *system) {
         hal_video_submit_scanline(buf);
     }
 
-    // One vblank interrupt per frame, fired at the end -- unchanged from
-    // when this shared the job with a sequential path.
+    // The final vblank, fired at the end -- unchanged from when this was
+    // the only one.
     if (system->interrupt_enable) {
         z80_gen_int(&system->cpu, system->interrupt_vector);
     }
@@ -162,5 +203,9 @@ static void run_frame_interleaved(pacman_system *system) {
 void pacman_run_frame(pacman_system *system) {
     // Every rotation, one path. See run_frame_interleaved()'s comment for
     // why there is no longer a sequential fallback for landscape/180.
-    run_frame_interleaved(system);
+    run_frame_interleaved(system, 1u);
+}
+
+void pacman_run_frames(pacman_system *system, uint32_t emulated_frames) {
+    run_frame_interleaved(system, emulated_frames);
 }

@@ -122,6 +122,18 @@ bool pacman_load_assets(pacman_system *system, uint16_t *out_error_color);
 // frame.
 void pacman_run_frame(pacman_system *system);
 
+// Advance `emulated_frames` frames of CPU time and fire that many vblank
+// interrupts, while painting the screen ONCE.
+//
+// For boards whose display cannot sustain 60Hz. The game keeps authentic
+// speed -- the Z80 sees the real interrupt rate -- and only the picture is
+// decimated. pacman_run_frame() is exactly this with a count of 1.
+//
+// See the comment above run_frame_interleaved() for the cost, and for the
+// one class of thing that has to be scaled alongside it: anything the
+// RENDERER animates rather than the emulated machine.
+void pacman_run_frames(pacman_system *system, uint32_t emulated_frames);
+
 #ifdef __cplusplus
 }
 #endif

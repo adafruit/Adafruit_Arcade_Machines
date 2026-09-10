@@ -102,7 +102,18 @@ void loop() {
     static uint32_t frame = 0, emul_us = 0, push_us = 0, t_prev = 0;
     uint32_t t0 = micros();
 
-    pacman_run_frame(&g_system);     // emulation AND scanline submission
+    // TWO EMULATED FRAMES PER PAINTED FRAME.
+    //
+    // This board's panel cannot reach 60Hz -- 320x240 RGB565 at 40MHz is
+    // 30.7ms of unavoidable clocking -- so the game would otherwise run in
+    // slow motion, advancing one frame per display frame. Decoupling them
+    // keeps the Z80 at the interrupt rate the real cabinet produced and
+    // decimates only the picture, which is what galagino does on the same
+    // class of hardware for the same reason.
+    //
+    // It is nearly free: most of a frame is already spent waiting for the
+    // SPI transfer, and the second frame's cycles fit inside that wait.
+    pacman_run_frames(&g_system, 2);
 
     uint32_t total = micros() - t0;
 
