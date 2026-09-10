@@ -63,6 +63,15 @@ independent horizontal mirror for Pepper's-Ghost cabinets. All seven are
 verified on physical hardware in each rotation, in gameplay rather than
 attract mode.
 
+**Every game boots into tate and expects a monitor turned into portrait.**
+Which of the two tate values a given game uses differs — the Namco and
+8080bw cabinets mounted their tubes opposite ways, so Pac-Man, Ms. Pac-Man
+and Galaga default to rotation 1 while Space Invaders, Lunar Rescue, Donkey
+Kong and Burger Time default to 3 — but **all seven come up upright together
+on one screen, turned one way, with no button presses.** That direction was
+chosen to match the way real portrait monitor stands rotate. If your display
+turns the other way, press ROTATE twice on each game.
+
 Three front-panel buttons control the display, and they are the same on every
 game:
 

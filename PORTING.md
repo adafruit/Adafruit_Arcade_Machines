@@ -339,12 +339,21 @@ direction) — the 8080bw and Namco cabinets mounted their monitors opposite
 ways.
 
 - **Predictor:** MAME's `ROT` flag in the driver's `GAME()` line. `ROT270`
-  → rotation 1, `ROT90` → rotation 3. Seven for seven across every game
-  here (invaders, lrescue, dkong, btime = 1; pacman, mspacman, galaga = 3).
+  → rotation 3, `ROT90` → rotation 1. Seven for seven across every game
+  here (invaders, lrescue, dkong, btime = 3; pacman, mspacman, galaga = 1).
 - **Measurement:** the framebuffer invariant — **the top of the game's
-  picture must land on the right-hand side of the DVI framebuffer.** Render
+  picture must land on the left-hand side of the DVI framebuffer.** Render
   the candidate rotations in the harness and compare where the score text
   lands against a known-good frame from a confirmed game.
+
+> **These constants inverted on 2026-09-09** (DEVNOTES #106). The invariant
+> used to be top-on-the-RIGHT and the predictor mapped `ROT270` → 1. The
+> reason is not an emulation fact: real portrait monitor stands
+> overwhelmingly rotate one way, and the old convention was the other half,
+> so every game needed two ROTATE presses at boot. Older notes, commit
+> messages and `extras/BTIME_PORT_PLAN.md` still show the old values — the
+> METHOD in them is still correct, only the constants moved. The canonical
+> statement is "WHICH WAY UP" in `src/hal/arcade_video_geom.h`.
 
 Read the flag to pick the starting value, then verify with the invariant.
 The flag is a prediction; the render is the measurement. And check your own

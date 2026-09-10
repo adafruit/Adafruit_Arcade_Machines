@@ -104,8 +104,8 @@ card, it is simply unused.
 
 Galaga's native hardware framebuffer (288x224, before the cabinet's
 physical 90-degree mount) is displayed **portrait**, defaulting to rotation
-**3** (90° CW). Note that is deliberately *not* the same value Space
-Invaders and Lunar Rescue default to (1): the Namco and 8080bw cabinets
+**1** (90° CCW). Note that is deliberately *not* the same value Space
+Invaders and Lunar Rescue default to (3): the Namco and 8080bw cabinets
 mounted their monitors in opposite orientations, so the two families need
 opposite software rotations to come up upright on one physical screen. All
 four games in this project are therefore upright together on the same

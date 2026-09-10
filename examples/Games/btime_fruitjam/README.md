@@ -166,13 +166,19 @@ matching the precedent in the other machine libraries.
 | MIRROR | Toggle horizontal mirror (for Pepper's-Ghost half-silvered-mirror cabinets) |
 | STRETCH (Button 1) | Toggle aspect-ratio correction. Which setting looks right depends on your MONITOR, not the game: a 16:9 panel already stretches a rotated picture on its own, while a panel forced to 4:3 — or a real 4:3 panel — does not. Try both and keep the one that looks correct. |
 
-Default rotation is **1** (90° CCW, "tate"). MAME's `GAME()` line for
+Default rotation is **3** (90° CW, "tate"). MAME's `GAME()` line for
 `btime` says `ROT270`, and across every game in this project that is
-confirmed on hardware that flag has predicted the right value six times out
-of six (`ROT270` → 1, `ROT90` → 3). The harness agrees — at rotation 1 the
-title lands on the right-hand side of the framebuffer, which is this
-project's invariant, and rotation 3 puts it on the left. Still worth
-confirming with your own eyes on the physical display.
+confirmed on hardware that flag has predicted the right value seven times
+out of seven (`ROT270` → 3, `ROT90` → 1). The harness agrees — at rotation 1
+the title lands on the right-hand side of the framebuffer and rotation 3
+puts it on the left, and **the left is what this project wants**. Confirmed
+on the physical display.
+
+That last sentence used to read the other way round: the invariant was
+top-on-the-RIGHT until 2026-09-09, so this game defaulted to 1. The harness
+observation did not change — which side the title lands on is a fact about
+rendering. What changed is which side is wanted, because real portrait
+monitor stands overwhelmingly rotate one way. See DEVNOTES #106.
 
 ## One open decision: the aspect ratio
 
