@@ -2,79 +2,94 @@
 //
 // SPDX-License-Identifier: MIT
 
-// ESP32 SPI transmit-DMA. See arch/arch.h for why this is arch and not board.
+// ESP32 SPI LCD transport, on ESP-IDF's spi_master driver.
 //
 // WHY THIS EXISTS. Adafruit_SPITFT::writePixels() ends up in the Arduino
-// core's spiWritePixelsNL(), which is a 64-byte poll loop: for every 64
-// bytes it writes 16 words into the SPI FIFO, sets the transfer length,
-// starts the transaction and spins until it finishes. At 40MHz a 320-pixel
-// row is 128us of actual clocking, but ten separate FIFO round-trips per
-// row cost far more than that -- measured 44.6ms for a 320x240 frame
-// against a 30.7ms wire time, so 31% of the frame was overhead.
+// core's spiWritePixelsNL(), a 64-byte poll loop: for every 64 bytes it
+// writes 16 words into the SPI FIFO, sets the length, starts a transaction
+// and spins. At 40MHz a 320-pixel row is 128us of actual clocking, but ten
+// FIFO round-trips per row cost far more -- measured 44.6ms for a 320x240
+// frame against a 30.7ms wire time. It also cannot overlap: the CPU is busy
+// pushing bytes and can do nothing else.
 //
-// The DMA engine reads the row straight out of DRAM in one transfer, which
-// removes that overhead AND, more importantly, RETURNS IMMEDIATELY. The
-// caller renders the next scanline while this one is still going out. On a
-// board where the panel is the bottleneck that second property is worth
-// more than the first.
+// WHY THE DRIVER AND NOT REGISTERS. An earlier version of this file drove
+// the SPI DMA engine directly. It was fast (31.8fps against 17.7) and
+// wrong: every scanline landed 16 pixels out, a constant 32-byte lag in the
+// DMA-to-SPI path that survived nine separate attempts to flush it. See
+// DEVNOTES #108 for the full autopsy. galagino runs this same panel at this
+// same 40MHz through the IDF driver and reaches ~30Hz -- essentially the
+// wire limit -- which is the proof that the silicon is fine and the
+// hand-written register sequence was not. Using the vendor's driver is also
+// simply the right call for this library: the same reasoning that put SdFat
+// and Adafruit_TLV320 in place of hand-rolled equivalents.
 //
-// THIS IS THE SAME SPLIT AS THE AUDIO PATH, for the same reason. The panel
-// is configured by Adafruit_ILI9341 -- init sequence, rotation, address
-// window, all library. What no library covers is the chip's DMA engine, so
-// that part is hand-written and lives here, exactly as the RP2 I2S PIO
-// transport does next to Adafruit_TLV320_I2S. See
-// src/arch/rp2040/arch_audio_i2s.h.
+// BUS OWNERSHIP, AND WHY THERE IS A HANDOVER. The IDF driver wants the SPI
+// bus to itself, but Adafruit_ILI9341 needs it to initialise the panel and
+// SdFat needs it to read the ROMs -- both through Arduino's SPIClass. Those
+// happen once, at boot, in that order, and neither is touched again. So the
+// bus is handed over exactly once, at hal_video_run(), which the HAL
+// already defines as "the caller is ready to feed scanlines continuously".
+// Before it: SPIClass. After it: the IDF driver, forever.
 //
-// COEXISTENCE WITH SPIClass IS THE POINT. This drives the same peripheral
-// the Arduino SPI object already configured -- same clock, same mode, same
-// pins, and CS asserted by Adafruit_SPITFT's startWrite(). It only borrows
-// the data path, and arch_spi_dma_wait() hands the peripheral back in
-// CPU-FIFO state. That is what lets Adafruit_ILI9341 keep sending commands
-// and SdFat keep reading the card on the same bus with no handover
-// choreography.
+// The panel's own configuration -- init sequence, rotation -- stays with
+// Adafruit_ILI9341, which runs before the handover. Only the three address
+// commands and the pixel stream live here, because after the handover
+// nothing else can reach the bus.
 #ifndef ARCADE_ARCH_ESP32_SPI_DMA_H
 #define ARCADE_ARCH_ESP32_SPI_DMA_H
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// Claim a DMA channel and bind it to an SPI host. `spi_host` is the Arduino
-// core's bus number: 2 = HSPI, 3 = VSPI (the Arduino global `SPI` object is
-// VSPI on the original ESP32). Call once, AFTER the Arduino SPI bus is up --
-// this reads none of its configuration but has no reason to run before it.
+// Take the SPI bus from Arduino's SPIClass and hand it to the IDF driver.
+// Call ONCE, after every SPIClass user is finished with the bus for good --
+// panel init and asset loading both included. `spi_host` is the Arduino bus
+// number: 2 = HSPI, 3 = VSPI (the global `SPI` object is VSPI on the
+// original ESP32).
 //
-// Returns false if the channel could not be claimed or the target is not the
-// original ESP32. A caller that gets false must keep using the FIFO path;
-// nothing here half-works.
-bool arch_spi_dma_init(int spi_host);
+// Returns false if the bus or device could not be claimed, in which case
+// the caller must keep using its existing path; nothing here half-works.
+bool arch_spi_lcd_begin(int spi_host, int sck, int mosi, int miso,
+                        int cs, int dc, int clock_hz);
 
-// True once arch_spi_dma_init() has succeeded.
-bool arch_spi_dma_available(void);
+// True once arch_spi_lcd_begin() has succeeded.
+bool arch_spi_lcd_ready(void);
 
-// Start a transmit-only burst and RETURN IMMEDIATELY. Three requirements,
-// all of them silent to break:
+// One command byte (DC low). Blocking.
+void arch_spi_lcd_cmd(uint8_t cmd);
+
+// Data bytes (DC high). Blocking; for short payloads such as address
+// coordinates.
+void arch_spi_lcd_data(const void *data, size_t len);
+
+// Queue data bytes (DC high) and RETURN IMMEDIATELY. Two requirements:
 //
-//   - `data` must be 4-byte-aligned and in internal DRAM. Not PSRAM, not a
-//     flash constant -- this DMA engine reaches neither.
-//   - `data` must stay untouched until arch_spi_dma_wait() returns. Double
-//     buffer; that is the whole point.
-//   - Chip select must already be asserted (Adafruit_SPITFT::startWrite()),
-//     and the bytes must already be in wire order. DMA reads memory
-//     verbatim, so a caller pushing RGB565 does its own byte swap -- the
-//     FIFO path did that swap for you and this one cannot.
+//   - `data` must stay untouched until a later arch_spi_lcd_flush() has
+//     retired it. Double buffer; that is the whole point.
+//   - `data` must be in internal DRAM, not PSRAM.
 //
-// `len` is in bytes and must not exceed 4092 (one descriptor).
-void arch_spi_dma_write_async(const void *data, size_t len);
+// At most two transfers are in flight; queueing a third blocks until one
+// retires, which is the natural pacing for a scanline pump.
+void arch_spi_lcd_data_async(const void *data, size_t len);
 
-// Block until the last burst has finished CLOCKING OUT (not merely until
-// the DMA engine drained into the FIFO), then return the peripheral to the
-// CPU-FIFO path. Safe to call with nothing in flight. After this returns,
-// ordinary SPIClass traffic on the same bus works normally.
-void arch_spi_dma_wait(void);
+// Block until every queued transfer has completed.
+void arch_spi_lcd_flush(void);
+
+// --- Diagnostic read path --------------------------------------------------
+// Reads run on a slower second device, so the fast one gives up the bus for
+// the duration. Bracket every read with begin/end. Only useful for a panel
+// that supports reading its own RAM back; see DEVNOTES #108 for what that
+// bought.
+bool arch_spi_lcd_read_begin(void);
+void arch_spi_lcd_read_end(void);
+void arch_spi_lcd_slow_cmd(uint8_t cmd);
+void arch_spi_lcd_slow_write(const void *data, size_t len);
+void arch_spi_lcd_slow_read(void *dst, size_t len);
 
 #ifdef __cplusplus
 }

@@ -5454,3 +5454,65 @@ probe are kept, documented, and switched off.
    link hypothesis was dropped. A threshold was read as a binary.
 5. **The user saw it first.** The top-edge strip is visible in the stripe
    photograph, and was dismissed as moire from photographing an LCD.
+
+### 109. The 16-pixel displacement was the hand-written register sequence, not the silicon
+
+Problem #108 ended with the ESP32 DMA transport disabled: it moved a frame
+in 36ms against the CPU-FIFO path's 56ms, and put every scanline on the
+panel displaced by exactly 16 pixels. Nine attempts to flush the 32-byte lag
+failed, and the disposition was "slower and provably correct beats faster
+and visibly wrong".
+
+**What broke the deadlock was an outside data point, not another
+hypothesis.** galagino drives this same ILI9341 at this same 40MHz and
+reaches ~30Hz -- which is 153,600 bytes at 5MB/s, essentially the wire
+limit. So efficient DMA on this exact hardware at this exact clock was
+already proven to work by someone else. The lag could not be a property of
+the chip; it had to be the register sequence, which was written from the
+TRM.
+
+**Fix: use ESP-IDF's spi_master driver.** The displacement is gone --
+confirmed on the panel, where the artifact's clearest signature was a strip
+along one screen edge sitting one row out of step with the rest of the
+picture, and that strip is now flush.
+
+**Three things had to be got right, and each failed loudly first:**
+
+1. **Bus ownership.** The IDF driver wants the bus; Adafruit_ILI9341 needs
+   it to initialise the panel and SdFat needs it to read the ROMs, both
+   through SPIClass. Those happen once at boot in that order, so the bus is
+   handed over exactly once, in `hal_video_run()` -- which the HAL already
+   defines as "ready to feed scanlines continuously". Before it, SPIClass;
+   after it, the IDF driver, permanently. `setAddrWindow` moves into the
+   board (three commands) because Adafruit_ILI9341 cannot reach the bus
+   afterwards; the init sequence, the part worth a library, runs before.
+
+2. **CHIP SELECT MUST BE DRIVEN BY HAND.** Handing the driver
+   `spics_io_num` left the panel completely deaf -- a command-only
+   display-invert self-test produced no flash at all. Holding CS low
+   directly for the life of the program fixed it instantly. **That
+   command-only self-test is the tool to reach for first when an SPI panel
+   shows nothing: it separates "not selected" from "data path wrong"
+   without involving a single pixel.**
+
+3. **ONE TRANSFER IN FLIGHT, because there are two line buffers.** Queueing
+   two transfers means the driver owns both buffers, so the next
+   acquire_scanline() hands back a buffer still being read and the renderer
+   writes into it mid-transfer. On screen: clean at the top, badly broken
+   through the middle once the queue saturated, and colours shifted between
+   adjacent RGB565 fields where a pixel was half-overwritten. **Queue depth
+   and buffer count are the same number.** Three buffers would allow two in
+   flight; two buffers allow one.
+
+**Cost so far: 46.6ms/frame (21.4fps) against the FIFO path's 56.5ms.**
+Correct, but well off the 30.7ms wire floor and slower than the 36ms the
+same driver managed while corrupt, which is unexplained and is the next
+thing to chase.
+
+**The lesson that generalises.** Six hypotheses, nine fix attempts and a
+long stretch of a collaborator's evening went into defending a hand-written
+register sequence against a maintained vendor driver. The reasoning for
+writing it by hand was that no library covered the data path -- which was
+true of the RP2 I2S transport (#104) and simply wrong here. **When a
+transport misbehaves in ways the datasheet does not explain, check whether
+somebody else's working code uses a driver you dismissed.**

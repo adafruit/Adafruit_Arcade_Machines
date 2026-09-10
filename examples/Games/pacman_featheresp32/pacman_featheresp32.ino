@@ -58,6 +58,11 @@ void setup() {
                       "card / would not mount, yellow means mounted but the "
                       "required ROM files were missing\n", g_error_color);
     }
+    // Hand the SPI bus to the IDF driver. Must come AFTER asset loading --
+    // SdFat reads the ROMs over SPIClass, and the two cannot both own the
+    // peripheral. See arch_spi_dma.h.
+    hal_video_run();
+
     Serial.printf("[pacman-esp32] heap free %u, largest block %u, PSRAM %u\n",
                   (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap(),
                   (unsigned)ESP.getPsramSize());

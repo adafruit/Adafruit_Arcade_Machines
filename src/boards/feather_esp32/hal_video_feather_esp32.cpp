@@ -108,86 +108,10 @@ bool hal_video_init(void) {
     s_tft.setRotation(1);         // 320 wide x 240 tall
     s_tft.fillScreen(ILI9341_BLACK);
 
-    // After begin(), so the bus is configured before a channel is bound to
-    // it. Failure is not fatal: the FIFO path still works, just slowly, and
-    // a board that renders at half speed is far easier to diagnose than one
-    // that shows nothing.
-    // DMA IS DISABLED, AND THIS IS NOT A PERFORMANCE CHOICE.
-    //
-    // The transport works and is fast -- 31.8fps against the FIFO path's
-    // 16.8 -- but it puts every scanline on the panel displaced by exactly
-    // 16 pixels. There is a CONSTANT 32-BYTE LAG in the DMA-to-SPI path:
-    // each burst emits the 32 bytes staged by the previous burst, then the
-    // first 608 of its own, staging its own last 32. The lag does not
-    // accumulate, because the panel still receives exactly 640 bytes per
-    // row -- it just holds a permanent 16-pixel phase error.
-    //
-    // Measured, not inferred: reading the panel's own RAM back gives
-    // "best shift -16 -> 0 mismatches of 320" on this path and "0/320
-    // exact" on the CPU-FIFO path, using the same probe.
-    //
-    // WHY IT HID FOR SO LONG. A 16-pixel slide is invisible on flat
-    // content, so an all-black frame and a frame of flat-coloured stripes
-    // both looked perfect. Only real graphics reveal it: each row's first
-    // 16 pixels are the PREVIOUS row's last 16, which on a rotated panel
-    // shows as a thin strip along one edge one row out of step, plus
-    // sparse speckle everywhere else.
-    //
-    // RULED OUT, each by a test that discriminated rather than confirmed:
-    // link margin (present at 40, 26.7 and 13.3MHz), full duplex, CPU/DMA
-    // concurrency (synchronous DMA shows it too), renderer overrun (fenced
-    // buffers stayed intact), in-flight buffer corruption (0 of 230,399
-    // checksum pairs), DMA burst mode, the descriptor (IDF's own
-    // spicommon_dma_desc_setup_link makes no difference), the CPU-side
-    // FIFO (a sentinel written there never appears on the wire), and
-    // IDF's combined SPI_AHBM_RST|SPI_AHBM_FIFO_RST reset.
-    //
-    // ALSO TRIED AND FAILED: sending the ILI9341 commands over DMA so the
-    // peripheral never switches source -- single-byte DMA bursts do not
-    // come out of this engine at all and the panel went black; and a
-    // throwaway burst with CS held high, which cannot work against a
-    // constant lag for the reason given above.
-    //
-    // Re-enable by restoring the assignment below. The readback probe is
-    // the tool to use -- calibrate it against the FIFO path first, because
-    // an instrument that has not been shown to read zero on a known-good
-    // path is worth nothing.
-    (void)arch_spi_dma_init;
-    s_dma = false;
+    // The bus still belongs to SPIClass here: asset loading over SdFat has
+    // not happened yet. The handover to the IDF driver is in
+    // hal_video_run(). See arch_spi_dma.h.
     return true;
-}
-
-// THE HANDOVER FLUSH.
-//
-// The first DMA burst after any CPU-FIFO write puts 32 stale bytes on the
-// wire ahead of the data it was given. Measured by reading the panel's own
-// RAM back: every scanline arrives INTACT but displaced exactly 16 pixels,
-// with its last 32 bytes dropped -- "best shift -16 -> 0 mismatches of
-// 320", against 0/320 exact on the pure CPU-FIFO path.
-//
-// It hides well. A 16-pixel slide is invisible on flat content, so an
-// all-black frame and a frame of flat-coloured stripes both looked
-// perfect; only real game graphics show it, as sparse speckle. On a
-// rotated panel it also puts each row's first 16 pixels one row out of
-// step, which reads as a thin strip along one screen edge offset from the
-// rest of the picture.
-//
-// The cure is to let that first burst happen where the panel is not
-// listening. CS IS A PLAIN GPIO UNDER SOFTWARE CONTROL, so it can be
-// raised without ending the SPI transaction -- which matters, because an
-// earlier attempt parked CS with endWrite()/startWrite() and failed twice
-// over: ending the transaction meant the flush burst probably never went
-// out, and startWrite() afterwards re-triggered the very handover it was
-// supposed to absorb.
-static uint8_t s_flush[32] __attribute__((aligned(4)));
-
-static void dma_handover_flush(void) {
-    if (!s_dma) return;
-    arch_spi_dma_wait();
-    digitalWrite(FEATHER_TFT_CS, HIGH);   // panel stops listening
-    arch_spi_dma_write_async(s_flush, sizeof s_flush);
-    arch_spi_dma_wait();
-    digitalWrite(FEATHER_TFT_CS, LOW);    // bus clean, panel listening again
 }
 
 uint16_t *hal_video_acquire_scanline(void) {
@@ -196,22 +120,37 @@ uint16_t *hal_video_acquire_scanline(void) {
     return s_line[s_idx];
 }
 
+// The three ILI9341 address commands, sent through the IDF driver. Once the
+// bus is handed over these cannot go through Adafruit_ILI9341, because it
+// writes via SPIClass and SPIClass no longer owns the peripheral. The init
+// sequence -- the part actually worth a library -- already ran before the
+// handover and is untouched.
+static void lcd_addr_window(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+    static uint8_t p[4] __attribute__((aligned(4)));
+    const uint16_t x2 = (uint16_t)(x + w - 1), y2 = (uint16_t)(y + h - 1);
+    arch_spi_lcd_cmd(ILI9341_CASET);
+    p[0] = x >> 8; p[1] = (uint8_t)x; p[2] = x2 >> 8; p[3] = (uint8_t)x2;
+    arch_spi_lcd_data(p, 4);
+    arch_spi_lcd_cmd(ILI9341_PASET);
+    p[0] = y >> 8; p[1] = (uint8_t)y; p[2] = y2 >> 8; p[3] = (uint8_t)y2;
+    arch_spi_lcd_data(p, 4);
+    arch_spi_lcd_cmd(ILI9341_RAMWR);
+}
+
 void hal_video_submit_scanline(uint16_t *buf) {
     if (!s_in_frame) {
-        s_tft.startWrite();
-        s_tft.setAddrWindow(0, 0, HAL_VIDEO_WIDTH, HAL_VIDEO_HEIGHT);
-        // Both of the above went out over the CPU-FIFO path, so the next
-        // DMA burst would carry 32 stale bytes. Spend them with CS high.
-        dma_handover_flush();
+        if (s_dma) {
+            lcd_addr_window(0, 0, HAL_VIDEO_WIDTH, HAL_VIDEO_HEIGHT);
+        } else {
+            s_tft.startWrite();
+            s_tft.setAddrWindow(0, 0, HAL_VIDEO_WIDTH, HAL_VIDEO_HEIGHT);
+        }
         s_in_frame = true;
         s_y = 0;
     }
 
 #if FEATHER_TFT_READBACK_PROBE
     if (s_y == PROBE_ROW) {
-        // Dense pseudorandom pattern: flat content hides displacement, and
-        // that is exactly how this artifact stayed hidden. Costs one noisy
-        // scanline on screen while the probe is compiled in.
         uint32_t r = 0x1234567u;
         for (uint32_t x = 0; x < HAL_VIDEO_WIDTH; x++) {
             r = r * 1103515245u + 12345u;
@@ -223,33 +162,59 @@ void hal_video_submit_scanline(uint16_t *buf) {
 #endif
 
     if (s_dma) {
-        // Order matters. The swap touches THIS row, which is not the one in
-        // flight, so it runs while the previous transfer is still going --
-        // free work. Only then do we wait, and the wait is usually short
-        // because the machine spent a scanline's worth of CPU emulation
-        // between the two submits.
+        // The swap touches THIS row, which is not the one in flight, so it
+        // runs for free while the previous transfer is still going.
         swap_to_wire_order(buf, HAL_VIDEO_WIDTH);
-        arch_spi_dma_wait();
-        arch_spi_dma_write_async(buf, HAL_VIDEO_WIDTH * sizeof(uint16_t));
+        arch_spi_lcd_data_async(buf, HAL_VIDEO_WIDTH * sizeof(uint16_t));
     } else {
         s_tft.writePixels(buf, HAL_VIDEO_WIDTH, true);
     }
 
     s_idx ^= 1;
     if (++s_y >= HAL_VIDEO_HEIGHT) {
-        // CS must not drop with bytes still queued, and the next thing to
-        // touch this bus goes through the CPU-FIFO path.
-        if (s_dma) arch_spi_dma_wait();
-        s_tft.endWrite();
+        if (s_dma) arch_spi_lcd_flush();
+        else       s_tft.endWrite();
         s_in_frame = false;
     }
 }
 
 // On the Fruit Jam this never returns -- it is the second core's DVI pump.
-// Here the panel is driven entirely from submit_scanline() on the calling
-// core, so there is no pump to run and the ESP32 sketch simply never calls
-// this. Defined anyway so the contract is complete.
-void hal_video_run(void) { }
+// Here it is the SPI BUS HANDOVER, and it returns immediately.
+//
+// The HAL defines this as "call once the caller is ready to feed scanlines
+// continuously", which is exactly the moment the bus can stop belonging to
+// SPIClass: the panel is initialised and the ROMs are loaded, and neither
+// Adafruit_ILI9341 nor SdFat will touch it again. From here the IDF driver
+// owns it. See arch_spi_dma.h.
+//
+// A sketch that never calls this still works -- it just keeps the slow
+// CPU-FIFO path, which is the same fallback used if the handover fails.
+void hal_video_run(void) {
+    if (s_dma) return;
+    s_dma = arch_spi_lcd_begin(FEATHER_TFT_SPI_HOST,
+                               SCK, MOSI, MISO,
+                               FEATHER_TFT_CS, FEATHER_TFT_DC,
+                               40000000);
+    Serial.printf("[video] pins sck=%d mosi=%d miso=%d cs=%d dc=%d\n",
+                  (int)SCK, (int)MOSI, (int)MISO,
+                  (int)FEATHER_TFT_CS, (int)FEATHER_TFT_DC);
+    Serial.printf("[video] SPI handover to IDF driver: %s\n",
+                  s_dma ? "ok" : "FAILED, staying on the CPU-FIFO path");
+
+    // POST-HANDOVER SELF TEST. Three display-invert flashes, command bytes
+    // only, no pixel data. This splits the two ways a working transport can
+    // still show nothing: if the panel flashes, chip select and the command
+    // path are fine and the fault is in the DATA path (DC level for pixel
+    // transfers). If it stays black, the panel is not listening at all and
+    // chip select is the problem.
+    if (s_dma) {
+        for (int i = 0; i < 3; i++) {
+            arch_spi_lcd_cmd(ILI9341_INVON);  delay(400);
+            arch_spi_lcd_cmd(ILI9341_INVOFF); delay(400);
+        }
+        Serial.println("[video] invert self-test done (3 flashes if commands land)");
+    }
+}
 
 // DIAGNOSTIC: read one row back out of the panel and compare it with what
 // was sent. Ground truth for what actually arrived, and the only reason
@@ -264,20 +229,27 @@ void hal_video_probe_readback(void) {
     Serial.println("[readback] probe not compiled in "
                    "(FEATHER_TFT_READBACK_PROBE)");
 #else
-    if (!s_probe_valid) { Serial.println("[readback] no probe row yet"); return; }
+    if (!s_probe_valid || !s_dma) { Serial.println("[readback] not ready"); return; }
+    static uint8_t  raw[320 * 3];
     static uint16_t got[320];
 
-    s_tft.setSPISpeed(6000000);      // the panel reads far slower than it writes
-    s_tft.startWrite();
-    s_tft.setAddrWindow(0, PROBE_ROW, HAL_VIDEO_WIDTH, 1);
-    s_tft.writeCommand(0x2E);        // RAMRD
-    (void)s_tft.spiRead();           // one dummy byte before pixel data
-    for (uint16_t i = 0; i < HAL_VIDEO_WIDTH; i++) {
-        uint8_t r = s_tft.spiRead(), g = s_tft.spiRead(), b = s_tft.spiRead();
-        got[i] = (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+    if (!arch_spi_lcd_read_begin()) { Serial.println("[readback] bus busy"); return; }
+    uint8_t p[4] __attribute__((aligned(4)));
+    arch_spi_lcd_slow_cmd(ILI9341_CASET);
+    p[0] = 0; p[1] = 0; p[2] = (HAL_VIDEO_WIDTH - 1) >> 8; p[3] = (uint8_t)(HAL_VIDEO_WIDTH - 1);
+    arch_spi_lcd_slow_write(p, 4);
+    arch_spi_lcd_slow_cmd(ILI9341_PASET);
+    p[0] = PROBE_ROW >> 8; p[1] = (uint8_t)PROBE_ROW;
+    p[2] = PROBE_ROW >> 8; p[3] = (uint8_t)PROBE_ROW;
+    arch_spi_lcd_slow_write(p, 4);
+    arch_spi_lcd_slow_cmd(0x2E);                 // RAMRD
+    arch_spi_lcd_slow_read(raw, 1 + HAL_VIDEO_WIDTH * 3);   // one dummy byte first
+    arch_spi_lcd_read_end();
+
+    for (uint32_t i = 0; i < HAL_VIDEO_WIDTH; i++) {
+        const uint8_t *q = raw + 1 + i * 3;
+        got[i] = (uint16_t)(((q[0] & 0xF8) << 8) | ((q[1] & 0xFC) << 3) | (q[2] >> 3));
     }
-    s_tft.endWrite();
-    s_tft.setSPISpeed(40000000);
 
     int best_shift = 0; uint32_t best_bad = 0xFFFFFFFFu;
     for (int sh = -40; sh <= 40; sh++) {
@@ -294,9 +266,19 @@ void hal_video_probe_readback(void) {
     for (uint32_t i = 0; i < HAL_VIDEO_WIDTH; i++)
         if (got[i] != s_probe_expect[i]) bad0++;
 
+    Serial.printf("[readback] raw %02X %02X %02X %02X %02X %02X %02X   "
+                  "got %04X %04X %04X   want %04X %04X %04X\n",
+                  raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6],
+                  got[0], got[1], got[2],
+                  s_probe_expect[0], s_probe_expect[1], s_probe_expect[2]);
     Serial.printf("[readback] row %u: exact %lu/320 bad   best shift %+d -> %lu\n",
                   (unsigned)PROBE_ROW, (unsigned long)bad0,
                   best_shift, (unsigned long)best_bad);
+    // The read borrowed the bus and left the panel addressed at one row.
+    // Put the full-screen window back before the next frame streams.
+    lcd_addr_window(0, 0, HAL_VIDEO_WIDTH, HAL_VIDEO_HEIGHT);
+    s_in_frame = false;
+    s_y = 0;
 #endif
 }
 
