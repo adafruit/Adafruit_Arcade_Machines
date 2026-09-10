@@ -145,20 +145,16 @@ void arch_spi_lcd_data(const void *data, size_t len) {
 
 void arch_spi_lcd_data_async(const void *data, size_t len) {
     if (!s_ready || len == 0) return;
-    // ONE TRANSFER IN FLIGHT, NOT TWO.
+    // QUEUE DEPTH AND BUFFER COUNT ARE THE SAME NUMBER.
     //
-    // There are exactly two scanline buffers. Allowing two transfers to be
-    // queued means both buffers are owned by the driver at once, so the
-    // next acquire_scanline() hands back a buffer that is still being read
-    // and the renderer writes into it mid-transfer. That showed on the
-    // panel as a frame clean at the top, badly broken through the middle
-    // once the queue saturated, and colours shifted between adjacent
-    // RGB565 fields where a pixel was half-overwritten.
-    //
-    // Waiting for the previous transfer still overlaps it with the render
-    // of the row after, which is where the win actually comes from -- a
-    // scanline is ~128us on the wire against ~60us of rendering.
-    reap(0);
+    // Two transfers may be in flight, which means the driver can own two
+    // buffers at once -- so the caller must provide three, leaving one for
+    // the renderer. src/boards/feather_esp32 does. Getting this wrong is
+    // not subtle on screen: with two buffers and two queued transfers the
+    // renderer overwrites a buffer mid-send, and the frame is clean at the
+    // top, broken through the middle, with colours shifted between
+    // adjacent RGB565 fields. See DEVNOTES #109.
+    reap(1);
     spi_transaction_t *t = &s_trans[s_ti];
     *t = spi_transaction_t{};
     t->length    = len * 8;

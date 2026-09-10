@@ -52,7 +52,20 @@ static Adafruit_ILI9341 s_tft(FEATHER_TFT_CS, FEATHER_TFT_DC);
 // requirement and is also what lets the byte swap below work 32 bits at a
 // time; static arrays land in internal DRAM, which the DMA engine can
 // reach and PSRAM would not be.
-static uint16_t s_line[2][320] __attribute__((aligned(4)));
+// THREE line buffers, and the count is not arbitrary: it is the queue
+// depth plus one. The transport keeps up to two transfers in flight, so
+// the driver can own two buffers at once; the renderer needs a third that
+// nobody is reading. With only two, acquire_scanline() hands back a buffer
+// still being sent and the renderer overwrites it mid-transfer -- which
+// showed on the panel as a frame clean at the top, broken through the
+// middle once the queue saturated, and colours shifted between adjacent
+// RGB565 fields. See DEVNOTES #109.
+//
+// 4-byte alignment is a hard DMA requirement and is also what lets the
+// byte swap work 32 bits at a time; static arrays land in internal DRAM,
+// which the DMA engine can reach and PSRAM would not be.
+#define LINE_BUFS 3
+static uint16_t s_line[LINE_BUFS][320] __attribute__((aligned(4)));
 static uint8_t  s_idx = 0;
 static uint32_t s_y = 0;
 static bool     s_in_frame = false;
@@ -170,7 +183,7 @@ void hal_video_submit_scanline(uint16_t *buf) {
         s_tft.writePixels(buf, HAL_VIDEO_WIDTH, true);
     }
 
-    s_idx ^= 1;
+    s_idx = (uint8_t)((s_idx + 1u) % LINE_BUFS);
     if (++s_y >= HAL_VIDEO_HEIGHT) {
         if (s_dma) arch_spi_lcd_flush();
         else       s_tft.endWrite();
