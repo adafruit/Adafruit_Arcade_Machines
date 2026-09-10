@@ -3,7 +3,8 @@
 #
 # SPDX-License-Identifier: MIT
 
-# Build all seven game sketches into dist/ as release-ready .uf2 files.
+# Build the release binaries into dist/: seven Fruit Jam .uf2 files, and
+# one ESP32 image for the Feather ESP32 V2.
 #
 # TWO THINGS THIS DOES DELIBERATELY:
 #
@@ -49,6 +50,42 @@ for g in $GAMES; do
     printf 'ok   %s\n' "$(du -h "$HERE/$sk.uf2" | cut -f1 | tr -d ' ')"
 done
 
+# --- Feather ESP32 V2 -------------------------------------------------------
+#
+# A DIFFERENT KIND OF ARTEFACT, deliberately. The ESP32 does not do
+# drag-and-drop .uf2; it flashes over serial, and a bare application .bin is
+# NOT standalone -- it needs the bootloader at 0x1000 and the partition
+# table at 0x8000. The core emits a `.merged.bin` containing all three at
+# the right offsets, which is one file flashed at 0x0.
+#
+# That merged image is padded to the full 8MB of flash, almost all of it
+# 0xFF, so it is trimmed to its real content and sector-aligned here: ~504KB
+# instead of 8MB, which matters when someone is pushing it through a browser.
+ESP_SK="pacman_featheresp32"
+printf '%-20s ' "$ESP_SK"
+if ! arduino-cli compile --library "$ROOT" \
+        --fqbn esp32:esp32:adafruit_feather_esp32_v2 \
+        --output-dir "$HERE" "examples/Games/$ESP_SK" \
+        > "$HERE/.esp32.log" 2>&1; then
+    echo "FAILED -- see $HERE/.esp32.log"
+    exit 1
+fi
+python3 - "$HERE" "$ESP_SK" <<'TRIM'
+import sys, pathlib
+here, sk = pathlib.Path(sys.argv[1]), sys.argv[2]
+d = (here / f"{sk}.ino.merged.bin").read_bytes()
+n = (len(d.rstrip(b"\xff")) + 0xFFF) & ~0xFFF
+assert d[0x1000] == 0xE9 and d[0x8000:0x8002] == b"\xaa\x50" and d[0x10000] == 0xE9, \
+    "merged image is not laid out as expected -- refusing to ship it"
+(here / f"{sk}.bin").write_bytes(d[:n])
+TRIM
+# NOTE the glob: the core emits both `NAME.ino.bin` and
+# `NAME.ino_flashed.bin` -- dot AND underscore. Matching only "$ESP_SK.ino."
+# left the underscore one behind, and `gh release upload dist/*.bin` would
+# have shipped it alongside the real image.
+rm -f "$HERE/$ESP_SK.ino"* "$HERE/.esp32.log"
+printf 'ok   %s\n' "$(du -h "$HERE/$ESP_SK.bin" | cut -f1 | tr -d ' ')"
+
 echo
 echo "built into $HERE:"
-ls -1 "$HERE"/*.uf2
+ls -1 "$HERE"/*.uf2 "$HERE"/*.bin
