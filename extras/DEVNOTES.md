@@ -5188,3 +5188,57 @@ Whether the GPIO matrix tolerates 80MHz on this wing is an open question and
 has to be answered by looking at the panel, not at a number. (These are not
 the ESP32's IOMUX SPI pins; the matrix adds delay. The display is written to
 and never read from, which is the case where that matters least.)
+
+### 105. 80MHz SPI on the TFT FeatherWing is 48fps of wrong picture
+
+**What was tried.** After DMA took the ESP32 Pac-Man frame to 31,428us
+(problem #104), that number was within 2.3% of the bare 40MHz wire time for
+153,600 bytes, so the transfer was the entire remaining cost and the only
+lever left was the clock. `setSPISpeed(80000000)`.
+
+**It worked, by every number available.** 31,428us -> 20,713us. 31.8fps ->
+**48.2fps**. Stable across 750 frames, no drift, no crash, no boot problem.
+The clock genuinely changed -- this was not a request that silently rounded.
+
+**And the picture was unusable.** The whole image wiggled rapidly left and
+right, "like a faulty horizontal hold knob on an old TV set". The ILI9341 is
+dropping clock edges at 80MHz through the GPIO matrix, so pixels shift within
+a row and the image walks. Reverted.
+
+**THE POINT OF THIS ENTRY: the instrument could not see the fault.** Frame
+time, fps, stability and the serial log all said 48fps and improving. A
+whole class of display faults -- this one, and the byte-swap error in #104 --
+changes *what* is on the panel without changing *how fast* it gets there, so
+the heartbeat is blind to them by construction. Every clock or format change
+on an SPI panel needs a human looking at the screen before it is kept. This
+project's rule about verifying on hardware is usually about timing; here it
+is about the fact that the timing was fine.
+
+**Why 80 and not something in between.** There is nothing in between. The
+ESP32's SPI clock is `APB / ((clkdiv_pre + 1) * (clkcnt_n + 1))`, and the
+core's `_spiFrequencyToClockDivWithSource()` starts its search at
+`clkcnt_n = 1`, so the smallest divisor it will produce is 2. The only way
+to get 80MHz at all is the separate `SPI_CLK_EQU_SYSCLK` bit, taken when the
+requested frequency is >= the source. So the reachable rungs are 80, 40,
+26.67, 20, 16, ... and asking for 53MHz or 60MHz quietly gets 40. (This is
+also why the pre-DMA note that "60MHz measures identically to 40MHz" was
+true and uninteresting: it *was* 40MHz.)
+
+**Where that leaves the board.** 31.4ms against a 30.7ms floor -- the bus is
+98% saturated and full-frame repainting on this wing cannot go faster. The
+remaining levers are about moving fewer bytes, not moving them faster:
+
+  - **Clipping to the active rectangle buys nothing in the default tate
+    orientation** -- see arcade_video_geom.h: in tate the picture fills all
+    320x240 by construction. It would save 44% in yoko, where the picture is
+    180 columns pillarboxed inside 320, but that is the non-default case.
+  - **Skipping unchanged scanlines** is the only lever with real headroom,
+    and it is orientation-independent. It needs a per-row address window
+    (three commands, cheap against 640 bytes) and a way to know a row is
+    unchanged. A full shadow buffer is 153,600 bytes and will not fit in
+    this chip's DRAM, so it means either PSRAM or a per-row checksum -- and
+    a checksum collision leaves a stale row on screen until its content
+    changes again, which is a correctness cost, not just a risk.
+  - It also makes frame time depend on screen activity, which trades a flat
+    31.4ms for a variable one. For an emulator aiming at a steady 60Hz that
+    is not automatically an improvement.

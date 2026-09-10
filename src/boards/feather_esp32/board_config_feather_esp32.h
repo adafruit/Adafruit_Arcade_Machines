@@ -12,13 +12,21 @@
 // --- TFT FeatherWing V1: fixed by the wing, not reassignable ---------------
 // Shared hardware SPI: SCK 5, MOSI 19, MISO 21 (the variant's defaults).
 // NOTE these are NOT the ESP32's IOMUX SPI pins, so the signals route via the
-// GPIO matrix. The bus runs at 40MHz, which is 5 MB/s, which is 30.7ms for a
-// 320x240 RGB565 frame and therefore a hard 32.6fps ceiling for any game
-// that repaints the whole screen. Asking for 60MHz gets you 40MHz: the
-// divider is off the 80MHz APB clock, so the reachable steps are 80, 40,
-// 26.7, 20 and down. 80MHz through the GPIO matrix is the one untried lever
-// -- it would halve the wire time, and the panel is written to and never
-// read from, which is the case where matrix delay matters least.
+// GPIO matrix. **40MHz IS THE CEILING ON THIS WING AND IT HAS BEEN TESTED.**
+// That is 5 MB/s, 30.7ms for a 320x240 RGB565 frame, and therefore a hard
+// 32.6fps limit for any game that repaints the whole screen.
+//
+// DO NOT RAISE THIS. 80MHz runs -- 20.7ms/frame, 48fps, and the serial log
+// looks like a straight win -- but the picture wiggles left and right, like
+// a TV losing horizontal hold: the panel drops clock edges, so pixels shift
+// within each row and the image walks. A frame-time counter cannot see it.
+// See DEVNOTES #105.
+//
+// There is nothing between 40 and 80 to fall back to. The divider is
+// 80MHz APB / ((pre+1) * (n+1)) with n+1 >= 2, so the only rungs are 80
+// (a special equal-to-sysclk bit), 40, 26.7, 20 and down. Asking for 60 or
+// 53 silently gets you 40. See _spiFrequencyToClockDivWithSource() in the
+// core's esp32-hal-spi.c.
 #define FEATHER_TFT_CS    15
 #define FEATHER_TFT_DC    33
 #define FEATHER_SD_CS     14
