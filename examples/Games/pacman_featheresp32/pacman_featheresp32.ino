@@ -45,6 +45,9 @@
 // The budget covers however many frames are emulated per paint.
 #define FRAME_BUDGET_US (16500u * EMULATED_FRAMES_PER_PAINT)
 
+// Set to 1 to time the transport in isolation at boot. See setup().
+#define PACMAN_ESP32_BENCH 0
+
 static pacman_system g_system;
 static bool     g_assets_ok = false;
 static uint16_t g_error_color = 0;
@@ -71,7 +74,12 @@ void setup() {
     // peripheral. See arch_spi_dma.h.
     hal_video_run();
 
-    // TRANSPORT BENCHMARK, one shot. Pushes frames with NO rendering and no
+    // TRANSPORT BENCHMARK, one shot. Off by default: it costs ~0.7s of boot
+    // and is a tool, not a feature. Turn it on when changing anything about
+    // the transport -- it is what found that per-transfer overhead, not
+    // pixel throughput, was the ceiling (DEVNOTES #111).
+#if PACMAN_ESP32_BENCH
+    // Original note: Pushes frames with NO rendering and no
     // emulation, so what is left is the transport alone: the byte swap plus
     // whatever the driver costs per transfer. Compared against the wire
     // floor -- 153,600 bytes at 40MHz is 30,720us -- this says how much of
@@ -89,6 +97,7 @@ void setup() {
                       "(40MHz wire floor 30720us, overhead %ld us)\n",
                       (unsigned long)per, (long)per - 30720L);
     }
+#endif
 
     Serial.printf("[pacman-esp32] heap free %u, largest block %u, PSRAM %u\n",
                   (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap(),
@@ -163,6 +172,10 @@ void loop() {
     emul_us += total;
     if (++frame % 30u == 0) {
         uint32_t now = millis();
+        // The first window spans boot, so its rate is meaningless -- it
+        // printed "18% of 60.6Hz", which reads like a fault. Prime the
+        // clock and skip it.
+        if (t_prev == 0) { t_prev = now; emul_us = 0; push_us = 0; return; }
         float fps = 30000.0f / (float)(now - t_prev);
         t_prev = now;
         // Rotation is in the heartbeat because it is not otherwise
