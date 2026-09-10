@@ -5606,3 +5606,56 @@ registers with the vendor driver -- and BOTH left a bigger, simpler win on
 the table: the transfers were too small. A benchmark that isolates one
 layer is worth more than any amount of reasoning about which layer is slow,
 and it is cheap. **Measure the layer, not the whole.**
+
+### 112. ESP32 audio: the board file is almost empty, and that is the result
+
+The dual MAX98357A (Adafruit #6513) works on the Feather ESP32 V2 — BCLK
+IO27, LRC IO12, DIN IO13, Vin on VBUS. Confirmed on hardware, and the video
+path is completely unaffected: 32,977us per frame, still 100% of 60.6Hz.
+
+**The interesting part is how little code it took.**
+`boards/fruitjam/hal_audio_fruitjam.cpp` spends sixty lines configuring a
+TLV320DAC3100 over I2C — PLL, dividers, routing, gains, headset detect. The
+MAX98357A has no register interface at all: it is a Class-D amp with an I2S
+decoder on the front and it works the instant clocks arrive. So the board
+file is four one-line functions. **The arch/board split predicted this
+shape**: transport in `src/arch/esp32/`, board facts in `src/boards/`, and
+on this board the board half is genuinely almost nothing.
+
+**Library, not registers.** `ESP_I2S` ships with the ESP32 core. After #109
+— where a hand-written SPI register sequence cost an enormous amount and
+the vendor driver simply worked — the library is the default and
+hand-rolling needs a reason. (Adafruit_Zero_I2S is the obvious-sounding
+candidate and is not one: `architectures=samd`, for the Arduino Zero / M0 /
+M4. It will not compile for this chip. Worth checking anyway — the check is
+what turned up ESP_I2S.)
+
+**The shape differs from RP2, and that was the real design question.** On
+RP2 the fill callback runs in a DMA completion IRQ and the critical section
+is "disable that IRQ". ESP_I2S offers a blocking `write()` with DMA behind
+it and no callback, so the natural form is a FreeRTOS task — which makes
+the critical section a CROSS-CORE problem instead of an interrupt one. The
+stub that stood here for the whole video effort said exactly that, and
+deferring it was right: debugging intermittent audio corruption at the same
+time as first-light video would have been miserable.
+
+**A spinlock is correct here, and a mutex would not be**, for a reason that
+is only visible by reading the machines: their fill callbacks take the lock
+THEMSELVES, and only to snapshot a few dozen bytes of sound registers
+before mixing from the copy (`pacman_audio_fill()`). The guarded region is
+tiny, so `portENTER_CRITICAL` never holds long. A mutex could block, and
+the game core would then sleep waiting on the audio task for a 30-byte
+memcpy. **It also means this transport must NOT wrap the callback in the
+lock** — the callback owns its own use of it.
+
+**Pinned to core 0**, away from the Arduino loop on core 1, so audio and
+emulator do not compete and the SPI driver's completion interrupts (which
+belong to core 1, where the bus was set up) are untouched by anything the
+audio task does with its own core's interrupt state.
+
+**Two pin hazards, both in board_config.** GPIO 12 (LRC) is the MTDI
+strapping pin and must read LOW at reset or the chip picks a 1.8V flash
+voltage and will not boot; the amp presents an input and does not drive it,
+so the board boots on the pin's pulldown. GPIO 13 (DIN) also drives the
+onboard red LED, which flickers in time with the audio — cosmetic, not a
+fault.

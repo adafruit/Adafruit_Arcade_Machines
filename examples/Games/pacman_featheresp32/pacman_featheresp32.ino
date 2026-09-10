@@ -20,8 +20,10 @@
 // 59.7ms/frame at 16.8fps, because a 64-byte poll loop added 14ms of pure
 // overhead AND could not overlap with anything.
 //
-// Audio is a silent stub on this board for now (see
-// hal_audio_feather_esp32.cpp).
+// Audio is a Stereo I2S 3W amp, dual MAX98357A (Adafruit #6513): BCLK to
+// IO27, LRC to IO12, DIN to IO13, Vin to VBUS. It runs on its own FreeRTOS
+// task pinned to core 0, so it does not compete with the emulator and the
+// video path on core 1.
 //
 // Differences from pacman_fruitjam.ino, all forced by the hardware:
 //  - no setup1()/loop1(): there is no second-core display pump here, the
