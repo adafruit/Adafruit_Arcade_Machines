@@ -5659,3 +5659,56 @@ voltage and will not boot; the amp presents an input and does not drive it,
 so the board boots on the pin's pulldown. GPIO 13 (DIN) also drives the
 onboard red LED, which flickers in time with the audio — cosmetic, not a
 fault.
+
+### 113. Ms. Pac-Man on the ESP32: PSRAM is for what is BIG, not for what is hot
+
+Ms. Pac-Man runs on the Feather ESP32 V2 at **100% of 60.606Hz**, same as
+Pac-Man. Getting there took one real decision and two wrong turns worth
+recording.
+
+**The constraint is not the number arduino-cli prints.** It reports
+"Maximum is 327,680" for dynamic memory. The linker segment that actually
+holds static data, `dram0_0_seg`, is **124,580 bytes**. Pac-Man fit at 87%
+of that. Ms. Pac-Man is Pac-Man's board plus an aux daughterboard, so it
+carries two full 48K program banks -- 98,304 bytes against Pac-Man's single
+16K ROM -- and overflowed by 65,776.
+
+**Wrong turn 1: put the whole system struct in PSRAM.** It links, it runs,
+and it costs **2.9ms per frame** -- 92% of arcade speed instead of 100%.
+
+**The fix is a split, and the ratio is the point.** The struct is 101,492
+bytes, of which the ROM is 98,304 and *everything else is 3,188*. Those
+3,188 bytes are the hottest data in the machine: the renderer reads
+video_ram and color_ram for every tile of every scanline, and work_ram is
+written constantly. In PSRAM they were slow themselves AND evicting ROM
+from the 32KB PSRAM cache.
+
+    whole struct in PSRAM   35,843us   92%
+    only the ROM in PSRAM   33,967us   97%
+    + -O3                   32,978us  100%
+
+**PSRAM is for data whose SIZE is the problem, not data whose SPEED is.**
+97% of this struct was one and 3% was the other, and treating them alike
+threw away 8% of the machine.
+
+**So `rom` is now supplied by the sketch**, not declared inline in
+`mspacman_system`. That is arguably where it belonged: SAMP says the
+composition root is what knows the board, and where to put 98KB is a board
+decision. The Fruit Jam passes a static array and measured **identical**
+before and after (16,659us/frame, work_MEAN 9,815-9,872us, starve 0) --
+239,944 bytes of RAM against 239,948, a four-byte difference where an array
+became a pointer.
+
+It is a PARAMETER to mspacman_init(), not a setter, because init memsets
+the struct: a setter would have to be called afterwards, and forgetting it
+is a null dereference at the first instruction fetch. A missing argument is
+a compile error.
+
+**Wrong turn 2, and a trap for anyone measuring optimisation flags on
+ESP32.** Grepping a `--verbose` build for `-O3` finds nothing: 299
+instances of `-Os` and no sign of the sketch's own setting. It looks
+exactly like `build_opt.h` being ignored. It is not -- the file is passed
+as `@/path/build_opt.h` and the flag lives INSIDE it, later on the command
+line, so it wins. **Grep for the `@file`, not for the flag.** Stopping at
+the first grep would have meant reporting that build_opt.h was inert and
+hunting a fifth cause for a problem already solved.

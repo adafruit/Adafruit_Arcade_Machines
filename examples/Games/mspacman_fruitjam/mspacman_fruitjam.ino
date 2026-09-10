@@ -38,6 +38,13 @@
 #include <boards/fruitjam/board_config_fruitjam.h>
 
 static mspacman_system g_system;
+
+// Program ROM storage, owned by the sketch. It used to be declared inside
+// mspacman_system; it moved out so the ESP32 port can put these 98,304
+// bytes in PSRAM while keeping the hot RAM internal. On this board there is
+// no such pressure, so it is a plain static array and the memory profile is
+// exactly what it was. See mspacman_machine.h's `rom` field.
+static mspacman_rom_bank_t g_rom[MSPACMAN_ROM_BANKS];
 static volatile bool   g_video_ready = false;
 static bool            g_assets_ok   = false;
 static uint16_t        g_error_color = 0;
@@ -57,7 +64,7 @@ void setup() {
     // Sets game-state defaults, selects the aux board's decrypted ROM bank,
     // and calls hal_video_init() (struct/queue setup only -- does not start
     // the physical DVI signal, does not touch storage).
-    mspacman_init(&g_system);
+    mspacman_init(&g_system, g_rom);
 
     // Boot straight into a chosen rotation, for measuring one orientation
     // without a hand on the rotate button:
