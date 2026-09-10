@@ -103,10 +103,17 @@ void loop() {
         uint32_t now = millis();
         float fps = 30000.0f / (float)(now - t_prev);
         t_prev = now;
+        // Rotation is in the heartbeat because it is not otherwise
+        // observable and it changes what the geometry code is doing: 1 and
+        // 3 are tate (the picture fills all 320x240), 0 and 2 are yoko (180
+        // columns pillarboxed inside 320). It also makes a stray ROTATE
+        // press visible -- GPIO 37 is input-only with no internal pull, so
+        // an unwired or floating button line cycles this silently.
         Serial.printf("[pacman-esp32] frame %lu  %.1f fps  frame %lu us  "
-                      "(40MHz wire time for 320x240 is 30,720us)\n",
+                      "rot %u  (40MHz wire time for 320x240 is 30,720us)\n",
                       (unsigned long)frame, fps,
-                      (unsigned long)(emul_us / 30u));
+                      (unsigned long)(emul_us / 30u),
+                      (unsigned)g_system.rotation);
         emul_us = 0; push_us = 0;
     }
 }
