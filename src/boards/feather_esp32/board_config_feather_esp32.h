@@ -51,31 +51,6 @@
 #define FEATHER_BTN_DOWN     8 // TX
 #define FEATHER_BTN_ROTATE  37 //     external pull-up
 
-// --- Panel mounting -------------------------------------------------------
-// HOW THIS BOARD IS HELD, expressed as a quarter-turn offset applied to
-// whatever rotation a machine defaults to. Added by the sketch, not by the
-// HAL -- the HAL has no notion of rotation, and a machine's default is the
-// machine's business.
-//
-// WHY IT IS NOT ZERO, and why this is one number rather than a per-game
-// table. Each machine's default encodes ITS CABINET's convention: the
-// 8080bw games, Donkey Kong and Burger Time default to 1, the Namco games
-// to 3, because the real cabinets mounted their monitors in opposite
-// orientations. Those defaults are calibrated against the Fruit Jam's
-// monitor orientation, and they are correct there. This board is held 180
-// degrees round from that -- the FeatherWing is portrait with the USB and
-// the button board where they physically need to be -- so every game needs
-// the same half turn, and the per-game conventions still compose on top of
-// it. Two is the value that turns Pac-Man's 3 into the 1 confirmed upright
-// on this hardware.
-//
-// If a future game comes up upside down here, THIS is the number to
-// question, not that machine's default. Changing a machine's default to fix
-// one board breaks it on the other -- see the comment above
-// pacman_machine.cpp's `system->rotation = 3`, which records exactly that
-// mistake being made once already.
-#define FEATHER_ROTATION_OFFSET 2
-
 #ifdef __cplusplus
 extern "C" {
 #endif

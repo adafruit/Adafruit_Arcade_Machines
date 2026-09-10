@@ -5247,3 +5247,67 @@ remaining levers are about moving fewer bytes, not moving them faster:
   - It also makes frame time depend on screen activity, which trades a flat
     31.4ms for a variable one. For an emulator aiming at a steady 60Hz that
     is not automatically an improvement.
+
+### 106. Every game's default rotation inverted, because monitor stands only turn one way
+
+**The change.** All seven machines' default rotation swapped to the other
+tate value: Pac-Man, Ms. Pac-Man and Galaga 3 -> 1; Space Invaders, Lunar
+Rescue, Donkey Kong and Burger Time 1 -> 3.
+
+**Why, and it is not an emulation fact.** The house convention was "the TOP
+of the game's picture lands on the RIGHT-hand side of the framebuffer"
+(stated in dkong_machine.cpp, problem #41). Nothing about any cabinet
+required that side rather than the other -- it was simply the first one that
+got confirmed on hardware. But **real portrait monitor stands overwhelmingly
+rotate in one direction**, so a player turning a display to play these games
+turns it that way, and the old convention was the wrong half. Every game
+needed two ROTATE presses at boot on a physically ordinary setup.
+
+The convention is now **TOP on the LEFT**, and it lives in ONE place:
+"WHICH WAY UP" in `src/hal/arcade_video_geom.h`. It had been restated in
+five files, which is exactly the shape of a fact that drifts.
+
+**WHAT DID NOT CHANGE, and this is the part worth understanding.** The
+per-game distinction is untouched. Machines still split 3/4 across the two
+values, still for the same reason -- each game's native raster orientation is
+a fact about how its real cabinet mounted its tube -- and a default still
+cannot be copied from a neighbouring game (#33 and #41 are that mistake,
+made twice, in opposite directions). The MAME ROT predictor still holds
+seven for seven; only the constants it maps to inverted:
+
+    ROT90  -> 1   (was 3) : Pac-Man, Ms. Pac-Man, Galaga
+    ROT270 -> 3   (was 1) : Space Invaders, Lunar Rescue, Donkey Kong,
+                            Burger Time
+
+A house convention and a hardware fact were tangled together in those
+comments. Inverting one and not the other is what separated them.
+
+**The thing that had to be checked first, and nearly bit.**
+`arcade_video_geom.h` warns that a rotation default change once put red bars
+on a real screen (#33): when Galaga's default moved to a rotation with no
+fast path, the extra clear-and-copy per scanline blew its ~3ms of headroom
+outright. So **every renderer's two tate cases were read before any default
+moved**, to confirm 1 and 3 cost the same:
+
+  - **Galaga** -- safe, and only because #33 was already fixed properly:
+    both rotations take the same fast path, rotation 3 rendering reversed
+    directly via `render_native_row()`'s `reverse_x`. The file says so in
+    as many words: "at the same cost as rotation 1".
+  - **Burger Time** -- symmetric by construction, one `emit_tate_row(buf,
+    reverse)` helper for both.
+  - **Donkey Kong, Pac-Man, Ms. Pac-Man** -- forward copy versus reversed
+    copy of the same length, both behind the same `col_1to1` fast branch.
+  - **Space Invaders, Lunar Rescue** -- same loop, one extra subtraction
+    per sample in case 3.
+
+**One real asymmetry found and fixed.** Donkey Kong's `DKONG_COST_TRACE`
+instrumentation existed only in case 1. Rotation 3 is now DK's default, and
+a profiler that is blind on the path that ships is worse than no profiler,
+so case 3 is now instrumented to match. Nothing else differed.
+
+**Still unverified at the time of writing.** Only the ESP32 Pac-Man build has
+been on a screen (boots to rotation 1, correct). The seven Fruit Jam builds
+compile, and the reasoning above says they are right, but **"1 and 3 are an
+exact 180 and both cost the same" is a claim about the code, not about which
+way up the picture comes out.** That is a thing only a display can answer,
+and each game needs its own SD card to answer it.

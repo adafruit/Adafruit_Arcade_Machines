@@ -44,6 +44,41 @@
 // YOKO NEEDS THE PICTURE NARROWER, NOT TALLER. This is the one most likely
 // to be got backwards: the old code drew SHORT at 1:1 (224 columns) where
 // 180 is correct, which is the whole of landscape's 24.4% error.
+
+// WHICH WAY UP: THE HOUSE TATE CONVENTION.
+//
+//     The TOP of the game's picture lands on the LEFT-hand side of the
+//     framebuffer.
+//
+// This is stated once, here, because it is the invariant every machine's
+// default rotation is calibrated against, and restating it per machine is
+// how it drifts. It is a house choice, not a fact about any cabinet:
+// **portrait monitor stands overwhelmingly rotate one way**, so a player
+// turning a real display to play these games turns it that way, and the
+// default has to match or every game needs two button presses at boot.
+//
+// It says nothing about which VALUE a given machine uses. Each game's
+// native raster orientation is a fact about how its real cabinet mounted
+// its tube, and those genuinely differ, so reaching one physical result
+// takes different numbers:
+//
+//     MAME ROT90  -> rotation 1 : Pac-Man, Ms. Pac-Man, Galaga
+//     MAME ROT270 -> rotation 3 : Space Invaders, Lunar Rescue,
+//                                 Donkey Kong, Burger Time
+//
+// The driver's ROT flag is the predictor -- seven for seven on the games
+// confirmed here. **A NEIGHBOURING GAME IS NOT.** Copying a default from
+// another machine is DEVNOTES #33 and #41, twice, in opposite directions.
+// Rotations 1 and 3 are an exact 180 of each other and every renderer
+// implements both at equal cost, so a wrong guess is invisible until it is
+// on a screen: render both in that game's tools/*_host/ and check where the
+// score text lands.
+//
+// THIS WHOLE BLOCK INVERTED ON 2026-09-09, when the convention changed from
+// TOP-on-the-RIGHT to TOP-on-the-LEFT for the monitor-stand reason above.
+// Every default flipped 1<->3 together; the per-game distinctions did not
+// change, because they never depended on the convention -- only on the
+// cabinet. See DEVNOTES #106.
 //
 // COST. Resampling is a table lookup per pixel, built once at init. No
 // division and no branch in any inner loop -- which matters, because Donkey

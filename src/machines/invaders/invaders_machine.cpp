@@ -47,7 +47,10 @@ void invaders_init(arcade_system *system) {
     system->ext_shift_offset = 0;
     system->ext_shift_data   = 0;
     system->cocktail_vertical_screen_flip = 0;
-    system->rotation = 1;   // default: 90 deg CCW tate mode
+    // 90 deg CW tate. MAME ROT270, which is the half of the house
+    // convention that lands on 3 -- see "WHICH WAY UP" in
+    // arcade_video_geom.h. Was 1 until the convention inverted.
+    system->rotation = 3;
     system->mirror_x = false;
 
     hal_video_init();

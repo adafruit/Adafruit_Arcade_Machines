@@ -47,13 +47,6 @@ void setup() {
     Serial.println("[pacman-esp32] boot: serial up");
 
     pacman_init(&g_system);
-
-    // The board is mounted a half turn from the orientation Pac-Man's
-    // default rotation was calibrated against, so the offset is applied
-    // here rather than by changing that default -- the default is shared
-    // with the Fruit Jam, where it is right. See FEATHER_ROTATION_OFFSET.
-    g_system.rotation = (g_system.rotation + FEATHER_ROTATION_OFFSET) & 0x03;
-
     Serial.printf("[pacman-esp32] boot: pacman_init done, rotation %u\n",
                   (unsigned)g_system.rotation);
 

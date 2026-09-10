@@ -47,31 +47,29 @@ void dkong_init(dkong_system *system) {
 
     dkong_ports_wire(system);
 
-    // Rotation 1 (90 deg CCW), NOT 3 -- even though Pac-Man and Ms. Pac-Man
-    // both default to 3 and this is, like theirs, a portrait cabinet.
+    // Rotation 3 (90 deg CW), NOT 1 -- even though Pac-Man and Ms. Pac-Man
+    // both default to 1 and this is, like theirs, a portrait cabinet.
     //
     // DEVNOTES.md problem #33 is the record of assuming a rotation default
     // carries over from a neighbouring game; this file initially repeated
     // that assumption in the opposite direction and came out 180 degrees
-    // off. The invariant that actually holds across every orientation
-    // confirmed on hardware here is stated in terms of the framebuffer, not
-    // in terms of which game it is:
+    // off. The invariant that actually holds is stated in terms of the
+    // framebuffer rather than in terms of which game it is, and it lives in
+    // one place: "WHICH WAY UP" in arcade_video_geom.h.
     //
-    //     the TOP of the game's picture must land on the RIGHT-hand side
-    //     of the DVI framebuffer.
-    //
-    // Space Invaders reaches that at rotation 1, Pac-Man and Ms. Pac-Man at
-    // rotation 3, and Donkey Kong at rotation 1 -- three different machines,
+    // Space Invaders reaches it at rotation 3, Pac-Man and Ms. Pac-Man at
+    // rotation 1, and Donkey Kong at rotation 3 -- three different machines,
     // two different values, one physical result. The value differs because
     // the machines' NATIVE raster orientations differ, which is a fact about
     // how each real cabinet mounted its monitor. It is not a house style,
     // and it cannot be inferred from the manufacturer or from the cabinet
-    // being portrait.
+    // being portrait. (The house style is only WHICH physical result is
+    // wanted; that inverted on 2026-09-09 and took every value with it.)
     //
-    // Checked by rendering the same frame at both values in
+    // Originally checked by rendering the same frame at both values in
     // tools/dkong_host/ and comparing where the score text lands against a
     // known-good frame from another game -- see DEVNOTES.md problem #41.
-    system->rotation = 1;
+    system->rotation = 3;
     system->mirror_x = false;
 
     // Everything else is zero, and for this machine that is meaningful
