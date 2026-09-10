@@ -37,6 +37,14 @@
 #include <machines/pacman/pacman_video.h>
 #include <machines/pacman/pacman_input.h>
 
+// Two emulated frames per painted frame -- see pacman_run_frames(). The
+// panel cannot reach 60Hz, so the game would otherwise run in slow motion.
+#define EMULATED_FRAMES_PER_PAINT 2u
+
+// Pac-Man's real refresh is 60.606Hz, so one emulated frame is 16,500us.
+// The budget covers however many frames are emulated per paint.
+#define FRAME_BUDGET_US (16500u * EMULATED_FRAMES_PER_PAINT)
+
 static pacman_system g_system;
 static bool     g_assets_ok = false;
 static uint16_t g_error_color = 0;
@@ -132,7 +140,23 @@ void loop() {
     //
     // It is nearly free: most of a frame is already spent waiting for the
     // SPI transfer, and the second frame's cycles fit inside that wait.
-    pacman_run_frames(&g_system, 2);
+    pacman_run_frames(&g_system, EMULATED_FRAMES_PER_PAINT);
+
+    // WALL-CLOCK LIMITER. Without it the game runs at whatever rate the
+    // panel happens to allow, which measured 61.4 emulated fps against a
+    // real Pac-Man cabinet's 60.606Hz -- 1.6% fast, and it would drift with
+    // scene complexity. Waiting out the remainder of the budget makes speed
+    // exact and content-independent.
+    //
+    // It can only ever slow things down. If a frame overruns the budget the
+    // deadline is simply reset, so a heavy scene degrades to "as fast as
+    // possible" rather than accumulating a debt it can never repay.
+    static uint32_t deadline = 0;
+    if (deadline == 0) deadline = micros();
+    deadline += FRAME_BUDGET_US;
+    int32_t slack = (int32_t)(deadline - micros());
+    if (slack > 0) delayMicroseconds((uint32_t)slack);
+    else           deadline = micros();
 
     uint32_t total = micros() - t0;
 
@@ -147,9 +171,12 @@ void loop() {
         // columns pillarboxed inside 320). It also makes a stray ROTATE
         // press visible -- GPIO 37 is input-only with no internal pull, so
         // an unwired or floating button line cycles this silently.
-        Serial.printf("[pacman-esp32] frame %lu  %.1f fps  frame %lu us  "
-                      "rot %u  (40MHz wire time for 320x240 is 30,720us)\n",
+        Serial.printf("[pacman-esp32] frame %lu  %.1f fps display  "
+                      "%.1f fps emulated (%.0f%% of 60.6Hz)  frame %lu us  "
+                      "rot %u\n",
                       (unsigned long)frame, fps,
+                      fps * EMULATED_FRAMES_PER_PAINT,
+                      100.0f * fps * EMULATED_FRAMES_PER_PAINT / 60.606f,
                       (unsigned long)(emul_us / 30u),
                       (unsigned)g_system.rotation);
         emul_us = 0; push_us = 0;
