@@ -24,7 +24,14 @@ to one game or one board are reusable for the next port:
   manifest. Board-agnostic — talks only to the HAL.
 - **`src/boards/fruitjam/`** — the Fruit Jam's implementation of those
   contracts: PicoDVI video, TLV320DAC3100 + I2S audio, GPIO input, SD card
-  storage via FatFs.
+  storage on SdFat.
+- **`src/boards/feather_esp32/`** — a second board, proving the split is
+  real: Feather ESP32 V2 + 2.4" TFT FeatherWing (SPI ILI9341) + dual
+  MAX98357A. Entirely different silicon, display technology and audio
+  path; not one line of `src/cpu/` or `src/machines/` changed to add it.
+- **`src/arch/`** — the layer between the two: chip facts rather than board
+  facts (RP2 PIO/DMA, ESP32 I2S and SPI), shared by every board built on
+  that family.
 - **`examples/Games/`** — one sketch per game, each the one place that knows
   both "this game" and "this board," wiring the two together.
 
@@ -35,8 +42,8 @@ game does not use — verified byte-for-byte, it costs nothing.
 
 `src/cpu/z80/` and `src/machines/pacman/` (below) added the project's first
 Z80-based game this way — a sibling library alongside the i8080 axis, not a
-replacement for it. A future different board would add a sibling
-`src/boards/*` backend the same way — see `../CLAUDE.md` in the parent
+replacement for it. `src/boards/feather_esp32/` later did the same for a
+second board — see `../CLAUDE.md` in the parent
 `i8080/` checkout (if you have it) for the full architecture rationale, or
 just read `src/hal/*.h` for the contracts themselves.
 
@@ -54,6 +61,18 @@ just read `src/hal/*.h` for the contracts themselves.
 
 Each game's own README covers its specific ROM/sample layout, controls, and
 any known quirks. They all share the building steps below.
+
+### A second board: Feather ESP32 V2
+
+| Game | Sketch | Notes |
+|---|---|---|
+| Pac-Man | [`pacman_featheresp32/`](examples/Games/pacman_featheresp32/) | Feather ESP32 V2 + 2.4" TFT FeatherWing (ILI9341) + dual MAX98357A. **Runs at true arcade speed**: the panel cannot reach 60Hz, so the emulator advances two frames per painted frame and a wall-clock limiter locks it to 60.606Hz — 30.3fps on screen, 100% game speed. |
+
+The panel is the ceiling here, not the emulator: 320x240 RGB565 at 40MHz is
+30.7ms of unavoidable clocking, and the transport runs within 3% of that.
+**Game speed and display rate are different numbers on this board** —
+conflating them is what hid a 40%-speed bug for most of the port. See
+`extras/DEVNOTES.md` #104-#111 before changing anything about that path.
 
 ### Screen orientation and aspect ratio
 
@@ -118,6 +137,14 @@ To build the whole set yourself, ready to attach to a release:
 
 `extras/dist/` is gitignored apart from that script and its README — the binaries
 belong on a release, not in the tree.
+
+The ESP32 build is also attached, as `pacman_featheresp32.bin`, and flashes
+**differently**: that board has no drag-and-drop bootloader, so use
+Adafruit's browser tool and write the file at offset `0x0` —
+[Web Serial ESPTool](https://learn.adafruit.com/circuitpython-with-esp32-quick-start/web-serial-esptool).
+It is a complete flash image (bootloader, partition table and application
+at their correct offsets in one file), and it needs the same microSD card
+the Fruit Jam build does.
 
 ## Building
 
