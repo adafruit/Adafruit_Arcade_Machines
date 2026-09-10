@@ -70,7 +70,7 @@ bool arch_spi_lcd_begin(int spi_host, int sck, int mosi, int miso,
     buscfg.quadwp_io_num   = -1;
     buscfg.quadhd_io_num   = -1;
     // One scanline is the largest thing sent, plus headroom.
-    buscfg.max_transfer_sz = 4096;
+    buscfg.max_transfer_sz = 8192;   // one 8-row strip is 5,120 bytes
     if (spi_bus_initialize(host, &buscfg, SPI_DMA_CH_AUTO) != ESP_OK) return false;
 
     spi_device_interface_config_t devcfg = {};

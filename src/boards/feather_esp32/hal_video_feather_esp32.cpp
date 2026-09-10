@@ -52,21 +52,32 @@ static Adafruit_ILI9341 s_tft(FEATHER_TFT_CS, FEATHER_TFT_DC);
 // requirement and is also what lets the byte swap below work 32 bits at a
 // time; static arrays land in internal DRAM, which the DMA engine can
 // reach and PSRAM would not be.
-// THREE line buffers, and the count is not arbitrary: it is the queue
-// depth plus one. The transport keeps up to two transfers in flight, so
-// the driver can own two buffers at once; the renderer needs a third that
-// nobody is reading. With only two, acquire_scanline() hands back a buffer
-// still being sent and the renderer overwrites it mid-transfer -- which
-// showed on the panel as a frame clean at the top, broken through the
-// middle once the queue saturated, and colours shifted between adjacent
-// RGB565 fields. See DEVNOTES #109.
+// SCANLINE STRIPS, not single rows.
+//
+// The transport costs ~32us per transfer regardless of size -- FreeRTOS
+// queue round-trips and driver bookkeeping, not pixels. Measured: pushing
+// frames with no rendering and no emulation at all took 38,413us against a
+// 30,720us wire floor, so 7,693us of every frame was per-transfer overhead
+// spread across 240 transfers. Batching 8 rows into one transfer divides
+// that by 8.
+//
+// acquire_scanline() hands out a pointer INTO the current strip, so the
+// machine renders straight into the buffer that gets sent -- no copy, and
+// nothing above the HAL knows this is happening.
+//
+// THREE strips, because the transport keeps two transfers in flight: the
+// driver can own two while the renderer writes the third. Queue depth and
+// buffer count are the same number, and getting that wrong corrupts the
+// picture from the middle of the frame down (DEVNOTES #109).
 //
 // 4-byte alignment is a hard DMA requirement and is also what lets the
 // byte swap work 32 bits at a time; static arrays land in internal DRAM,
 // which the DMA engine can reach and PSRAM would not be.
-#define LINE_BUFS 3
-static uint16_t s_line[LINE_BUFS][320] __attribute__((aligned(4)));
-static uint8_t  s_idx = 0;
+#define STRIP_ROWS 8u
+#define STRIP_BUFS 3u
+static uint16_t s_strip[STRIP_BUFS][STRIP_ROWS * 320] __attribute__((aligned(4)));
+static uint32_t s_srow = 0;   // row within the strip being filled
+static uint8_t  s_idx = 0;   // which strip is being filled
 static uint32_t s_y = 0;
 static bool     s_in_frame = false;
 static bool     s_dma = false;
@@ -128,9 +139,10 @@ bool hal_video_init(void) {
 }
 
 uint16_t *hal_video_acquire_scanline(void) {
-    // Never the buffer the DMA engine is reading -- submit_scanline() flips
-    // s_idx immediately after handing the other one to the transfer.
-    return s_line[s_idx];
+    // A row inside the strip currently being filled. Never a strip the
+    // driver is reading -- submit_scanline() only advances s_idx once a
+    // strip has been handed to the transport.
+    return s_strip[s_idx] + s_srow * 320u;
 }
 
 // The three ILI9341 address commands, sent through the IDF driver. Once the
@@ -151,6 +163,8 @@ static void lcd_addr_window(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
 }
 
 void hal_video_submit_scanline(uint16_t *buf) {
+    (void)buf;   // the caller rendered straight into the strip
+
     if (!s_in_frame) {
         if (s_dma) {
             lcd_addr_window(0, 0, HAL_VIDEO_WIDTH, HAL_VIDEO_HEIGHT);
@@ -162,32 +176,27 @@ void hal_video_submit_scanline(uint16_t *buf) {
         s_y = 0;
     }
 
-#if FEATHER_TFT_READBACK_PROBE
-    if (s_y == PROBE_ROW) {
-        uint32_t r = 0x1234567u;
-        for (uint32_t x = 0; x < HAL_VIDEO_WIDTH; x++) {
-            r = r * 1103515245u + 12345u;
-            buf[x] = (uint16_t)(r >> 16);
+    if (!s_dma) {
+        // CPU-FIFO fallback: no batching, the FIFO path gains nothing from
+        // it and this keeps the slow path simple.
+        s_tft.writePixels(s_strip[s_idx] + s_srow * 320u, HAL_VIDEO_WIDTH, true);
+    }
+
+    if (++s_srow >= STRIP_ROWS) {
+        if (s_dma) {
+            swap_to_wire_order(s_strip[s_idx], STRIP_ROWS * HAL_VIDEO_WIDTH);
+            arch_spi_lcd_data_async(s_strip[s_idx],
+                                    STRIP_ROWS * HAL_VIDEO_WIDTH * sizeof(uint16_t));
         }
-        memcpy(s_probe_expect, buf, sizeof s_probe_expect);
-        s_probe_valid = true;
-    }
-#endif
-
-    if (s_dma) {
-        // The swap touches THIS row, which is not the one in flight, so it
-        // runs for free while the previous transfer is still going.
-        swap_to_wire_order(buf, HAL_VIDEO_WIDTH);
-        arch_spi_lcd_data_async(buf, HAL_VIDEO_WIDTH * sizeof(uint16_t));
-    } else {
-        s_tft.writePixels(buf, HAL_VIDEO_WIDTH, true);
+        s_idx = (uint8_t)((s_idx + 1u) % STRIP_BUFS);
+        s_srow = 0;
     }
 
-    s_idx = (uint8_t)((s_idx + 1u) % LINE_BUFS);
     if (++s_y >= HAL_VIDEO_HEIGHT) {
         if (s_dma) arch_spi_lcd_flush();
         else       s_tft.endWrite();
         s_in_frame = false;
+        s_srow = 0;
     }
 }
 

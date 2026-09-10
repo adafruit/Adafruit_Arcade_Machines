@@ -63,6 +63,25 @@ void setup() {
     // peripheral. See arch_spi_dma.h.
     hal_video_run();
 
+    // TRANSPORT BENCHMARK, one shot. Pushes frames with NO rendering and no
+    // emulation, so what is left is the transport alone: the byte swap plus
+    // whatever the driver costs per transfer. Compared against the wire
+    // floor -- 153,600 bytes at 40MHz is 30,720us -- this says how much of
+    // the frame is overhead rather than physics.
+    {
+        const uint32_t t0 = micros();
+        for (int f = 0; f < 20; f++) {
+            for (uint32_t y = 0; y < HAL_VIDEO_HEIGHT; y++) {
+                uint16_t *b = hal_video_acquire_scanline();
+                hal_video_submit_scanline(b);
+            }
+        }
+        const uint32_t per = (micros() - t0) / 20u;
+        Serial.printf("[bench] transport only: %lu us/frame "
+                      "(40MHz wire floor 30720us, overhead %ld us)\n",
+                      (unsigned long)per, (long)per - 30720L);
+    }
+
     Serial.printf("[pacman-esp32] heap free %u, largest block %u, PSRAM %u\n",
                   (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap(),
                   (unsigned)ESP.getPsramSize());

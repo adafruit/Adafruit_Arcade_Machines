@@ -5566,3 +5566,43 @@ at run_frame_interleaved() where someone would trip over it, not only here.
 design one.** 60Hz needs the display at 33.3ms; it is at 38.1ms, and
 30.7ms of that is the unavoidable wire time. Closing ~5ms of the 7.4ms
 overhead would give a true-speed machine.
+
+### 111. Per-transfer overhead, not pixels: 8-row strips take the ESP32 to the wire limit
+
+**The measurement that mattered took ten minutes and should have come
+first.** A one-shot benchmark pushing frames with NO rendering and NO
+emulation isolated the transport: 38,413us against a 30,720us wire floor.
+Two things fell out at once.
+
+1. **Emulation and rendering were already fully hidden.** The full game
+   frame measured 38-39ms -- the same. Every microsecond above the floor
+   was transport.
+2. **7,693us spread across 240 transfers is ~32us each**, which at 240MHz
+   is ~7,700 CPU cycles per transfer. Nothing to do with pixels: FreeRTOS
+   queue round-trips and driver bookkeeping, paid once per
+   `spi_device_queue_trans` / `get_trans_result` pair.
+
+**Fix: batch 8 scanlines into one transfer.** 30 transfers per frame
+instead of 240.
+
+    overhead   frame     display   emulated   % of real
+    7,693us    38.1ms     26.2       52.5        87
+      955us    32.5ms     30.7       61.4       101
+
+**31,675us against a 30,720us floor -- 3% off the physical limit of this
+bus.** There is nothing meaningful left to win here.
+
+**It cost nothing above the HAL.** `acquire_scanline()` hands out a pointer
+INTO the strip being filled, so the machine renders straight into the
+buffer that gets sent. No copy, no contract change, no machine change.
+
+**Three strips, because two transfers are in flight.** Same rule as #109:
+queue depth and buffer count are the same number. 13.4KB of DRAM for a 15%
+frame-time win.
+
+**The lesson.** Two separate sessions of work went into the transport --
+one replacing a FIFO poll loop with DMA, one replacing hand-written
+registers with the vendor driver -- and BOTH left a bigger, simpler win on
+the table: the transfers were too small. A benchmark that isolates one
+layer is worth more than any amount of reasoning about which layer is slow,
+and it is cheap. **Measure the layer, not the whole.**
