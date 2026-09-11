@@ -5766,15 +5766,15 @@ task pinned to core 0, with the same 25ms asymmetric filter the Fruit Jam
 uses -- where 25ms is genuinely 25 samples rather than "however long until
 the next frame".
 
-**AND THE INSTRUMENT THAT SHOULD HAVE ANSWERED THIS IS BROKEN.**
-`galaga_host --census-code 0x30` exists specifically to count bullets, built
-after #32 lost a session to a flawed experiment. It now stalls at frame 323
-with `sub_reset_released=0` -- sub and sub2 never leaving reset. **Verified
-pre-existing**: the identical stall reproduces against an unmodified
-galaga_51xx.cpp, so it is not today's change. It meant this bug was chased
-on hardware, through someone else's eyes, using a tool that was built to
-make exactly that unnecessary. Fixing the harness is worth more than it
-looks.
+**AND THE INSTRUMENT THAT SHOULD HAVE ANSWERED THIS APPEARED BROKEN --
+WRONGLY. SEE #116.** `galaga_host --census-code 0x30` exists specifically to
+count bullets, built after #32 lost a session to a flawed experiment. It
+stopped at frame 323 with `sub_reset_released=0`, which was read here as the
+harness being broken. **It was not.** That was a false positive from the
+stall detector, and the emulation was fine all along -- run with the
+detector off, the machine boots completely a few hundred frames later. The
+tool was usable the whole time; believing the error message cost three
+rounds of hardware testing and a collaborator's evening. Corrected in #116.
 
 ### 115. The second core was the missing technique, and the handshake is the whole trick
 
@@ -5847,3 +5847,50 @@ copying this pattern.**
 
 Pac-Man and Ms. Pac-Man are left single-core: both already hold 100%, so
 the second core would buy headroom rather than speed.
+
+
+### 116. The harness was never broken -- the stall detector was lying, and I believed it
+
+#114 recorded `galaga_host` as broken: stalling at frame 323 with
+`sub_reset_released=0`, verified pre-existing by reproducing it against
+unmodified sources. **The reproduction was real and the conclusion was
+wrong.**
+
+Run with `--stall 0`, Galaga boots completely a few hundred frames later:
+sub CPUs released, all three running, irq1/irq2/nmi2 set, ram-test pass=7,
+starfield scrolling. The emulation was correct the whole time.
+
+**The bug was in the detector.** It watches two progress signals -- a new
+distinct traced event, and the ram-test pass counter -- and Galaga's boot
+legitimately advances NEITHER for about 500 frames while main works through
+its memory test with the sub CPUs still in reset. Against a flat 180-frame
+default that fires on every single run, at the same frame every time.
+
+Fixed by giving boot a larger budget: `sub_reset_released` is the boundary,
+because before it quiet stretches are normal and after it 180 frames of
+silence really is the deadlock this detector was built to catch. It also now
+says so when it fires during boot, instead of only reporting a stall.
+
+**With that one line changed, the #32 command runs verbatim and answers the
+question it was built for:**
+
+    6-frame tap        max 1 bullet    correct
+    60-frame hold      max 1 bullet    correct, no auto-repeat
+    two taps 20 apart  reaches 2       correct
+
+That is the confirmation of #114's fire fix -- in software, in seconds, with
+nobody watching a screen.
+
+**THE LESSON IS ABOUT THE ERROR MESSAGE, NOT THE DETECTOR.** "STALLED: 180
+frames with no new traced event and no ram-test progress" is an accurate
+description of what the tool observed and a false claim about what it means.
+I reproduced it, confirmed it was not my change, wrote it up as a known
+defect, shipped that in a PR body and a release note -- and never spent the
+thirty seconds it took to ask whether the stall was real. `--stall 0` was in
+`--help` the entire time.
+
+**A diagnostic reporting a fault is a hypothesis, not evidence.** The same
+rule that applies to a measurement applies to an alarm: check it against a
+known-good condition before believing it. #111 says measure the layer, not
+the whole; this is the same mistake at the level of the instrument's own
+verdict.

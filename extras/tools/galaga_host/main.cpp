@@ -499,11 +499,41 @@ int main(int argc, char **argv) {
         }
 
         if (stall_lim > 0) {
+            // BOOT GETS A MUCH LARGER BUDGET, and this is a fix rather than
+            // a fudge. The detector watches two progress signals -- a new
+            // distinct traced event, and the ram-test pass counter -- and
+            // Galaga's boot legitimately advances NEITHER for about 500
+            // frames while main works through its memory test with the sub
+            // CPUs still held in reset.
+            //
+            // With the flat 180-frame default that fired every single run,
+            // at frame 323, reporting a stall that was not one: with the
+            // detector off the machine boots fully a few hundred frames
+            // later -- sub_reset_released, all three CPUs running, irq1,
+            // irq2, nmi2 and a scrolling starfield. The false positive made
+            // the harness look broken, and it was believed: DEVNOTES #114
+            // recorded it as such, and a real bug (#32's half-finished fire
+            // fix) was then chased on hardware through a collaborator's
+            // eyes, using three rounds of testing, because the tool built
+            // to count bullets appeared unusable.
+            //
+            // sub_reset_released is the right boundary. Before it the
+            // machine is booting and quiet stretches are normal; after it
+            // the game is running and 180 frames of silence really is a
+            // deadlock -- which is what this detector was built to catch
+            // (the 3-CPU boot deadlock, see project notes).
+            const long lim = g_system.sub_reset_released ? stall_lim
+                                                         : stall_lim * 8;
             if (g_distinct == last_distinct && g_system.debug_checksum_pass == last_pass) {
-                if (++stall_for >= stall_lim) {
+                if (++stall_for >= lim) {
                     flush_pending();
                     printf("\n*** STALLED: %ld frames with no new traced event and no "
                            "ram-test progress ***\n", stall_for);
+                    if (!g_system.sub_reset_released) {
+                        printf("    (still in boot -- sub CPUs never released. If this is a\n"
+                               "     slow boot rather than a deadlock, raise --stall or use"
+                               " --stall 0.)\n");
+                    }
                     print_state("stall");
                     return 3;
                 }
