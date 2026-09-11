@@ -5935,3 +5935,51 @@ uninterrupted burst" rule intact for free, which is why it was there.
 **The handshake is still mandatory** even without a latch to protect: it is
 what bounds the notification queue, and an unbounded one is a task_wdt abort
 presenting as random crashes (#115).
+
+### 118. Space Invaders on the ESP32, and two pacing bugs one of them shipped
+
+Fifth game on the Feather ESP32 V2, **100% of 59.5Hz**. The lightest machine
+here and the least interesting port -- the bugs it exposed are the content.
+
+**Memory: the pressure is AUDIO, not graphics.** pcm_ram is 90,000 bytes of
+decoded WAV samples and wav_load_buf another 32,768, against a 124,580-byte
+segment that this machine's 65,616-byte system struct already half fills.
+Both went to PSRAM.
+
+**That needed a board-specific argument, not a pattern match.** The comment
+in invaders_audio.cpp is emphatic that PCM must live in SRAM and never be
+read from flash inside the audio IRQ, because an XIP stall there starves the
+PicoDVI scanline queue and paints coloured lines (invaders_pico DEVNOTES #3).
+That reasoning is about an ISR competing with a video queue. **This board has
+neither**: audio is a FreeRTOS task that may block, and there is no queue to
+starve. The constraint is real and it is board-specific -- which is exactly
+the distinction #115 asks for and the reason to read the comment rather than
+obey or ignore it.
+
+**BUG 1, SHIPPED: Burger Time went out in v2.7.0 with no wall-clock
+limiter.** Generating its sketch from Galaga's, the script that stripped
+Galaga's two-core block cut the limiter with it. btime's 97-98% was not the
+limiter working -- it was the game's natural speed with no pacing at all,
+drifting with scene complexity. Invaders inherited the same hole.
+
+**BUG 2: the frame budget was hardcoded to Pac-Man's 60.606Hz.** These
+machines do not agree on it:
+
+    Pac-Man / Ms. Pac-Man / Galaga   60.606 Hz   16,500us   correct
+    Space Invaders                   59.542 Hz   16,795us   was 1.8% fast
+    Burger Time                      57.4449 Hz  17,408us   was 5.5% fast
+
+**Invaders is what exposed it, by running at 105%.** An over-speed reading is
+loud; the same error in the other direction reads as "the board is a bit
+slow" and gets attributed to the hardware. Burger Time never revealed it
+because it had no limiter to be wrong -- **two bugs hiding each other.**
+
+Both now derive the budget from a per-game `GAME_HZ` taken from each
+machine's own timing constants, and the heartbeat reports percent-of-*that*
+rather than assuming 60.6.
+
+**The lesson is about copied scaffolding.** Four of the five ESP32 sketches
+were generated from a sibling by text substitution, which is fine for names
+and wrong for anything that is a per-game FACT. A constant that is correct in
+three files and silently wrong in two is the failure mode of that technique,
+and it survived a release.

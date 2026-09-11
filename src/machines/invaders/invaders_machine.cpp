@@ -100,6 +100,47 @@ static inline void step_cpu(arcade_system *system, int *cyc, int *int_state) {
     }
 }
 
+// `cyc` is hoisted to file scope so the two-core split below shares the
+// same carried-forward count invaders_run_frame() uses. It was a
+// function-local static, which is the same storage -- only the visibility
+// changes, and both halves must agree on it or the interrupt instants drift.
+static int g_cyc = 0;
+
+// --- TWO-CORE SPLIT -------------------------------------------------------
+//
+// Cycles here, pixels there, so a board with no scanline queue to starve can
+// run them concurrently. Same shape as galaga's and btime's.
+//
+// THIS IS THE SAFEST OF THE FOUR to run concurrently, and it is worth saying
+// why rather than relying on the pattern. Galaga needs a quiescent window
+// because a torn sprite record indexes a PSRAM cache out of bounds; Burger
+// Time needs none because every videoram byte is a valid character index.
+// This renderer reads VRAM as BITS and writes a constant colour -- it indexes
+// no array by VRAM content at all. There is no value it can read that can go
+// out of range, so there is nothing to protect.
+//
+// The interrupt scheme is unchanged: step_cpu() fires the mid-frame and
+// vblank interrupts off absolute `g_cyc` thresholds, so running the frame
+// body n times gives n correctly-placed pairs with nothing to re-arm.
+void invaders_run_cpu_frames(arcade_system *system, uint32_t frames) {
+    if (frames < 1u) frames = 1u;
+    for (uint32_t f = 0; f < frames; f++) {
+        int int_state = 0;
+        while (int_state != 2) {
+            step_cpu(system, &g_cyc, &int_state);
+        }
+        g_cyc = (int)CYCLES_PER_FRAME - g_cyc;
+    }
+}
+
+void invaders_render_frame(arcade_system *system) {
+    for (uint32_t i = 0; i < HAL_VIDEO_HEIGHT; i++) {
+        uint16_t *buf = hal_video_acquire_scanline();
+        invaders_video_render_scanline(i, buf, system);
+        hal_video_submit_scanline(buf);
+    }
+}
+
 void invaders_run_frame(arcade_system *system) {
     // `cyc` persists across frames -- any cycles run past this frame's
     // budget are carried forward and subtracted from the next frame's
@@ -108,7 +149,7 @@ void invaders_run_frame(arcade_system *system) {
     // interleaving below: `cyc` is still an absolute running count, so
     // `CYCLES_PER_FRAME / 2` and `CYCLES_PER_FRAME` still fire at exactly
     // the same emulated instants they always did.
-    static int cyc = 0;
+    int &cyc = g_cyc;   // see g_cyc above; storage and behaviour unchanged
     int int_state = 0;
 
     // INTERLEAVED CPU + scanline output. This function used to run the

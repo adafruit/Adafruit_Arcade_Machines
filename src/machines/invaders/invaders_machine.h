@@ -68,6 +68,15 @@ bool invaders_load_assets(arcade_system *system, uint16_t *out_error_color);
 // `system` for the frame.
 void invaders_run_frame(arcade_system *system);
 
+// --- Two-core split, for boards that can run emulation off the video core -
+//
+// Safe to run concurrently on this machine: its renderer reads VRAM as bits
+// and writes a constant colour, indexing no array by VRAM content, so there
+// is no torn read that can go out of range. That is a property of THIS
+// machine -- check before copying (DEVNOTES #115).
+void invaders_run_cpu_frames(arcade_system *system, uint32_t frames);
+void invaders_render_frame(arcade_system *system);
+
 #ifdef __cplusplus
 }
 #endif

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: MIT
 
-// btime_featheresp32 -- Burger Time on an Adafruit Feather ESP32 V2 with the
+// invaders_featheresp32 -- Space Invaders on an Adafruit Feather ESP32 V2 with the
 // 2.4" TFT FeatherWing. The SAMP composition root for this pair: the only
 // place that knows both "this game" and "this board".
 //
@@ -35,30 +35,28 @@
 #include <hal/arcade_hal_video.h>
 #include <hal/arcade_hal_input.h>
 #include <boards/feather_esp32/board_config_feather_esp32.h>
-#include <machines/btime/btime_machine.h>
-#include <machines/btime/btime_video.h>
-#include <machines/btime/btime_input.h>
+#include <machines/invaders/invaders_machine.h>
+#include <machines/invaders/invaders_video.h>
+#include <machines/invaders/invaders_input.h>
 
 // Two emulated frames per painted frame -- see pacman_run_frames(). The
 // panel cannot reach 60Hz, so the game would otherwise run in slow motion.
 #define EMULATED_FRAMES_PER_PAINT 2u
 
 // THE FRAME BUDGET IS PER-GAME, and these machines do not agree on it.
-// Burger Time's 57.4449Hz -- 6,000,000 / (384 * 272), from the MAME
-// set_raw() line quoted in btime_machine.h. NOT 60Hz: this board is
-// noticeably slower than the Namco games and pacing it to 16,500us would
-// run it 5.5% fast.
+// Space Invaders' 59.541985Hz -- invaders_machine.cpp's FRAMERATE,
+// derived from its 2MHz CPU and 19,968 cycles per frame.
 //
 // Pac-Man, Ms. Pac-Man and Galaga all run at 60.606Hz, so a shared 16,500us
 // constant was right for them and silently wrong here.
-#define GAME_HZ 57.4449f
+#define GAME_HZ 59.541985f
 #define FRAME_BUDGET_US ((uint32_t)(1000000.0f / (GAME_HZ)) * EMULATED_FRAMES_PER_PAINT)
 
 
 // Set to 1 to time the transport in isolation at boot. See setup().
-#define BTIME_ESP32_BENCH 0
+#define INVADERS_ESP32_BENCH 0
 
-static btime_system g_system;
+static arcade_system g_system;
 
 // --- TWO CORES: emulation on 0, video on 1 --------------------------------
 //
@@ -66,7 +64,7 @@ static btime_system g_system;
 // managed 86% of arcade speed here -- 38,194us against a 33,000us budget.
 // Run concurrently, emulation overlaps the SPI transfer instead of queueing
 // behind it. Same shape as galaga_featheresp32, minus the sprite latch:
-// this renderer has nothing to tear (see btime_run_cpu_frames).
+// this renderer has nothing to tear (see invaders_run_cpu_frames).
 //
 // THE HANDSHAKE IS NOT OPTIONAL. Signalling the emulation task without
 // waiting for a reply lets the count accumulate whenever core 0 falls
@@ -83,7 +81,7 @@ static void emulation_task(void *arg) {
     (void)arg;
     for (;;) {
         ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
-        btime_run_cpu_frames(&g_system, 1);
+        invaders_run_cpu_frames(&g_system, 1);
         xTaskNotifyGive(g_video_task);
     }
 }
@@ -94,17 +92,17 @@ static uint16_t g_error_color = 0;
 void setup() {
     Serial.begin(115200);
     delay(1500);
-    Serial.println("[btime-esp32] boot: serial up");
+    Serial.println("[invaders-esp32] boot: serial up");
 
-    btime_init(&g_system);
-    Serial.printf("[btime-esp32] boot: pacman_init done, rotation %u\n",
+    invaders_init(&g_system);
+    Serial.printf("[invaders-esp32] boot: pacman_init done, rotation %u\n",
                   (unsigned)g_system.rotation);
 
-    g_assets_ok = btime_load_assets(&g_system, &g_error_color);
-    Serial.printf("[btime-esp32] boot: assets %s\n",
+    g_assets_ok = invaders_load_assets(&g_system, &g_error_color);
+    Serial.printf("[invaders-esp32] boot: assets %s\n",
                   g_assets_ok ? "loaded OK" : "FAILED");
     if (!g_assets_ok) {
-        Serial.printf("[btime-esp32]   error colour 0x%04X -- red means no SD "
+        Serial.printf("[invaders-esp32]   error colour 0x%04X -- red means no SD "
                       "card / would not mount, yellow means mounted but the "
                       "required ROM files were missing\n", g_error_color);
     }
@@ -114,7 +112,7 @@ void setup() {
     hal_video_run();
 
     g_video_task = xTaskGetCurrentTaskHandle();
-    xTaskCreatePinnedToCore(emulation_task, "btime_emu", 8192, NULL, 2,
+    xTaskCreatePinnedToCore(emulation_task, "invaders_emu", 8192, NULL, 2,
                             &g_emu_task, 0);
     for (uint32_t f = 0; f < EMULATED_FRAMES_PER_PAINT; f++) {
         xTaskNotifyGive(g_emu_task);   // prime: loop() opens by waiting
@@ -129,7 +127,7 @@ void setup() {
     // and is a tool, not a feature. Turn it on when changing anything about
     // the transport -- it is what found that per-transfer overhead, not
     // pixel throughput, was the ceiling (DEVNOTES #111).
-#if BTIME_ESP32_BENCH
+#if INVADERS_ESP32_BENCH
     // Original note: Pushes frames with NO rendering and no
     // emulation, so what is left is the transport alone: the byte swap plus
     // whatever the driver costs per transfer. Compared against the wire
@@ -150,7 +148,7 @@ void setup() {
     }
 #endif
 
-    Serial.printf("[btime-esp32] heap free %u, largest block %u, PSRAM %u\n",
+    Serial.printf("[invaders-esp32] heap free %u, largest block %u, PSRAM %u\n",
                   (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap(),
                   (unsigned)ESP.getPsramSize());
 }
@@ -160,27 +158,24 @@ void loop() {
         static uint32_t last = 0;
         if (millis() - last > 1000) {
             last = millis();
-            Serial.println("[btime-esp32] asset load failed -- halted");
+            Serial.println("[invaders-esp32] asset load failed -- halted");
         }
-        btime_draw_error_frame(g_error_color);
+        invaders_draw_error_frame(g_error_color);
         return;
     }
 
     bool coin   = hal_input_read(HAL_BTN_COIN);
     bool start1 = hal_input_read(HAL_BTN_START1);
     bool start2 = hal_input_read(HAL_BTN_START2);
-    bool up     = hal_input_read(HAL_BTN_UP);
-    bool down   = hal_input_read(HAL_BTN_DOWN);
-    bool pepper = hal_input_read(HAL_BTN_SHOOT);
+    bool shoot  = hal_input_read(HAL_BTN_SHOOT);
     bool left   = hal_input_read(HAL_BTN_LEFT);
     bool right  = hal_input_read(HAL_BTN_RIGHT);
     bool rotate = hal_input_read(HAL_BTN_ROTATE);
     bool mirror = hal_input_read(HAL_BTN_MIRROR);   // always false here
 
-    // Burger Time is the first game here to use EVERY button this board
-    // wires: four directions, plus pepper on HAL_BTN_SHOOT (GPIO 4).
-    btime_input_update(&g_system, coin, start1, start2,
-                       up, down, left, right, pepper, rotate, mirror);
+    // Space Invaders: left/right/shoot only -- no up/down.
+    invaders_input_update(&g_system, coin, start1, start2,
+                          left, right, shoot, rotate, mirror);
 
     // Whole-frame time: emulation and pixel-pushing together, because they
     // are no longer separable. submit_scanline() hands the row to DMA and
@@ -215,7 +210,7 @@ void loop() {
     for (uint32_t f = 0; f < EMULATED_FRAMES_PER_PAINT; f++) {
         xTaskNotifyGive(g_emu_task);
     }
-    btime_render_frame(&g_system);
+    invaders_render_frame(&g_system);
 
     // WALL-CLOCK LIMITER. Without it the game runs at whatever rate the
     // panel happens to allow, which measured 61.4 emulated fps against a
@@ -251,7 +246,7 @@ void loop() {
         // columns pillarboxed inside 320). It also makes a stray ROTATE
         // press visible -- GPIO 37 is input-only with no internal pull, so
         // an unwired or floating button line cycles this silently.
-        Serial.printf("[btime-esp32] frame %lu  %.1f fps display  "
+        Serial.printf("[invaders-esp32] frame %lu  %.1f fps display  "
                       "%.1f fps emulated (%.0f%% of %.1fHz)  frame %lu us  "
                       "rot %u\n",
                       (unsigned long)frame, fps,
