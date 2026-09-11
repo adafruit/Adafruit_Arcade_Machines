@@ -5712,3 +5712,66 @@ as `@/path/build_opt.h` and the flag lives INSIDE it, later on the command
 line, so it wins. **Grep for the `@file`, not for the flag.** Stopping at
 the first grep would have meant reporting that build_opt.h was inert and
 hunting a fifth cause for a problem already solved.
+
+### 114. Galaga on the ESP32, and the half of the double-shot fix that was missing
+
+Galaga runs on the Feather ESP32 V2 -- **100% of 60.606Hz on quiet screens,
+~76% when the attract loop fills with sprites.** Unlike Pac-Man and
+Ms. Pac-Man, which hold 100% flat, this game is at the chip's limit under
+load: three Z80s plus sprite rendering.
+
+**It did not fit, and the fix was different from Ms. Pac-Man's.** Ms.
+Pac-Man overflowed on one big cold ROM (#113). Galaga's pressure is the
+decoded graphics caches -- `sprite_pixels` 32,768 + `tile_pixels` 16,384 --
+which are written once and read constantly. Those went to PSRAM, costing
+essentially nothing: emulation+render measured 15,302us against the Fruit
+Jam's 15,156us, within 1%. Read locality is good enough for the cache to
+absorb it.
+
+**THE DOUBLE SHOT CAME BACK, AND IT WAS MINE.**
+
+DEVNOTES #32 fixed "every press fires two bullets" by making fire a
+read-confirmed one-shot: `fire_pulse` set on the press edge, cleared inside
+`galaga_51xx_read()` when the game consumes player 1's control byte. That
+fix was HALF COMPLETE. It retired the *flag* but left bit 4 asserted in the
+stored `p1_ctrl` byte until the next `set_inputs()` call.
+
+On every board that existed at the time, invisible: inputs refresh once per
+emulated frame, so the game reads that byte exactly once and it is rebuilt
+before the next read. **The ESP32 runs TWO emulated frames per painted
+frame** (galaga_run_frames, #110), so `set_inputs` runs once and the game
+reads the same stale byte twice. One tap, two bullets.
+
+`galaga_51xx_read()` now clears the bit in the byte as well as the flag.
+Latent on the Fruit Jam and fixed there too -- it would surface the moment
+anything polled the 51XX twice between input updates.
+
+**TWO WRONG TURNS BEFORE THAT, both worth recording.**
+
+1. **I blamed the contacts, citing #32's own closing line** -- "if double
+   shots ever reappear WITH the 51XX fix in place, that is the point to
+   suspect the contacts again". That line was written before a board existed
+   that could read the byte twice, so it named the wrong suspect, and I
+   quoted it as though it settled the question.
+2. **I reached for a filter instead of the profiler**, which is precisely
+   what #32's own lesson says not to do. The debouncing added to
+   hal_input_feather_esp32.cpp did not fix this.
+
+**The debouncing stays, because it fixed a real and separate gap.** That
+board had NO filtering, and sampled input once per PAINTED frame -- 33-44ms
+between reads against the Fruit Jam's 16.7ms. A filter evaluated at that
+granularity cannot work: a release hold shorter than the sampling interval
+is satisfied by the very next sample. Input is now sampled on its own 1kHz
+task pinned to core 0, with the same 25ms asymmetric filter the Fruit Jam
+uses -- where 25ms is genuinely 25 samples rather than "however long until
+the next frame".
+
+**AND THE INSTRUMENT THAT SHOULD HAVE ANSWERED THIS IS BROKEN.**
+`galaga_host --census-code 0x30` exists specifically to count bullets, built
+after #32 lost a session to a flawed experiment. It now stalls at frame 323
+with `sub_reset_released=0` -- sub and sub2 never leaving reset. **Verified
+pre-existing**: the identical stall reproduces against an unmodified
+galaga_51xx.cpp, so it is not today's change. It meant this bug was chased
+on hardware, through someone else's eyes, using a tool that was built to
+make exactly that unnecessary. Fixing the harness is worth more than it
+looks.

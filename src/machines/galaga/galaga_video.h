@@ -76,6 +76,15 @@ void galaga_debug_take_layers(uint32_t *star_us, uint32_t *spr_us, uint32_t *til
 // register changes).
 void galaga_video_begin_frame(const galaga_system *system);
 
+// Tell the renderer how many emulated frames each painted frame covers, so
+// the STARFIELD keeps the right apparent speed.
+//
+// The starfield is the one element generated here rather than by the
+// emulated hardware, so it advances per PAINT while everything else
+// advances per emulated frame. Left at 1 it would crawl at 1/n speed on a
+// board that paints every n-th frame. galaga_run_frames() sets this.
+void galaga_video_set_emulated_frames(uint32_t n);
+
 // Renders one physical scanline (dvi_y). Exposed so galaga_machine.cpp's
 // galaga_run_frame() can call it once per scanline, interleaved with CPU
 // execution, same rationale pacman_machine.cpp documents (DEVNOTES.md

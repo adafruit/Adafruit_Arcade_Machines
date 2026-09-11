@@ -29,8 +29,24 @@ uint8_t galaga_sprite_lookup_prom[GALAGA_SPRITE_LOOKUP_SIZE];
 #define NUM_SPRITES 128
 
 // Decoded caches, built once by galaga_video_build_caches().
+// EXPERIMENT -- decoded graphics caches in PSRAM on ESP32.
+//
+// 16,384 + 32,768 = 49,152 bytes, and that chip's static-data segment is
+// 124,580, which Galaga overflows by 47,680. These two are the largest
+// things that are WRITTEN ONCE (galaga_video_build_caches) and only read
+// afterwards, which is the profile PSRAM suits. Indexing is unchanged.
+//
+// Whether it is fast ENOUGH is the open question: tile_pixels is read for
+// most pixels on screen, so this is not obviously affordable. Measure
+// before believing it.
+#if defined(ARDUINO_ARCH_ESP32)
+#include <Arduino.h>   // ps_malloc
+static uint8_t (*tile_pixels)[8][8];
+static uint8_t (*sprite_pixels)[16][16];
+#else
 static uint8_t tile_pixels[NUM_TILES][8][8];      // [tile][x][y] -> 2bpp pixel (0-3)
 static uint8_t sprite_pixels[NUM_SPRITES][16][16]; // [sprite][x][y] -> 2bpp pixel (0-3)
+#endif
 static uint16_t rgb565_palette[32];
 
 // Flattened pen lookups: final RGB565 for every (color code, 2bpp pixel)
@@ -109,6 +125,12 @@ static inline uint16_t char_pen_color(uint8_t color6, uint8_t pixel2);
 static inline uint16_t sprite_pen_color(uint8_t color6, uint8_t pixel2);
 
 void galaga_video_build_caches(void) {
+#if defined(ARDUINO_ARCH_ESP32)
+    if (!tile_pixels) {
+        tile_pixels   = (uint8_t (*)[8][8])ps_malloc(sizeof(uint8_t) * NUM_TILES * 8 * 8);
+        sprite_pixels = (uint8_t (*)[16][16])ps_malloc(sizeof(uint8_t) * NUM_SPRITES * 16 * 16);
+    }
+#endif
     for (int t = 0; t < NUM_TILES; t++) {
         const uint8_t *base = &galaga_gfx1_rom[t * 16]; // charincrement = 16*8 bits = 16 bytes
         for (int y = 0; y < 8; y++)
@@ -348,6 +370,15 @@ static void star_build_tables(void) {
 // frame path, so an XIP stall here eats into the same budget. (Its one-time
 // counterpart star_build_tables() is deliberately NOT marked -- it runs once
 // at init, and keeping its 65535-iteration loop in flash saves SRAM.)
+// How many emulated frames each painted frame covers. 1 everywhere except
+// boards that decouple game speed from display rate; see
+// galaga_video_set_emulated_frames().
+static uint32_t s_emulated_frames = 1u;
+
+void galaga_video_set_emulated_frames(uint32_t n) {
+    s_emulated_frames = (n < 1u) ? 1u : n;
+}
+
 GALAGA_VID_RAMFUNC static void star_begin_frame(const galaga_system *sys) {
     for (uint32_t y = 0; y < STAR_VIS_LINES; y++) star_row_n[y] = 0;
     for (uint32_t x = 0; x < (uint32_t)GALAGA_GAME_WIDTH; x++) star_col_n[x] = 0;
@@ -390,8 +421,21 @@ GALAGA_VID_RAMFUNC static void star_begin_frame(const galaga_system *sys) {
     // One frame consumes pre + visible + post clocks; against a 65535-long
     // sequence that is 65536 + the X-scroll adjustment, i.e. a net drift of
     // 1 + offset. This is the whole scrolling mechanism.
-    int32_t adv = (int32_t)(STAR_PRE_VIS + STAR_VIS_CLOCKS + STAR_POST_VIS)
-                + STAR_SPEED_X[idx_x];
+    //
+    // TIMES THE EMULATED-FRAME COUNT, and this is the one place a
+    // board-imposed display rate leaks into visible behaviour. The starfield
+    // is generated HERE, by the renderer, not by the emulated hardware -- so
+    // unlike everything the Z80s drive, it advances once per PAINTED frame
+    // rather than once per emulated one. On a board painting every other
+    // frame the stars would crawl at half speed. Multiplying is exact
+    // because the advance is modular addition: n steps of `adv` is one step
+    // of n*adv. galagino hits the same thing and doubles its own star
+    // scroll in half-rate mode.
+    //
+    // The visible cost is granularity: the stars move in n-pixel jumps
+    // instead of 1-pixel ones.
+    int32_t adv = ((int32_t)(STAR_PRE_VIS + STAR_VIS_CLOCKS + STAR_POST_VIS)
+                + STAR_SPEED_X[idx_x]) * (int32_t)s_emulated_frames;
     star_index = (uint32_t)(((int32_t)star_index + adv) % (int32_t)STAR_PERIOD);
 }
 

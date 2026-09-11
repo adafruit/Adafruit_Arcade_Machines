@@ -116,7 +116,26 @@ uint8_t galaga_51xx_read(galaga_51xx_state *s) {
         // Byte 1 is player 1's control byte -- the moment the game actually
         // consumes a fire pulse, so retire it here rather than after a
         // fixed number of frames (see galaga_51xx.h).
-        if (s->namco_cnt == 1) s->fire_pulse = false;
+        //
+        // CLEAR THE STORED BYTE TOO, not just the flag. p1_ctrl is built in
+        // set_inputs() and read from here, so clearing only fire_pulse
+        // leaves bit 4 asserted in the byte until the NEXT set_inputs call
+        // -- and every read before then sees fire held, which is one bullet
+        // each.
+        //
+        // On a board that calls set_inputs once per emulated frame this is
+        // invisible: the game reads the byte once and it is refreshed
+        // before the next read. It became visible on the Feather ESP32,
+        // where the display cannot sustain 60Hz and the machine runs TWO
+        // emulated frames per painted frame (galaga_run_frames) -- so
+        // set_inputs runs once and the game reads the same stale byte
+        // twice. One tap, two bullets. Exactly the symptom DEVNOTES #32
+        // chased, from a different cause, and the half of that fix that was
+        // missing.
+        if (s->namco_cnt == 1) {
+            s->fire_pulse = false;
+            s->p1_ctrl = (uint8_t)(s->p1_ctrl | 0x10u); // active low: de-assert
+        }
     }
 
     s->namco_cnt++;
