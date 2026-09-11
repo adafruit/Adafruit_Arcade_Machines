@@ -61,7 +61,7 @@ done
 # That merged image is padded to the full 8MB of flash, almost all of it
 # 0xFF, so it is trimmed to its real content and sector-aligned here: ~504KB
 # instead of 8MB, which matters when someone is pushing it through a browser.
-ESP_GAMES="pacman mspacman galaga btime"
+ESP_GAMES="pacman mspacman galaga btime invaders"
 for g in $ESP_GAMES; do
     sk="${g}_featheresp32"
     printf '%-20s ' "$sk"
