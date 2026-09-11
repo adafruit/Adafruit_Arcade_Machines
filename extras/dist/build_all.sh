@@ -3,8 +3,8 @@
 #
 # SPDX-License-Identifier: MIT
 
-# Build the release binaries into dist/: seven Fruit Jam .uf2 files, and
-# one ESP32 image for the Feather ESP32 V2.
+# Build the release binaries into dist/: seven Fruit Jam .uf2 files, and the
+# Feather ESP32 V2 images.
 #
 # TWO THINGS THIS DOES DELIBERATELY:
 #
@@ -61,16 +61,18 @@ done
 # That merged image is padded to the full 8MB of flash, almost all of it
 # 0xFF, so it is trimmed to its real content and sector-aligned here: ~504KB
 # instead of 8MB, which matters when someone is pushing it through a browser.
-ESP_SK="pacman_featheresp32"
-printf '%-20s ' "$ESP_SK"
-if ! arduino-cli compile --library "$ROOT" \
-        --fqbn esp32:esp32:adafruit_feather_esp32_v2 \
-        --output-dir "$HERE" "examples/Games/$ESP_SK" \
-        > "$HERE/.esp32.log" 2>&1; then
-    echo "FAILED -- see $HERE/.esp32.log"
-    exit 1
-fi
-python3 - "$HERE" "$ESP_SK" <<'TRIM'
+ESP_GAMES="pacman mspacman"
+for g in $ESP_GAMES; do
+    sk="${g}_featheresp32"
+    printf '%-20s ' "$sk"
+    if ! arduino-cli compile --library "$ROOT" \
+            --fqbn esp32:esp32:adafruit_feather_esp32_v2 \
+            --output-dir "$HERE" "examples/Games/$sk" \
+            > "$HERE/.$g-esp32.log" 2>&1; then
+        echo "FAILED -- see $HERE/.$g-esp32.log"
+        exit 1
+    fi
+    python3 - "$HERE" "$sk" <<'TRIM'
 import sys, pathlib
 here, sk = pathlib.Path(sys.argv[1]), sys.argv[2]
 d = (here / f"{sk}.ino.merged.bin").read_bytes()
@@ -79,12 +81,13 @@ assert d[0x1000] == 0xE9 and d[0x8000:0x8002] == b"\xaa\x50" and d[0x10000] == 0
     "merged image is not laid out as expected -- refusing to ship it"
 (here / f"{sk}.bin").write_bytes(d[:n])
 TRIM
-# NOTE the glob: the core emits both `NAME.ino.bin` and
-# `NAME.ino_flashed.bin` -- dot AND underscore. Matching only "$ESP_SK.ino."
-# left the underscore one behind, and `gh release upload dist/*.bin` would
-# have shipped it alongside the real image.
-rm -f "$HERE/$ESP_SK.ino"* "$HERE/.esp32.log"
-printf 'ok   %s\n' "$(du -h "$HERE/$ESP_SK.bin" | cut -f1 | tr -d ' ')"
+    # NOTE the glob: the core emits both `NAME.ino.bin` and
+    # `NAME.ino_flashed.bin` -- dot AND underscore. Matching only
+    # "$sk.ino." left the underscore one behind, and
+    # `gh release upload dist/*.bin` would have shipped it.
+    rm -f "$HERE/$sk.ino"* "$HERE/.$g-esp32.log"
+    printf 'ok   %s\n' "$(du -h "$HERE/$sk.bin" | cut -f1 | tr -d ' ')"
+done
 
 echo
 echo "built into $HERE:"
