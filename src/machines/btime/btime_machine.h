@@ -179,6 +179,27 @@ bool btime_load_assets(btime_system *system, uint16_t *out_error_color);
 // sketch after btime_input_update().
 void btime_run_frame(btime_system *system);
 
+// Advance `emulated_frames` frames of game time while painting the screen
+// ONCE, for boards whose display cannot sustain 60Hz.
+//
+// Unlike the other machines here there are no interrupts to re-fire: this
+// board polls a vblank bit derived from the scanline counter, so running
+// the line loop n times produces n real vblank periods by construction.
+void btime_run_frames(btime_system *system, uint32_t emulated_frames);
+
+// --- Two-core split, for boards that can run emulation off the video core -
+//
+// Together these do what btime_run_frames() does, separably. Audio slicing
+// lives with the CPU half, because it reads state the CPUs are writing.
+//
+// Safe to run concurrently on THIS machine because its renderer reads only
+// videoram and colorram live, and every byte value is a valid index into
+// the character cache -- there is no torn read that can index out of range.
+// That is a property of this machine, not a general guarantee; check it
+// before copying the pattern (DEVNOTES #115).
+void btime_run_cpu_frames(btime_system *system, uint32_t frames);
+void btime_render_frame(btime_system *system);
+
 // DEBUG counters, for the questions this machine's failure modes can only
 // be answered with a number rather than an opinion (DEVNOTES.md #32). All
 // are cheap increments on paths the emulation itself does not read, and

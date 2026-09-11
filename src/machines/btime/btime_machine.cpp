@@ -336,10 +336,30 @@ static void run_scanline(btime_system *system, uint32_t line) {
 // a time. Landscape/180 need the frame's final state before they can emit
 // even one physical scanline, so they keep the fully-sequential path -- the
 // same known, deprioritised limitation ArcadeMachine_Pacman has.
-static void run_frame_interleaved(btime_system *system) {
+// `emulated_frames` DECOUPLES GAME SPEED FROM DISPLAY RATE, for boards whose
+// display cannot sustain 60Hz -- see pacman_machine.cpp for the general
+// idea. THIS MACHINE IS THE EASIEST OF THE THREE TO EXTEND, and for an
+// unusual reason: it has no vblank interrupt to re-fire.
+//
+// Every other game here takes an interrupt per frame, so running n frames
+// per paint means firing n interrupts at the right cycle offsets (Galaga
+// also has to re-arm two NMIs and their fired-flags). Burger Time polls a
+// vblank BIT that run_scanline() derives from the line number -- so simply
+// running the line loop n times produces n genuine vblank periods, in the
+// right places, with nothing to re-arm.
+//
+// The 240 submissions spread across ALL n*272 lines rather than bunching
+// into the last frame. That preserves the no-long-gap property the comment
+// below is about, and means the painted picture is sampled evenly across
+// the whole emulated span.
+static void run_frame_interleaved(btime_system *system,
+                                  uint32_t emulated_frames) {
+    if (emulated_frames < 1u) emulated_frames = 1u;
+    const uint32_t total_lines = BTIME_SCANLINES_PER_FRAME * emulated_frames;
     uint32_t submitted = 0;
 
-    for (uint32_t line = 0; line < BTIME_SCANLINES_PER_FRAME; line++) {
+    for (uint32_t l = 0; l < total_lines; l++) {
+        const uint32_t line = l % BTIME_SCANLINES_PER_FRAME;
         run_scanline(system, line);
 
         // SUBMISSIONS ARE SPREAD OVER ALL 272 GAME SCANLINES, not just the
@@ -365,8 +385,7 @@ static void run_frame_interleaved(btime_system *system) {
         // line by up to 12% of a frame. That is deliberate and harmless --
         // the alternative is the starvation above, and every renderer here
         // already reads live VRAM mid-frame by design.
-        const uint32_t want = ((line + 1u) * HAL_VIDEO_HEIGHT)
-                              / BTIME_SCANLINES_PER_FRAME;
+        const uint32_t want = ((l + 1u) * HAL_VIDEO_HEIGHT) / total_lines;
         while (submitted < want && submitted < HAL_VIDEO_HEIGHT) {
             uint16_t *buf = hal_video_acquire_scanline();
             const uint32_t r0 = COST_NOW();
@@ -400,12 +419,63 @@ static void run_frame_interleaved(btime_system *system) {
 // Slicing off the scanline loop here rather than generating a whole frame's
 // audio in one call afterwards also keeps the #48 rule intact for free: no
 // single slice is a long uninterrupted burst.
+// --- TWO-CORE SPLIT -------------------------------------------------------
+//
+// Same idea as galaga_run_cpu_frames()/galaga_render_frame(): cycles here,
+// pixels there, so a board with no scanline queue to starve can run them on
+// separate cores. Two differences from Galaga's, both in this machine's
+// favour:
+//
+//   NO LATCH TO TEAR. Galaga needs a quiescent window because
+//   galaga_video_begin_frame() walks sprite registers, and a torn record's
+//   garbage sprite code indexes a PSRAM-resident cache out of bounds. This
+//   renderer reads videoram and colorram live, byte at a time -- and every
+//   byte value is a valid index into char_px[1024] (8 code bits + 2 bank
+//   bits), so there is no value it can read that indexes out of range. The
+//   worst case is a character cell one frame stale, which this loop already
+//   accepts by design.
+//
+//   AUDIO TRAVELS WITH THE CPU. btime_audio_run_slice() reads PSG state the
+//   CPUs are writing, so it belongs on the core that owns them -- not on
+//   the video core where it would be the race the renderer is not. Slicing
+//   it across the scanline loop also keeps DEVNOTES #48's "no long
+//   uninterrupted burst" rule intact for free, which is why it was there.
+void btime_run_cpu_frames(btime_system *system, uint32_t frames) {
+    if (frames < 1u) frames = 1u;
+    const uint32_t total_lines = BTIME_SCANLINES_PER_FRAME * frames;
+    const uint32_t total_slices = HAL_VIDEO_HEIGHT * frames;
+    uint32_t slice = 0;
+
+    for (uint32_t l = 0; l < total_lines; l++) {
+        run_scanline(system, l % BTIME_SCANLINES_PER_FRAME);
+        const uint32_t want = ((l + 1u) * total_slices) / total_lines;
+        while (slice < want) {
+            btime_audio_run_slice(slice % HAL_VIDEO_HEIGHT, HAL_VIDEO_HEIGHT);
+            slice++;
+        }
+    }
+    cost_frame_done();
+}
+
+void btime_render_frame(btime_system *system) {
+    for (uint32_t i = 0; i < HAL_VIDEO_HEIGHT; i++) {
+        uint16_t *buf = hal_video_acquire_scanline();
+        btime_video_render_scanline(system, i, buf);
+        hal_video_submit_scanline(buf);
+    }
+}
+
+void btime_run_frames(btime_system *system, uint32_t emulated_frames) {
+    run_frame_interleaved(system, emulated_frames);
+    cost_frame_done();
+}
+
 void btime_run_frame(btime_system *system) {
     // Every rotation, one path. btime_video.cpp's render_native_column()
     // removed the reason landscape/180 ever needed a whole-frame burst
     // (DEVNOTES #79), and with it the frame_pen cache and the separate
     // sequential loop that fed it.
-    run_frame_interleaved(system);
+    run_frame_interleaved(system, 1u);
     cost_frame_done();
 
     // NOTE the absence of anything here. Every other machine in this

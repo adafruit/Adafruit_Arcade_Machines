@@ -5894,3 +5894,44 @@ rule that applies to a measurement applies to an alarm: check it against a
 known-good condition before believing it. #111 says measure the layer, not
 the whole; this is the same mistake at the level of the instrument's own
 verdict.
+### 117. Burger Time on the ESP32: the heaviest machine, and the easiest decoupling
+
+Fourth game on the Feather ESP32 V2. **86% of arcade speed on one core,
+97-98% on two.** Verified on hardware: sound, picture, rotation 3, all nine
+buttons, plays well.
+
+**It needed the most PSRAM of any port here.** char_px and char_px_T are
+64KB each; with bg_px and bg_px_T that is 160KB of pixel caches against a
+raw footprint of ~226KB and a 124,580-byte static-data segment. Moved to
+PSRAM it lands at 117,628. Same profile as #113 and #114: written once by
+btime_video_build_caches(), read constantly afterwards.
+
+**Its decoupling was the EASIEST of the four, for a hardware reason.** Every
+other machine takes a vblank interrupt per frame, so running n frames per
+paint means firing n interrupts at the right cycle offsets -- Galaga also
+has to re-arm two NMIs and their fired-flags (#115). Burger Time has no
+vblank interrupt at all: it polls a bit that run_scanline() derives from the
+line number. **Running the line loop n times therefore produces n genuine
+vblank periods, in the right places, with nothing to re-arm.** The machine
+whose odd hardware made it hardest to port originally turned out to be the
+one that extended most cleanly.
+
+**And it needed NO quiescent latch window**, which #115 said to check for
+rather than assume. Galaga needs one because galaga_video_begin_frame()
+walks sprite registers and a torn record's garbage sprite code indexes a
+PSRAM-resident cache out of bounds. This renderer reads only videoram and
+colorram live, a byte at a time, and **every byte value is a valid index
+into char_px[1024]** -- 8 code bits plus 2 bank bits -- so no value it can
+read indexes out of range. Worst case is a character cell one frame stale,
+which the loop already accepts. The check took a minute and removed a whole
+class of risk rather than mitigating it.
+
+**Audio travels with the CPU half.** btime_audio_run_slice() reads PSG state
+the 6502s are writing, so it belongs on the core that owns them -- putting
+it on the video core would have created exactly the race the renderer does
+not have. Slicing it across the scanline loop also keeps #48's "no long
+uninterrupted burst" rule intact for free, which is why it was there.
+
+**The handshake is still mandatory** even without a latch to protect: it is
+what bounds the notification queue, and an unbounded one is a task_wdt abort
+presenting as random crashes (#115).
