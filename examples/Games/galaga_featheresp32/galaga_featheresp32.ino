@@ -51,6 +51,52 @@
 #define GALAGA_ESP32_BENCH 0
 
 static galaga_system g_system;
+
+// --- TWO-CORE PROTOTYPE ---------------------------------------------------
+//
+// Emulation on core 0, video on core 1, which is what galagino does and the
+// one technique of its four we were missing. We already batch scanlines
+// into strips, pace to a wall clock, and trigger vblank twice per paint --
+// but emulation and video were welded to core 1 by the interleaved frame
+// loop, leaving core 0 running only the small audio and input tasks.
+//
+// Why it matters HERE and not for the other two games: Pac-Man and
+// Ms. Pac-Man hold 100% of arcade speed already, so the second core would
+// only buy headroom. Galaga does not -- it costs ~22ms per frame under
+// sprite load, and serialised with ~31.7ms of render-and-transport that is
+// ~44ms a paint, about 76% speed. Run concurrently it should be
+// max(22, 31.7), i.e. transport-bound and 100%.
+//
+// The sync is a notification per emulated frame: video signals, emulation
+// runs one frame. Same shape as galagino's xTaskNotifyGive.
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+static TaskHandle_t g_emu_task = NULL;
+
+static TaskHandle_t g_video_task = NULL;
+
+// HANDSHAKE, NOT A ONE-WAY STREAM, and the first version got this wrong in
+// a way worth recording. It sent a notification per emulated frame and
+// never waited for a reply. Under sprite load core 0 needs ~44ms to do the
+// work core 1 asks for every ~33ms, so the notification count ACCUMULATED,
+// ulTaskNotifyTake stopped blocking, this task ran forever, and core 0's
+// idle task starved until the task watchdog aborted -- "crashes depending
+// on what the attract loop is doing", which is exactly what an
+// accumulating queue looks like.
+//
+// Acking bounds the outstanding count at EMULATED_FRAMES_PER_PAINT, so
+// this task always returns to a blocking wait and idle always runs. It
+// also gives core 1 a window in which the machine is provably quiescent,
+// which is where the sprite latch has to happen.
+static void emulation_task(void *arg) {
+    (void)arg;
+    for (;;) {
+        ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
+        galaga_run_cpu_frames(&g_system, 1);
+        xTaskNotifyGive(g_video_task);   // "frame done"
+    }
+}
 static bool     g_assets_ok = false;
 static uint16_t g_error_color = 0;
 
@@ -75,6 +121,19 @@ void setup() {
     // SdFat reads the ROMs over SPIClass, and the two cannot both own the
     // peripheral. See arch_spi_dma.h.
     hal_video_run();
+
+    // Emulation on core 0, priority above the Arduino loop (1) so a long
+    // paint cannot delay it, below the audio and input tasks (2) which are
+    // tiny and must not jitter. Started AFTER assets load -- it would
+    // otherwise run a machine with no ROM in it.
+    g_video_task = xTaskGetCurrentTaskHandle();
+    xTaskCreatePinnedToCore(emulation_task, "galaga_emu", 8192, NULL, 2,
+                            &g_emu_task, 0);
+    // Prime the pipeline: loop() opens by waiting for acks, so core 0 needs
+    // work to ack before the first paint.
+    for (uint32_t f = 0; f < EMULATED_FRAMES_PER_PAINT; f++) {
+        xTaskNotifyGive(g_emu_task);
+    }
 
     // TRANSPORT BENCHMARK, one shot. Off by default: it costs ~0.7s of boot
     // and is a tool, not a feature. Turn it on when changing anything about
@@ -152,11 +211,30 @@ void loop() {
     //
     // It is nearly free: most of a frame is already spent waiting for the
     // SPI transfer, and the second frame's cycles fit inside that wait.
-    // Two emulated frames per painted frame. Measured: emulation + render
-    // alone is 15,302us, so 2x is 30,604us inside the 33,000us budget --
-    // and within 1% of what this game costs on the Fruit Jam, so the
-    // graphics caches living in PSRAM cost essentially nothing.
-    galaga_run_frames(&g_system, EMULATED_FRAMES_PER_PAINT);
+    // Paint from whatever the emulation core has produced, then ask it for
+    // the next EMULATED_FRAMES_PER_PAINT frames. The two overlap: the
+    // notifications are sent BEFORE this core starts its next paint, so
+    // core 0 emulates while core 1 renders and transmits.
+    // 1. Wait until core 0 has finished everything asked of it. The machine
+    //    is now quiescent -- nothing is mutating sprite registers.
+    for (uint32_t f = 0; f < EMULATED_FRAMES_PER_PAINT; f++) {
+        ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
+    }
+
+    // 2. Latch this frame's sprites from that quiescent state. Short -- the
+    //    only part that cannot overlap.
+    galaga_video_begin_frame(&g_system);
+
+    // 3. Release core 0 for the next frames. From here the two run
+    //    concurrently: core 0 emulates while core 1 paints.
+    for (uint32_t f = 0; f < EMULATED_FRAMES_PER_PAINT; f++) {
+        xTaskNotifyGive(g_emu_task);
+    }
+
+    // 4. Paint. Reads video_ram live, which is safe: tiles change rarely
+    //    and by whole character cells, and this renderer already accepts
+    //    intra-frame staleness as authentic CRT behaviour.
+    galaga_render_frame(&g_system);
 
     // WALL-CLOCK LIMITER. Without it the game runs at whatever rate the
     // panel happens to allow, which measured 61.4 emulated fps against a

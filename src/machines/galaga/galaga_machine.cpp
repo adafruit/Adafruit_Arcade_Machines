@@ -467,6 +467,59 @@ bool galaga_load_assets(galaga_system *system, uint16_t *out_error_color) {
     return true;
 }
 
+// --- TWO-CORE SPLIT -------------------------------------------------------
+//
+// galaga_run_frame[s]() above interleaves CPU slices with scanline
+// submission, which is right on the Fruit Jam: running a whole frame's
+// cycles before the first acquire_scanline() starves the DVI queue
+// (DEVNOTES #19). It is also what welds emulation and video to one core.
+//
+// A board with no such queue can run them on SEPARATE cores instead, which
+// is what galagino does -- "let the cpu emulation run on the second core,
+// so the main core can completely focus on video". These two functions are
+// that split: cycles here, pixels there.
+//
+// WHAT MAKES IT SAFE HERE, and it is worth checking before copying this to
+// another machine: the renderer reads almost nothing live. Sprites are
+// latched once per frame by galaga_video_begin_frame(), and the only
+// per-scanline read of emulator state is video_ram -- tile numbers and
+// colours, which change rarely and by whole character cells. This loop
+// already documents accepting intra-frame staleness as authentic
+// scanline-order CRT behaviour; concurrent CPU only widens that window.
+//
+// galagino takes a full prepare_frame() snapshot instead. That is the
+// stronger guarantee and it is what a machine whose renderer reads live
+// sprite state would need.
+void galaga_run_cpu_frames(galaga_system *system, uint32_t frames) {
+    for (uint32_t f = 0; f < frames; f++) {
+        const uint32_t start_main = system->cpu_main.cyc;
+        const uint32_t start_sub  = system->cpu_sub.cyc;
+        const uint32_t start_sub2 = system->cpu_sub2.cyc;
+        system->nmi2_fired_a = false;
+        system->nmi2_fired_b = false;
+        interleave_to_target(system, start_main, start_sub, start_sub2,
+                             GALAGA_CYCLES_PER_FRAME,
+                             start_sub2 + GALAGA_CYCLES_PER_FRAME / 4,
+                             start_sub2 + 3UL * GALAGA_CYCLES_PER_FRAME / 4);
+        fire_interrupts(system);
+    }
+}
+
+// DOES NOT LATCH. The caller must call galaga_video_begin_frame() first,
+// and must do it while the machine is QUIESCENT -- that latch walks the
+// sprite registers in ram1/2/3, and reading them while the CPU is mid-write
+// yields a torn sprite record. A garbage sprite code then indexes
+// sprite_pixels out of bounds, which on a board where that cache lives in
+// PSRAM is an access to unmapped memory rather than a harmless read of the
+// next array.
+void galaga_render_frame(galaga_system *system) {
+    for (uint32_t i = 0; i < HAL_VIDEO_HEIGHT; i++) {
+        uint16_t *buf = hal_video_acquire_scanline();
+        galaga_video_render_scanline(system, i, buf);
+        hal_video_submit_scanline(buf);
+    }
+}
+
 void galaga_run_frames(galaga_system *system, uint32_t emulated_frames) {
     galaga_video_set_emulated_frames(emulated_frames);
     run_frame_interleaved(system, emulated_frames);

@@ -5775,3 +5775,75 @@ galaga_51xx.cpp, so it is not today's change. It meant this bug was chased
 on hardware, through someone else's eyes, using a tool that was built to
 make exactly that unnecessary. Fixing the harness is worth more than it
 looks.
+
+### 115. The second core was the missing technique, and the handshake is the whole trick
+
+Galaga on the Feather ESP32 went from **76% of arcade speed under sprite
+load to 97-100%** by moving emulation to core 0. Played through stage 1 on
+hardware with no crash.
+
+**This came from reading galagino's source rather than reasoning.** Lined
+up against it, we already did three of its four techniques and had arrived
+at each independently:
+
+    batch tile-rows into one SPI write   galagino: tft.write(224*8)   us: 8-row strips   YES
+    wall-clock pace to a frame budget    vTaskDelay(33-t1)            limiter            YES
+    vblank trigger twice per paint       xTaskNotifyGive x2           run_frames(n)      YES
+    EMULATION ON THE OTHER CORE          xTaskCreatePinnedToCore(0)   both on core 1     NO
+
+Their setup comment states the intent plainly: *"let the cpu emulation run
+on the second core, so the main core can completely focus on video."*
+
+**Why we were welded to one core.** `run_frame_interleaved()` interleaves
+CPU slices with scanline submission, and that is CORRECT -- for the Fruit
+Jam. DEVNOTES #19 records that running a whole frame's cycles before the
+first acquire_scanline() starves the DVI queue. On a board with no such
+queue it buys nothing and costs an entire idle core. **A design constraint
+from one board had silently become the architecture.**
+
+**TWO THINGS BIT, and the first was the interesting one.**
+
+1. **An unbounded notification queue is a watchdog abort, not a slowdown.**
+   The first version sent one notification per emulated frame and never
+   waited for a reply. Under load core 0 needs ~44ms to do what core 1 asks
+   every ~33ms, so the count ACCUMULATED, `ulTaskNotifyTake` stopped
+   blocking, the emulation task ran forever, and core 0's idle task starved
+   until the task watchdog fired. It presented as "crashes depending on
+   what the attract loop is doing", which is exactly what an accumulating
+   queue looks like from outside.
+
+   **The backtrace named it in one step** -- `interleave_to_target` <-
+   `galaga_run_cpu_frames` <- `emulation_task`, with a task_wdt abort, so
+   not a memory fault at all. Decoding it beat guessing, which is the same
+   lesson as #108 and cost about two minutes here instead of an evening.
+
+2. **I waved away a race and was wrong about which part was safe.** The
+   argument was "sprites are latched once per frame, so concurrency only
+   widens the existing intra-frame staleness". True of the RENDER, false of
+   the LATCH: `galaga_video_begin_frame()` walks the sprite registers in
+   ram1/2/3, and reading them mid-write gives a torn record whose garbage
+   sprite code indexes sprite_pixels out of bounds -- and that cache now
+   lives in PSRAM, so an overrun is unmapped memory rather than a harmless
+   read of the next array.
+
+**The fix is one handshake and it solves both.** Core 0 acks each frame;
+core 1 waits for all acks before doing anything else. That bounds the queue
+(so the task always returns to a blocking wait and idle always runs) AND
+yields a window where the machine is provably quiescent, which is where the
+latch goes. Sequence per paint:
+
+    wait for acks  ->  latch sprites  ->  release core 0  ->  paint
+
+Only the latch is serialised, and it is short. The paint overlaps emulation
+entirely.
+
+**What makes this safe for Galaga specifically** is that its renderer reads
+almost nothing live: sprites are latched, and the only per-scanline read of
+emulator state is video_ram -- tile numbers and colours, changing rarely and
+by whole character cells. galagino takes a full `prepare_frame()` snapshot
+instead, which is the stronger guarantee and what a machine whose renderer
+reads live sprite state would need. **Check what the renderer reads before
+copying this pattern.**
+
+Pac-Man and Ms. Pac-Man are left single-core: both already hold 100%, so
+the second core would buy headroom rather than speed.
