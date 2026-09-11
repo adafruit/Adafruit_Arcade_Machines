@@ -51,10 +51,40 @@ static sound_channel_t channels[MAX_CHANNELS];
 // like PicoDVI; see invaders_pico's DEVNOTES.md "Red horizontal lines when
 // sounds play"). 90000 bytes matches the reference clone's sizing for the
 // stock Space Invaders sample set.
+// PCM AND THE WAV LOAD SCRATCH GO TO PSRAM ON ESP32 -- 90,000 + 32,768
+// bytes, against a 124,580-byte static-data segment this machine already
+// half fills with its system struct.
+//
+// Both are the right profile. wav_load_buf is touched only while loading
+// and never again. pcm_ram is written once at load and then read by the
+// audio mixer, which on that board runs on its own FreeRTOS task -- not in
+// an interrupt.
+//
+// THAT LAST POINT IS WHY THIS IS SAFE HERE AND WOULD NOT BE ON THE FRUIT
+// JAM. The comment this file inherited is emphatic that PCM must live in
+// SRAM and never be read from flash inside the audio IRQ, because an XIP
+// stall there starves the PicoDVI scanline queue and paints coloured lines
+// (invaders_pico DEVNOTES #3). That reasoning is about an ISR competing
+// with a video queue. This board has neither: audio is a task that may
+// block, and there is no queue to starve. The constraint is real and it is
+// board-specific.
+#if defined(ARDUINO_ARCH_ESP32)
+#include <Arduino.h>   // ps_malloc
+static uint8_t *pcm_ram = NULL;
+#define PCM_RAM_SIZE 90000u
+#else
 static uint8_t pcm_ram[90000];
+#define PCM_RAM_SIZE (sizeof pcm_ram)
+#endif
 
 // Temp buffer for loading one WAV file at a time during init.
+#if defined(ARDUINO_ARCH_ESP32)
+static uint8_t *wav_load_buf = NULL;
+#define WAV_LOAD_BUF_SIZE 32768u
+#else
 static uint8_t wav_load_buf[32768];
+#define WAV_LOAD_BUF_SIZE (sizeof wav_load_buf)
+#endif
 
 typedef struct {
     const uint8_t *pcm;
@@ -138,6 +168,13 @@ static void ARCADE_FAST_FUNC(fill_audio_buffer)(int32_t *buf, int count) {
 }
 
 int invaders_audio_load_samples(void) {
+#if defined(ARDUINO_ARCH_ESP32)
+    if (!pcm_ram) {
+        pcm_ram      = (uint8_t *)ps_malloc(PCM_RAM_SIZE);
+        wav_load_buf = (uint8_t *)ps_malloc(WAV_LOAD_BUF_SIZE);
+        if (!pcm_ram || !wav_load_buf) return 0;   // no samples loaded
+    }
+#endif
     memset(channels, 0, sizeof(channels));
     uint32_t ram_off = 0;
     int loaded = 0;
@@ -148,7 +185,7 @@ int invaders_audio_load_samples(void) {
 
         hal_file_t *f = hal_storage_open(path);
         if (f) {
-            uint32_t bytes_read = hal_storage_read(f, wav_load_buf, sizeof(wav_load_buf));
+            uint32_t bytes_read = hal_storage_read(f, wav_load_buf, WAV_LOAD_BUF_SIZE);
             hal_storage_close(f);
 
             if (bytes_read > 0) {
@@ -156,7 +193,7 @@ int invaders_audio_load_samples(void) {
                     wav_load_buf, (size_t)bytes_read, INVADERS_AUDIO_SAMPLE_RATE,
                     &wav_info[i].pcm, &wav_info[i].bytes,
                     &wav_info[i].step, &wav_info[i].is_16bit);
-                if (wav_info[i].valid && ram_off + wav_info[i].bytes <= sizeof(pcm_ram)) {
+                if (wav_info[i].valid && ram_off + wav_info[i].bytes <= PCM_RAM_SIZE) {
                     memcpy(pcm_ram + ram_off, wav_info[i].pcm, wav_info[i].bytes);
                     wav_info[i].pcm = pcm_ram + ram_off;
                     ram_off += wav_info[i].bytes;
