@@ -218,8 +218,24 @@ static uint8_t spread[256][8];
 // which turns a tile row from sixteen add-and-store pairs into a memcpy.
 // That is safe because the two caches are never mixed -- the char layer's
 // transparency test looks at char pens, never at background ones.
+// PIXEL CACHES IN PSRAM ON ESP32. These four total 160KB -- char_px and
+// char_px_T are 64KB each -- against that chip's 124,580-byte static-data
+// segment, which the rest of this machine already half fills. They are the
+// right things to move: written once by btime_video_build_caches() and only
+// read afterwards, which is the profile PSRAM suits (DEVNOTES #113).
+//
+// Galaga's equivalent caches cost within 1% there, so the read locality of
+// a tile/char cache is evidently good enough for the cache to absorb. This
+// machine reads them harder -- a char row is an 8-byte copy per character
+// per scanline -- so it is worth measuring rather than assuming.
+#if defined(ARDUINO_ARCH_ESP32)
+#include <Arduino.h>   // ps_malloc
+static uint8_t (*char_px)[8][8];
+static uint8_t (*bg_px)[16][16];
+#else
 static uint8_t char_px[1024][8][8];
 static uint8_t bg_px[64][16][16];
+#endif
 
 // COLUMN-MAJOR TWINS of the two caches above: [code][col][row] rather than
 // [code][row][col]. 64KB + 16KB, and they exist for one measured reason.
@@ -236,10 +252,23 @@ static uint8_t bg_px[64][16][16];
 // is single-cycle and uniform, so the stride itself is not what hurt. What
 // hurt was replacing a handful of word-wide copies with 256 separate
 // byte loads, each with its own three-level index arithmetic.
+#if defined(ARDUINO_ARCH_ESP32)
+static uint8_t (*char_px_T)[8][8];      // [code][col][row]
+static uint8_t (*bg_px_T)[16][16];      // [code][col][row]
+#else
 static uint8_t char_px_T[1024][8][8];   // [code][col][row]
 static uint8_t bg_px_T[64][16][16];     // [code][col][row]
+#endif
 
 void btime_video_build_caches(void) {
+#if defined(ARDUINO_ARCH_ESP32)
+    if (!char_px) {
+        char_px   = (uint8_t (*)[8][8])   ps_malloc(1024u * 8u * 8u);
+        char_px_T = (uint8_t (*)[8][8])   ps_malloc(1024u * 8u * 8u);
+        bg_px     = (uint8_t (*)[16][16]) ps_malloc(64u * 16u * 16u);
+        bg_px_T   = (uint8_t (*)[16][16]) ps_malloc(64u * 16u * 16u);
+    }
+#endif
     for (int b = 0; b < 256; b++)
         for (int j = 0; j < 8; j++)
             spread[b][j] = (uint8_t)((b >> (7 - j)) & 1);
