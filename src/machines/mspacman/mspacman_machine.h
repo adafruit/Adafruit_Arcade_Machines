@@ -69,6 +69,10 @@ extern "C" {
 // way to break this port, so readability there is worth the SRAM here.
 #define MSPACMAN_ROM_BANK_SIZE   0xC000 // 0x0000-0xBFFF of one bank (0x4000-0x7FFF unused)
 #define MSPACMAN_ROM_BANKS       2      // [0] plain Pac-Man, [1] decrypted Ms. Pac-Man
+
+// One bank of program ROM. Named so the sketch that owns the storage can
+// declare or allocate it without repeating the dimensions.
+typedef uint8_t mspacman_rom_bank_t[MSPACMAN_ROM_BANK_SIZE];
 #define MSPACMAN_BANK_PLAIN      0
 #define MSPACMAN_BANK_DECRYPTED  1
 #define MSPACMAN_VIDEO_RAM_SIZE  0x0400 // tile numbers,        0x4000-0x43FF
@@ -86,7 +90,24 @@ typedef struct {
     // decode in mspacman_assets.cpp reads exactly like MAME's. Addresses
     // 0x4000-0x7FFF within a bank are never read (RAM/IO decodes first) and
     // are left zeroed.
-    uint8_t rom[MSPACMAN_ROM_BANKS][MSPACMAN_ROM_BANK_SIZE];
+    // ROM STORAGE IS SUPPLIED BY THE SKETCH, not declared inline here, and
+    // that is a board-driven decision rather than a style one.
+    //
+    // Two 48K banks is 98,304 bytes -- 97% of this struct. On the Fruit Jam
+    // that is fine and it is a plain static array. On the Feather ESP32 it
+    // is not: that chip's static-data segment (dram0_0_seg) is 124,580
+    // bytes, and the struct inline overflowed it by 65,776. The ESP32
+    // sketch puts the ROM in PSRAM and keeps everything else -- video_ram,
+    // color_ram, work_ram, the CPU state, 3,188 bytes in total -- in fast
+    // internal RAM, because THOSE are the hot ones: the renderer reads
+    // video_ram and color_ram for every tile of every scanline.
+    //
+    // Putting the whole struct in PSRAM instead cost 2.9ms per frame and
+    // dropped that board from 100% to 92% of arcade speed. The split is
+    // worth having.
+    //
+    // Indexing is unchanged: rom[bank][addr] still means what it did.
+    mspacman_rom_bank_t *rom;
 
     // Which bank the aux board's decoder currently has selected. Reset
     // value is MSPACMAN_BANK_DECRYPTED, matching init_mspacman()'s closing
@@ -156,7 +177,14 @@ typedef struct {
 // Sets game-state defaults, wires the Z80 core's callbacks (see
 // mspacman_ports.h), and initializes video (hal_video_init()). Does not
 // touch storage.
-void mspacman_init(mspacman_system *system);
+// `rom_storage` is MSPACMAN_ROM_BANKS banks of program ROM, owned by the
+// caller and living for as long as the machine does. It is a parameter
+// rather than a setter because mspacman_init() memsets the struct, so a
+// setter would have to be called afterwards -- and forgetting that is a
+// null dereference at the first instruction fetch, where forgetting an
+// argument is a compile error. See the `rom` field for why the sketch owns
+// this at all.
+void mspacman_init(mspacman_system *system, mspacman_rom_bank_t *rom_storage);
 
 // Loads ROM/PROM assets via ArcadeHAL's storage contract (see
 // mspacman_assets.h), builds the tile/sprite/palette decode caches (see
@@ -172,6 +200,14 @@ bool mspacman_load_assets(mspacman_system *system, uint16_t *out_error_color);
 // the sketch after mspacman_input_update() has updated `system` for the
 // frame.
 void mspacman_run_frame(mspacman_system *system);
+
+// Advance `emulated_frames` frames of CPU time and fire that many vblank
+// interrupts, while painting the screen ONCE.
+//
+// For boards whose display cannot sustain 60Hz. The game keeps authentic
+// speed -- the Z80 sees the real interrupt rate -- and only the picture is
+// decimated. mspacman_run_frame() is exactly this with a count of 1.
+void mspacman_run_frames(mspacman_system *system, uint32_t emulated_frames);
 
 #ifdef __cplusplus
 }

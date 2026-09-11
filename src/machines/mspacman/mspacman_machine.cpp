@@ -29,8 +29,12 @@
 // cycles/frame, no remainder, no carry-forward needed.
 #define MSPACMAN_CYCLES_PER_FRAME 50688UL
 
-void mspacman_init(mspacman_system *system) {
+void mspacman_init(mspacman_system *system, mspacman_rom_bank_t *rom_storage) {
     memset(system, 0, sizeof(*system));
+
+    // After the memset, necessarily: the struct no longer contains the ROM,
+    // only a pointer to storage the sketch owns.
+    system->rom = rom_storage;
 
     z80_init(&system->cpu);
 
@@ -128,17 +132,46 @@ bool mspacman_load_assets(mspacman_system *system, uint16_t *out_error_color) {
 // "Compare elapsed delta, not absolute cyc" wraparound-safety -- see
 // pacman_machine.cpp for the full explanation
 // (arcade_arduino/DEVNOTES.md problem #22).
-static void run_frame_interleaved(mspacman_system *system) {
+// `emulated_frames` DECOUPLES GAME SPEED FROM DISPLAY RATE, for boards
+// whose display cannot sustain 60Hz. The machine advances that many frames
+// of cycles and fires that many vblank interrupts while painting ONCE, so
+// the Z80 sees the interrupt rate the real hardware produced and only the
+// picture is decimated. See pacman_machine.cpp's copy of this for the full
+// reasoning, the cost, and the one class of thing that must be scaled
+// alongside it.
+//
+// THIS IS THE SECOND COPY. A THIRD SHOULD BE FACTORED OUT. The body is
+// identical across machines apart from the cycle constant, the step
+// function and the renderer, so a shared helper taking those three would
+// remove the duplication -- but at two instances that is more machinery
+// than it saves, and the machines deliberately do not share a frame loop
+// today. If a third board-limited port appears, do it then.
+static void run_frame_interleaved(mspacman_system *system,
+                                  uint32_t emulated_frames) {
+    if (emulated_frames < 1u) emulated_frames = 1u;
+    const uint32_t total_cycles = MSPACMAN_CYCLES_PER_FRAME * emulated_frames;
     uint32_t start = system->cpu.cyc;
+    uint32_t next_int = 1u;
 
     for (uint32_t i = 0; i < HAL_VIDEO_HEIGHT; i++) {
         // Exact proportional target delta (not repeated addition) so the
-        // final slice lands exactly on MSPACMAN_CYCLES_PER_FRAME elapsed
-        // regardless of how that divides by the scanline count.
+        // final slice lands exactly on the total elapsed count regardless
+        // of how that divides by the scanline count.
         uint32_t target_delta =
-            (uint32_t)((uint64_t)MSPACMAN_CYCLES_PER_FRAME * (i + 1) / HAL_VIDEO_HEIGHT);
+            (uint32_t)((uint64_t)total_cycles * (i + 1) / HAL_VIDEO_HEIGHT);
         while ((uint32_t)(system->cpu.cyc - start) < target_delta) {
             z80_step(&system->cpu);
+        }
+
+        // Interior vblanks, at each emulated frame boundary this scanline
+        // has passed. The last is fired after the loop so it keeps its
+        // original end-of-frame position exactly.
+        while (next_int < emulated_frames &&
+               target_delta >= MSPACMAN_CYCLES_PER_FRAME * next_int) {
+            if (system->interrupt_enable) {
+                z80_gen_int(&system->cpu, system->interrupt_vector);
+            }
+            next_int++;
         }
 
         uint16_t *buf = hal_video_acquire_scanline();
@@ -146,8 +179,8 @@ static void run_frame_interleaved(mspacman_system *system) {
         hal_video_submit_scanline(buf);
     }
 
-    // One vblank interrupt per frame, fired at the end -- unchanged from
-    // when this shared the job with a sequential path.
+    // The final vblank, fired at the end -- unchanged from when this was
+    // the only one.
     if (system->interrupt_enable) {
         z80_gen_int(&system->cpu, system->interrupt_vector);
     }
@@ -157,5 +190,9 @@ void mspacman_run_frame(mspacman_system *system) {
     // Every rotation, one path: mspacman_video.cpp's
     // render_native_column() removed the reason landscape/180 ever needed a
     // whole-frame burst (DEVNOTES #79).
-    run_frame_interleaved(system);
+    run_frame_interleaved(system, 1u);
+}
+
+void mspacman_run_frames(mspacman_system *system, uint32_t emulated_frames) {
+    run_frame_interleaved(system, emulated_frames);
 }
