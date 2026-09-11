@@ -284,7 +284,27 @@ static uint32_t g_render_max_us = 0, g_noblock_run = 0, g_noblock_run_max = 0;
 // same DEVNOTES.md problem #19 rationale pacman_machine.cpp's
 // run_frame_interleaved() documents in full (never run a whole frame's
 // CPU cycles before the first hal_video_acquire_scanline() call).
-GALAGA_M_RAMFUNC static void run_frame_interleaved(galaga_system *system) {
+// `emulated_frames` DECOUPLES GAME SPEED FROM DISPLAY RATE, for boards
+// whose display cannot sustain 60Hz -- see pacman_machine.cpp for the
+// general idea. THIS MACHINE NEEDS MORE THAN THE OTHER TWO, because a
+// Galaga "frame" is not just a cycle count and one interrupt:
+//
+//   - THREE CPUs advance together, and sub/sub2 have their own reset and
+//     catch-up rules (see interleave_to_target).
+//   - sub2 takes TWO NMIs per frame, at 1/4 and 3/4, tracked by
+//     nmi2_fired_a/b so they fire once each. Those marks and both flags
+//     have to be RE-ARMED at every emulated frame boundary, or frames after
+//     the first get no NMIs at all and the sound CPU stops.
+//   - main and sub take a vblank interrupt per frame, so fire_interrupts()
+//     runs once per emulated frame rather than once per paint.
+//
+// The starfield is the other half of this and lives in galaga_video.cpp:
+// it is animated by the RENDERER, not by the emulated hardware, so it
+// advances once per PAINT and would run at 1/n speed. galaga_video_set_
+// emulated_frames() scales it. galagino hits exactly this and doubles its
+// own star scroll in half-rate mode.
+GALAGA_M_RAMFUNC static void run_frame_interleaved(galaga_system *system,
+                                                   uint32_t emulated_frames) {
     uint32_t start_main = system->cpu_main.cyc;
     uint32_t start_sub  = system->cpu_sub.cyc;
     uint32_t start_sub2 = system->cpu_sub2.cyc;
@@ -296,18 +316,40 @@ GALAGA_M_RAMFUNC static void run_frame_interleaved(galaga_system *system) {
     // Core 1 frees all N_SCANBUF buffers at frame end, so each frame starts
     // with a full runway -- the drawdown is a within-frame quantity.
     FT_DEFICIT_RESET();
+    if (emulated_frames < 1u) emulated_frames = 1u;
+    const uint32_t total_cycles = GALAGA_CYCLES_PER_FRAME * emulated_frames;
+    uint32_t emu_frame = 0;   // which emulated frame the loop is inside
     uint32_t nmi2_mark_a = start_sub2 + GALAGA_CYCLES_PER_FRAME / 4;
     uint32_t nmi2_mark_b = start_sub2 + 3UL * GALAGA_CYCLES_PER_FRAME / 4;
 
     for (uint32_t i = 0; i < HAL_VIDEO_HEIGHT; i++) {
         uint32_t target_delta =
-            (uint32_t)((uint64_t)GALAGA_CYCLES_PER_FRAME * (i + 1) / HAL_VIDEO_HEIGHT);
+            (uint32_t)((uint64_t)total_cycles * (i + 1) / HAL_VIDEO_HEIGHT);
         uint32_t ft_cpu_line = 0;
         const uint32_t ft_c = FT_NOW();
         interleave_to_target(system, start_main, start_sub, start_sub2, target_delta,
                               nmi2_mark_a, nmi2_mark_b);
         FT_SET(ft_cpu_line, ft_c);
         FT_ACC(g_ft_cpu, ft_cpu_line);
+
+        // Emulated frame boundaries crossed by this scanline's slice. With
+        // 240 scanlines spanning `emulated_frames` frames a slice is well
+        // under one frame, so this fires at most once -- the loop is for
+        // correctness, not for an expected case.
+        while (emu_frame + 1u < emulated_frames &&
+               target_delta >= GALAGA_CYCLES_PER_FRAME * (emu_frame + 1u)) {
+            fire_interrupts(system);
+            emu_frame++;
+            // Re-arm sub2's two NMIs for the frame just entered. Without
+            // this, every emulated frame after the first runs with both
+            // already-fired flags set and sub2 never gets another NMI.
+            nmi2_mark_a = start_sub2 + GALAGA_CYCLES_PER_FRAME * emu_frame
+                        + GALAGA_CYCLES_PER_FRAME / 4;
+            nmi2_mark_b = start_sub2 + GALAGA_CYCLES_PER_FRAME * emu_frame
+                        + 3UL * GALAGA_CYCLES_PER_FRAME / 4;
+            system->nmi2_fired_a = false;
+            system->nmi2_fired_b = false;
+        }
 
         // Starvation detector. A red line means Core 1's VALID scanline
         // queue emptied. That cannot be seen directly from here, but its
@@ -425,10 +467,68 @@ bool galaga_load_assets(galaga_system *system, uint16_t *out_error_color) {
     return true;
 }
 
+// --- TWO-CORE SPLIT -------------------------------------------------------
+//
+// galaga_run_frame[s]() above interleaves CPU slices with scanline
+// submission, which is right on the Fruit Jam: running a whole frame's
+// cycles before the first acquire_scanline() starves the DVI queue
+// (DEVNOTES #19). It is also what welds emulation and video to one core.
+//
+// A board with no such queue can run them on SEPARATE cores instead, which
+// is what galagino does -- "let the cpu emulation run on the second core,
+// so the main core can completely focus on video". These two functions are
+// that split: cycles here, pixels there.
+//
+// WHAT MAKES IT SAFE HERE, and it is worth checking before copying this to
+// another machine: the renderer reads almost nothing live. Sprites are
+// latched once per frame by galaga_video_begin_frame(), and the only
+// per-scanline read of emulator state is video_ram -- tile numbers and
+// colours, which change rarely and by whole character cells. This loop
+// already documents accepting intra-frame staleness as authentic
+// scanline-order CRT behaviour; concurrent CPU only widens that window.
+//
+// galagino takes a full prepare_frame() snapshot instead. That is the
+// stronger guarantee and it is what a machine whose renderer reads live
+// sprite state would need.
+void galaga_run_cpu_frames(galaga_system *system, uint32_t frames) {
+    for (uint32_t f = 0; f < frames; f++) {
+        const uint32_t start_main = system->cpu_main.cyc;
+        const uint32_t start_sub  = system->cpu_sub.cyc;
+        const uint32_t start_sub2 = system->cpu_sub2.cyc;
+        system->nmi2_fired_a = false;
+        system->nmi2_fired_b = false;
+        interleave_to_target(system, start_main, start_sub, start_sub2,
+                             GALAGA_CYCLES_PER_FRAME,
+                             start_sub2 + GALAGA_CYCLES_PER_FRAME / 4,
+                             start_sub2 + 3UL * GALAGA_CYCLES_PER_FRAME / 4);
+        fire_interrupts(system);
+    }
+}
+
+// DOES NOT LATCH. The caller must call galaga_video_begin_frame() first,
+// and must do it while the machine is QUIESCENT -- that latch walks the
+// sprite registers in ram1/2/3, and reading them while the CPU is mid-write
+// yields a torn sprite record. A garbage sprite code then indexes
+// sprite_pixels out of bounds, which on a board where that cache lives in
+// PSRAM is an access to unmapped memory rather than a harmless read of the
+// next array.
+void galaga_render_frame(galaga_system *system) {
+    for (uint32_t i = 0; i < HAL_VIDEO_HEIGHT; i++) {
+        uint16_t *buf = hal_video_acquire_scanline();
+        galaga_video_render_scanline(system, i, buf);
+        hal_video_submit_scanline(buf);
+    }
+}
+
+void galaga_run_frames(galaga_system *system, uint32_t emulated_frames) {
+    galaga_video_set_emulated_frames(emulated_frames);
+    run_frame_interleaved(system, emulated_frames);
+}
+
 void galaga_run_frame(galaga_system *system) {
     // One path for every rotation. galaga_video.cpp's
     // render_native_column() removed the reason landscape/180 ever needed a
     // whole-frame burst (DEVNOTES #79), and with it the 129KB frame_cache
     // and the sequential loop that fed it.
-    run_frame_interleaved(system);
+    run_frame_interleaved(system, 1u);
 }

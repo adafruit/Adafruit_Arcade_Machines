@@ -162,7 +162,21 @@ static void lcd_addr_window(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
     arch_spi_lcd_cmd(ILI9341_RAMWR);
 }
 
+// DIAGNOSTIC: when set, scanlines are rendered but not transmitted, so a
+// frame's measured time is emulation + render ALONE. That is the number
+// that decides whether a game can afford the emulated-frames decoupling on
+// this board, and it cannot be read off a normal frame -- with the
+// transport overlapped, all a normal frame says is "emulation is hidden".
+bool hal_video_skip_present = false;
+
 void hal_video_submit_scanline(uint16_t *buf) {
+    if (hal_video_skip_present) {
+        s_idx = (uint8_t)((s_idx + 1u) % STRIP_BUFS);
+        if (++s_srow >= STRIP_ROWS) s_srow = 0;
+        if (++s_y >= HAL_VIDEO_HEIGHT) { s_y = 0; s_srow = 0; }
+        return;
+    }
+
     (void)buf;   // the caller rendered straight into the strip
 
     if (!s_in_frame) {

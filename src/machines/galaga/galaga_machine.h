@@ -298,6 +298,27 @@ bool galaga_load_assets(galaga_system *system, uint16_t *out_error_color);
 // after galaga_input_update() has updated `system` for the frame.
 void galaga_run_frame(galaga_system *system);
 
+// Advance `emulated_frames` frames of CPU time -- with the vblank and NMI
+// interrupts each of those frames would have produced -- while painting the
+// screen ONCE. For boards whose display cannot sustain 60Hz.
+//
+// This also scales the starfield, which is animated by the renderer rather
+// than the emulated hardware and would otherwise run at 1/n speed.
+void galaga_run_frames(galaga_system *system, uint32_t emulated_frames);
+
+// --- Two-core split, for boards that can run emulation off the video core -
+//
+// Together these do what galaga_run_frames() does, but separably: one
+// advances the machine, the other paints from it. A board with no scanline
+// queue to starve can run them concurrently on different cores.
+//
+// The caller owns the synchronisation and the frame pacing. See the comment
+// above galaga_run_cpu_frames() for what makes concurrent access safe on
+// THIS machine -- it is a property of what its renderer reads, not a
+// general guarantee.
+void galaga_run_cpu_frames(galaga_system *system, uint32_t frames);
+void galaga_render_frame(galaga_system *system);
+
 // Frame-budget diagnostics: peak single-scanline render time, and the
 // longest run of consecutive non-blocking scanline acquires (>= the DVI
 // queue depth of 8 means Core 1 starved -- a red line). Reading clears both.
