@@ -166,6 +166,27 @@ static uint32_t g_noise_lfsr = 0x1234;
 #define JUMP_CENTRE_HZ 362.0f   // jump.wav: warbles 233..467Hz, mean 372Hz
 #define JUMP_DEPTH_HZ  117.0f
 #define JUMP_DEPTH_FLOOR 0.55f  // the warble narrows to ~55% by the tail
+// MASTER OUTPUT LEVEL, and it is the LAST thing in the chain on purpose.
+// The four channel constants below (music 0.9, stomp 0.5, jump 0.12, walk
+// 0.045) are a mix balanced BY EAR against recordings, so the way to make
+// this game louder is to scale all of them together -- touching one of them
+// re-opens a judgement that was already made.
+//
+// 12000 was the original value and it left the game 7dB quieter than every
+// other machine here, which is how it was reported: "the sound is very
+// quiet". MEASURED, from extras/tools/dkong_host --wav over 19s of play:
+// peaks -15 to -21 dBFS, RMS -26 dBFS. Pac-Man and Galaga scale a WSG mix
+// that reaches +/-17280 on a chord, so DK really was the outlier and not
+// the ear.
+//
+// 28000 IS SAFE AGAINST CLIPPING BY CONSTRUCTION, not by measurement: `mix`
+// is clamped to +/-1.0 immediately above, so this constant IS the peak and
+// 28000 < 32767. The clamp is the only nonlinearity in the path and it is
+// unchanged, so nothing distorts that did not distort before -- the loudest
+// moment the synthesis can produce now reaches most of the int16 range
+// instead of a third of it.
+#define OUTPUT_SCALE   28000.0f
+
 #define JUMP_LEVEL      0.12f   // 0.32 -> 0.18 -> 0.12, each step by ear
 #define JUMP_DECAY      0.99977f // ~0.52s audible span, per the reference
 #define JUMP_LFO_HZ     10.0f   // ~0.10s period, measured peak-to-peak
@@ -234,6 +255,21 @@ static void sallen_key_init(float f0, float q, float fs) {
 static int16_t          g_fifo[FIFO_SIZE];
 static volatile uint16_t g_fifo_head, g_fifo_tail;
 static uint32_t g_underruns, g_overruns, g_peak_depth, g_sound_cycles;
+// Absolute peak of the samples actually pushed into the FIFO, since the
+// last take. "It sounds very quiet" has two completely different causes
+// -- a quiet SIGNAL or a quiet AMP -- and only this number separates
+// them. Full scale is 32767; this synthesis clamps its mix to +/-1.0 and
+// scales by 12000, so 12000 is its own ceiling and anything far below
+// that is the emulation being quiet, not the board.
+static uint16_t g_out_peak;
+// CONSUMER-SIDE instrumentation. The producer's own numbers cannot
+// distinguish "the ring ran dry because nothing was made" from "because
+// it was drained faster than the sample rate", and those have opposite
+// fixes. g_cons_samples is how many samples the I2S side actually took.
+static uint32_t g_cons_samples, g_cons_calls;
+static uint16_t g_cons_min_depth = 0xFFFF;
+// Ring depth the producer tops up to. See begin_frame().
+static uint16_t g_fifo_target = 700;
 // How many times each discrete channel was triggered. Without these,
 // "I cannot hear the jump" is ambiguous between a synthesis that is wrong
 // and a trigger that never fired -- which is exactly the confusion that
@@ -416,7 +452,7 @@ DKA_RAMFUNC static int16_t generate_one_sample(void) {
 
     if (mix >  1.0f) mix =  1.0f;
     if (mix < -1.0f) mix = -1.0f;
-    return (int16_t)(mix * 12000.0f);
+    return (int16_t)(mix * OUTPUT_SCALE);
 }
 
 // How many samples this frame still wants. Computed once per frame and
@@ -437,8 +473,28 @@ uint32_t dkong_audio_debug_cost_us(void) { return g_cost_us_last; }
 // instead makes the consumer set the rate, so the two clocks cannot
 // diverge. The bounds matter: without an upper limit a stalled consumer
 // would let the 8035 sprint, and without a lower one it could stop.
+// THE TARGET IS A BOARD PROPERTY, NOT A GAME ONE, so the composition root
+// sets it (dkong_audio_set_fifo_target) and 700 is only the default.
+//
+// What the ring has to cover is the LONGEST GAP BETWEEN TOP-UPS, plus
+// whatever the consumer takes in one go. On the Fruit Jam the producer runs
+// inside every 16.6ms frame, so 700 samples -- 31.7ms -- is two frames of
+// slack and never runs dry.
+//
+// On the Feather ESP32 that geometry is different in a way this constant
+// could not see. Emulation is decoupled from painting there: the emulation
+// task is released once per PAINTED frame, runs its frames back to back in
+// about 10ms, and then blocks on the handshake for the remaining ~23ms of a
+// 33ms paint -- during which nothing is produced at all. Meanwhile the I2S
+// task drains 256 samples per call. 700 - 23ms(=507) = 193, which is BELOW
+// 256, so the callback ran dry partway through its block on most frames.
+//
+// Measured on hardware before the fix: 38-340 underruns per second out of
+// 22016 samples consumed, with the consumer seeing a minimum ring depth of
+// 188 and occasionally 0. That is what "some random clicks" was -- each
+// underrun writes a zero sample into the middle of a waveform.
 DKA_RAMFUNC static void begin_frame(void) {
-    const uint16_t target = 700;   // ~2 frames of slack
+    const uint16_t target = g_fifo_target;
     const int max_samples = 900;
     int want = (int)target - (int)fifo_depth();
     if (want < 0)           want = 0;
@@ -470,7 +526,10 @@ DKA_RAMFUNC static void produce(int n) {
         if (next == g_fifo_tail) { g_overruns++; break; }
         for (int b = 0; b < 8; b++) if (g_sig_latch & (1u << b)) g_sig_bit_high[b]++;
         g_sig_samples++;
-        g_fifo[g_fifo_head] = generate_one_sample();
+        const int16_t smp = generate_one_sample();
+        const uint16_t mag = (uint16_t)(smp < 0 ? -(int32_t)smp : (int32_t)smp);
+        if (mag > g_out_peak) g_out_peak = mag;
+        g_fifo[g_fifo_head] = smp;
         g_fifo_head = next;
     }
 
@@ -531,6 +590,9 @@ DKA_RAMFUNC void dkong_audio_run_frame(dkong_system *system) {
 // synthesis -- all of that happens on the main core in run_frame -- so it
 // stays short by construction.
 static void ARCADE_FAST_FUNC(dkong_audio_fill)(int32_t *out, int count) {
+    g_cons_calls++;
+    g_cons_samples += (uint32_t)count;
+    { const uint16_t d = fifo_depth(); if (d < g_cons_min_depth) g_cons_min_depth = d; }
     for (int i = 0; i < count; i++) {
         int16_t s;
         if (g_fifo_tail == g_fifo_head) {
@@ -629,6 +691,29 @@ void dkong_audio_debug_take_stats(uint32_t *out_underruns, uint32_t *out_overrun
     if (out_peak_depth)   *out_peak_depth   = g_peak_depth;
     if (out_sound_cycles) *out_sound_cycles = g_sound_cycles;
     g_underruns = g_overruns = g_peak_depth = g_sound_cycles = 0;
+}
+
+void dkong_audio_debug_take_consumer(uint32_t *out_samples, uint32_t *out_calls,
+                                     uint16_t *out_min_depth) {
+    if (out_samples)   *out_samples   = g_cons_samples;
+    if (out_calls)     *out_calls     = g_cons_calls;
+    if (out_min_depth) *out_min_depth = g_cons_min_depth;
+    g_cons_samples = g_cons_calls = 0;
+    g_cons_min_depth = 0xFFFF;
+}
+
+void dkong_audio_set_fifo_target(uint16_t samples) {
+    // Leave room for the ring's own full/empty distinction, and never go so
+    // low that a single consumer block cannot be served.
+    if (samples < 512u)              samples = 512u;
+    if (samples > FIFO_SIZE - 64u)   samples = FIFO_SIZE - 64u;
+    g_fifo_target = samples;
+}
+
+uint16_t dkong_audio_debug_take_out_peak(void) {
+    const uint16_t p = g_out_peak;
+    g_out_peak = 0;
+    return p;
 }
 
 void dkong_audio_init(dkong_system *system) {

@@ -53,8 +53,20 @@ uint8_t dkong_color_prom[DKONG_COLOR_PROM_SIZE];
 // SRAM and buys a table lookup per pixel instead of two planar bit
 // extractions -- the same trade ArcadeMachine_Pacman makes, and lever 2 in
 // the port playbook.
+#if defined(ARDUINO_ARCH_ESP32)
+static uint8_t (*tile_pixels)[8][8];
+#else
 static uint8_t tile_pixels[256][8][8];    // [code][x][y]
+#endif
+// Decoded graphics caches in PSRAM on ESP32 -- 32,768 + 16,384 bytes against
+// a 124,580-byte static-data segment. Written once, read constantly: the
+// profile PSRAM suits, and measured on Galaga as costing within 1%.
+#if defined(ARDUINO_ARCH_ESP32)
+#include <Arduino.h>   // ps_malloc
+static uint8_t (*sprite_pixels)[16][16];   // [code][x][y]
+#else
 static uint8_t sprite_pixels[128][16][16]; // [code][x][y]
+#endif
 static uint16_t rgb565_palette[256];
 
 static uint32_t g_sprite_peak = 0, g_sprite_limit_hits = 0;
@@ -250,6 +262,12 @@ static void decode_sprites(void) {
 }
 
 void dkong_video_build_caches(void) {
+#if defined(ARDUINO_ARCH_ESP32)
+    if (!sprite_pixels) {
+        sprite_pixels = (uint8_t (*)[16][16])ps_malloc(128u * 16u * 16u);
+        tile_pixels   = (uint8_t (*)[8][8])  ps_malloc(256u * 8u * 8u);
+    }
+#endif
     build_palette();
     decode_tiles();
     decode_sprites();

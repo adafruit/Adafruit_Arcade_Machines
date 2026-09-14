@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
+#
+# SPDX-License-Identifier: MIT
+
+version = 1
+
+# build_opt.h CANNOT CARRY A HEADER, which is the whole reason this file
+# exists. The Arduino builder passes it to the compiler as an `@file`, whose
+# contents are tokenised as command-line arguments rather than parsed as C --
+# so an `// SPDX-FileCopyrightText:` line does not become a comment, it
+# becomes four bogus flags and the build fails. Each of these files is a
+# single optimisation flag and nothing else.
+#
+# This is the mechanism REUSE provides for exactly that case, and it is what
+# keeps `reuse lint` at 100% now that every ESP32 example ships one.
+[[annotations]]
+path = "examples/Games/*_featheresp32/build_opt.h"
+SPDX-FileCopyrightText = "2026 John Park for Adafruit Industries"
+SPDX-License-Identifier = "MIT"

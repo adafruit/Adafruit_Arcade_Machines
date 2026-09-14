@@ -195,6 +195,56 @@ static void run_frame_interleaved(dkong_system *system) {
 // DVI queue. dkong_draw_frame() still exists for the standalone,
 // no-CPU-to-interleave case documented in dkong_video.h.
 
+// --- TWO-CORE SPLIT -------------------------------------------------------
+//
+// Cycles here, pixels there, so a board with no scanline queue to starve can
+// run them concurrently. Audio slicing stays with the CPU half -- it reads
+// state the CPUs are writing, and slicing it across the scanline loop keeps
+// DEVNOTES #48's "no long uninterrupted burst" rule intact.
+//
+// SAFE TO RUN CONCURRENTLY ON THIS MACHINE, checked rather than assumed
+// (#115). The renderer reads sprite_ram live and there is NO per-frame latch
+// in the default rotation -- which is the shape that crashed Galaga. It is
+// harmless here because the sprite code is MASKED: `& 0x7F` against a
+// sprite_pixels[128], so every byte value it can possibly read indexes in
+// range. Tile codes are a whole byte against tile_pixels[256], likewise.
+// There is no read that can go out of bounds, so nothing to protect.
+//
+// In landscape (rotations 0 and 2) the renderer does latch, via
+// dkong_video_begin_frame(). That latch can see a torn sprite record when
+// run concurrently -- which by the masking above is a momentarily wrong
+// sprite, not an invalid access. Worth knowing if those rotations ever look
+// briefly odd on this board; it is not a crash risk.
+void dkong_run_cpu_frames(dkong_system *system, uint32_t frames) {
+    if (frames < 1u) frames = 1u;
+    for (uint32_t f = 0; f < frames; f++) {
+        const uint32_t start = system->cpu.cyc;
+        for (uint32_t i = 0; i < HAL_VIDEO_HEIGHT; i++) {
+            const uint32_t target_delta =
+                (uint32_t)((uint64_t)DKONG_CYCLES_PER_FRAME * (i + 1) / HAL_VIDEO_HEIGHT);
+            while ((uint32_t)(system->cpu.cyc - start) < target_delta) {
+                z80_step(&system->cpu);
+            }
+            dkong_audio_run_slice(i, HAL_VIDEO_HEIGHT);
+        }
+        // The vblank NMI, gated by the ROM's software mask exactly as in
+        // dkong_run_frame(). Fired once per EMULATED frame, not per paint.
+        if (system->nmi_mask) {
+            z80_gen_nmi(&system->cpu);
+        }
+    }
+}
+
+void dkong_render_frame(dkong_system *system) {
+    if (system->rotation == 0 || system->rotation == 2)
+        dkong_video_begin_frame(system);
+    for (uint32_t i = 0; i < HAL_VIDEO_HEIGHT; i++) {
+        uint16_t *buf = hal_video_acquire_scanline();
+        dkong_video_render_scanline(system, i, buf);
+        hal_video_submit_scanline(buf);
+    }
+}
+
 void dkong_run_frame(dkong_system *system) {
     // EVERY rotation interleaves now. Landscape used to take
     // run_frame_sequential(), which ran a whole frame of CPU and then
