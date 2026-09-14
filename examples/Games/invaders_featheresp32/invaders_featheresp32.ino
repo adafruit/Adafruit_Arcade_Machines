@@ -218,15 +218,37 @@ void loop() {
     // scene complexity. Waiting out the remainder of the budget makes speed
     // exact and content-independent.
     //
-    // It can only ever slow things down. If a frame overruns the budget the
-    // deadline is simply reset, so a heavy scene degrades to "as fast as
-    // possible" rather than accumulating a debt it can never repay.
+    // IT REPAYS DEBT RATHER THAN FORGIVING IT, and it used to do the
+    // opposite. The old version reset the deadline on any overrun, so a
+    // heavy scene degraded to "as fast as possible" rather than
+    // accumulating a debt it could never repay. That sounds safe and is
+    // subtly lossy: the time is not merely deferred, it is GONE, so every
+    // hiccup permanently shortens the game's clock against real time.
+    //
+    // Measured on hardware, the cost was visible without any hiccup at all.
+    // The once-per-30-frames heartbeat below is ~17ms of serial at 115200
+    // baud against a ~33ms budget; forgiven, it held these sketches at
+    // 99% of their cabinet rate instead of 100%. A whole class of "this
+    // board is slightly slow" readings was this line.
+    //
+    // So the deadline stays monotonic and a short overrun is repaid out of
+    // the following frames' idle time. The escape hatch survives, just with
+    // a threshold: only an overrun of MORE THAN A WHOLE BUDGET -- a genuine
+    // inability to keep up rather than a one-off -- resyncs and forgives
+    // the time. That bounds the debt at one frame, so a game that truly
+    // cannot keep up still degrades gracefully instead of spiralling, while
+    // the long-run rate stays exact.
+    //
+    // lrescue_featheresp32.ino adds a closed loop on top of this, because
+    // that game times its speaker waveform against the emulated clock and
+    // needs the two to track. Nothing here does, so nothing here needs it.
+    // DEVNOTES #120.
     static uint32_t deadline = 0;
     if (deadline == 0) deadline = micros();
     deadline += FRAME_BUDGET_US;
     int32_t slack = (int32_t)(deadline - micros());
-    if (slack > 0) delayMicroseconds((uint32_t)slack);
-    else           deadline = micros();
+    if (slack > 0)                              delayMicroseconds((uint32_t)slack);
+    else if (slack < -(int32_t)FRAME_BUDGET_US) deadline = micros();
 
 
     uint32_t total = micros() - t0;

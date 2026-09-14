@@ -6192,3 +6192,66 @@ producer side is exactly what a ring has to cover.
 
 Burger Time keeps the probe and the heartbeat line anyway. It costs one
 subtraction per fill call, and it is the number that predicts a click.
+
+### 122. Forgiving a missed deadline is lossy, and it was costing every ESP32 game 1%
+
+Six of the seven Feather ESP32 sketches read "99% of <cabinet rate>" in their
+heartbeat and had done since they were written. That is close enough to look
+like measurement noise or an honest limitation of a board that cannot reach
+60Hz, and it was neither. It was one line.
+
+The wall-clock limiter every sketch shares ended:
+
+```c
+if (slack > 0) delayMicroseconds((uint32_t)slack);
+else           deadline = micros();     // overran: give up on this frame
+```
+
+Resetting the deadline on an overrun reads as the safe choice, and the
+comment above it said so: a heavy scene degrades to "as fast as possible"
+rather than accumulating a debt it can never repay. **The flaw is that the
+forgiven time is not deferred, it is gone.** Every overrun permanently
+shortens the emulated clock against real time, and nothing ever gives it
+back.
+
+**The overrun was the heartbeat itself.** ~200 bytes of `Serial.printf` at
+115200 baud is about 17ms against a ~33ms budget. Printed once every 30
+frames and forgiven every time, that is 0.57ms per frame of pure loss --
+1.7%, which lands almost exactly on the 1% the heartbeat was reporting. The
+instrument was paying for itself out of the measurement.
+
+#120 found this on Lunar Rescue, where it mattered enough to chase because
+that game times its speaker waveform against the emulated clock and the lost
+time walked the two apart. It applies to all seven, just invisibly.
+
+The fix keeps the escape hatch and adds a threshold:
+
+```c
+if (slack > 0)                              delayMicroseconds((uint32_t)slack);
+else if (slack < -(int32_t)FRAME_BUDGET_US) deadline = micros();
+```
+
+A short overrun is now repaid out of the following frames' idle time; only an
+overrun of more than a whole budget -- a genuine inability to keep up rather
+than a one-off -- resyncs. The debt is bounded at one frame, so a game that
+truly cannot keep up still degrades gracefully instead of spiralling.
+
+Measured on hardware, Burger Time, same board and same ROM, before and after:
+
+```
+before   28.4-28.5 fps display   56.8-57.0 emulated    99%   frame 34,707-34,806us
+after    28.7    fps display     57.4-57.5 emulated   100%   frame 34,417-34,425us
+```
+
+**The frame-time spread is the part worth noticing**: 100us before, 8us
+after. Repaying the debt did not just raise the average, it removed the
+sawtooth the forgiven frames were creating. Audio was unaffected -- 0
+underruns, minimum ring depth 533 against a 256-sample drain.
+
+**The lesson generalises past this project.** A rate limiter that resets its
+deadline on overrun cannot hold a long-run rate; it can only hold an upper
+bound. If something downstream cares about accumulated time -- an audio
+clock, a physics step, a network cadence -- the deadline has to be monotonic
+and the debt has to be bounded rather than erased. And if the only thing
+reporting the rate is a print statement inside the loop being limited, budget
+for the print.
