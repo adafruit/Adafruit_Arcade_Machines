@@ -93,7 +93,31 @@ static sound_channel_t channels[MAX_CHANNELS];
 // while streaming it in from storage (never holding a whole file in RAM at
 // once), which brings the real total down to ~224000 bytes; this budget
 // leaves ~10% headroom above that for slightly longer replacement assets.
+// PCM_RAM GOES TO PSRAM ON ESP32 -- 245,760 bytes against a 124,580-byte
+// static-data segment that would not hold half of it. This is the same swap
+// invaders_audio.cpp makes for its 90,000-byte budget, for the same reason
+// and with the same safety argument, which is worth repeating because the
+// comment above is emphatic that this buffer must live in SRAM:
+//
+// THAT CONSTRAINT IS ABOUT AN ISR COMPETING WITH A VIDEO QUEUE, and it is
+// board-specific. On the Fruit Jam the mixer runs inside the audio ISR, so
+// an XIP cache-miss stall there starves the PicoDVI scanline queue and
+// paints coloured lines (invaders_pico DEVNOTES #3, reproduced once during
+// that port). On the Feather ESP32 the mixer runs on its own FreeRTOS task
+// that is allowed to block, and there is no scanline queue to starve.
+//
+// The access profile suits PSRAM too: written once while loading, read
+// sequentially by the mixer thereafter. The streaming loader below already
+// never holds a whole file in RAM, so header_buf and chunk_buf (1KB + 4KB)
+// stay where they are.
+#if defined(ARDUINO_ARCH_ESP32)
+#include <Arduino.h>   // ps_malloc
+#define PCM_RAM_SIZE 245760u
+static uint8_t *pcm_ram = NULL;
+#else
 static uint8_t pcm_ram[245760];
+#define PCM_RAM_SIZE (sizeof pcm_ram)
+#endif
 
 // Bounded staging buffers for the streaming WAV loader -- deliberately NOT
 // sized to fit a whole file (see above). header_buf holds enough of the
@@ -103,8 +127,19 @@ static uint8_t pcm_ram[245760];
 // chunk.
 #define WAV_HEADER_BUF_SIZE 1024
 #define WAV_CHUNK_BUF_SIZE  4096
+// BOTH GO TO PSRAM ON ESP32 ALONGSIDE pcm_ram, and these two are the
+// easiest call in the file: they are touched only while loading and never
+// looked at again, so nothing that runs during play can be slowed by them.
+// 5KB does not sound worth moving until you count what is left -- this
+// sketch links at ~117KB of a 124,580-byte segment, and 5KB is the
+// difference between 7KB of headroom and 2KB.
+#if defined(ARDUINO_ARCH_ESP32)
+static uint8_t *header_buf = NULL;
+static uint8_t *chunk_buf  = NULL;
+#else
 static uint8_t header_buf[WAV_HEADER_BUF_SIZE];
 static uint8_t chunk_buf[WAV_CHUNK_BUF_SIZE];
+#endif
 
 typedef struct {
     const uint8_t *pcm;
@@ -269,7 +304,7 @@ static uint32_t stream_convert_to_pcm_ram(hal_file_t *f, const wav_fmt_t *fmt, u
     bool more = true;
     while (more) {
         while ((pos >> 16) < base_frame + cur_frames && (pos >> 16) < total_frames) {
-            if (*ram_off >= sizeof(pcm_ram) || out_written >= MAX_OUTPUT_BYTES_PER_FILE) { more = false; break; }
+            if (*ram_off >= PCM_RAM_SIZE || out_written >= MAX_OUTPUT_BYTES_PER_FILE) { more = false; break; }
             uint32_t local_idx = (pos >> 16) - base_frame;
             int16_t s16 = read_frame_mono16(cur, local_idx, fmt);
             pcm_ram[(*ram_off)++] = (uint8_t)(((int32_t)s16 >> 8) + 128);
@@ -508,6 +543,18 @@ static int g_loaded_count = 0;
 static lrescue_audio_status_t g_status[LRESCUE_NUM_SAMPLES];
 
 int lrescue_audio_load_samples(void) {
+#if defined(ARDUINO_ARCH_ESP32)
+    // Allocated once, never freed -- the samples live for the life of the
+    // sketch. A failure here is not fatal and must not be: every sample
+    // simply stays invalid and the game plays silently, which is the same
+    // outcome this loader already produces for a missing /samples directory.
+    if (!pcm_ram) {
+        pcm_ram    = (uint8_t *)ps_malloc(PCM_RAM_SIZE);
+        header_buf = (uint8_t *)ps_malloc(WAV_HEADER_BUF_SIZE);
+        chunk_buf  = (uint8_t *)ps_malloc(WAV_CHUNK_BUF_SIZE);
+        if (!pcm_ram || !header_buf || !chunk_buf) return 0;
+    }
+#endif
     memset(channels, 0, sizeof(channels));
     uint32_t ram_off = 0;
     int loaded = 0;
