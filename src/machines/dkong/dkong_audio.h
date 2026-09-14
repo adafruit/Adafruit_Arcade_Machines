@@ -64,6 +64,17 @@ extern "C" {
 extern uint8_t dkong_sound_rom[DKONG_SOUND_ROM_SIZE];
 extern uint8_t dkong_tune_rom[DKONG_TUNE_ROM_SIZE];
 
+// How deep the sample ring is kept, in samples at DKONG_AUDIO_SAMPLE_RATE.
+// THE COMPOSITION ROOT OWNS THIS because it is a property of the board's
+// frame pacing, not of the game: the ring must cover the longest gap
+// between two top-ups plus whatever the audio backend drains in one call.
+// The 700 default suits a board that produces inside every 60Hz frame. A
+// board that decouples emulation from painting -- producing in a burst once
+// per painted frame and then idling -- needs roughly one paint period plus
+// one audio block, or the ring runs dry mid-block and clicks. Larger costs
+// only latency: samples/22050 seconds of it.
+void dkong_audio_set_fifo_target(uint16_t samples);
+
 // Brings up the sound CPU and registers the ArcadeHAL audio fill callback.
 // Call after dkong_load_rom() has filled the ROMs above.
 void dkong_audio_init(dkong_system *system);
@@ -137,6 +148,17 @@ void dkong_audio_debug_trace_line(uint16_t pc, uint8_t op, uint8_t a, uint8_t da
 
 void dkong_audio_debug_take_stats(uint32_t *out_underruns, uint32_t *out_overruns,
                                   uint32_t *out_peak_depth, uint32_t *out_sound_cycles);
+// Absolute peak of the samples produced since the last call, then resets.
+// Full scale is 32767 and this synthesis' own ceiling is 12000, so a number
+// well under that says the EMULATION is quiet -- which is a different fix
+// from an amplifier that is quiet.
+uint16_t dkong_audio_debug_take_out_peak(void);
+// How many samples the I2S side actually consumed since the last call, in
+// how many fill calls, and the lowest FIFO depth it saw. Separates a
+// producer that made nothing from a consumer running faster than the
+// sample rate -- opposite fixes.
+void dkong_audio_debug_take_consumer(uint32_t *out_samples, uint32_t *out_calls,
+                                     uint16_t *out_min_depth);
 
 #ifdef __cplusplus
 }

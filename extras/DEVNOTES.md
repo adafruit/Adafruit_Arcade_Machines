@@ -5983,3 +5983,77 @@ were generated from a sibling by text substitution, which is fine for names
 and wrong for anything that is a per-game FACT. A constant that is correct in
 three files and silently wrong in two is the failure mode of that technique,
 and it survived a release.
+
+### 119. "Very quiet with random clicks" was two unrelated bugs, and neither was where I would have looked
+
+Donkey Kong's ESP32 port ran at 100% of 60.6Hz on its first flash. The report
+back was: *"it seems to look great and play well. the sound is very quiet and
+ther are some random clicks."*
+
+Those read like one fault -- a struggling audio path -- and they are not
+related at all. Getting that wrong would have cost a flash cycle each way, so
+the first move was to measure rather than to guess, and the instrumentation to
+do it was already in the file: `dkong_audio_debug_take_stats()` has counted
+underruns since the game was written. Two numbers were added to it -- the peak
+of the samples the producer actually generated, and what the I2S side actually
+consumed -- and the whole diagnosis fell out of one heartbeat.
+
+**The clicks were ring underruns, and the ring was sized for a different
+board.** Measured before the fix: 38-340 underruns per second out of 22,016
+samples consumed, with the consumer seeing a minimum ring depth of 188 and
+occasionally 0. An underrun writes a zero sample into the middle of a
+waveform, which is exactly what a click is.
+
+The cause is a geometry this constant could not see. `begin_frame()` tops the
+ring up to 700 samples -- 31.7ms, "~2 frames of slack", and correct on the
+Fruit Jam, where the producer runs inside every 16.6ms frame. On this board
+emulation is decoupled from painting (#115): the emulation task is released
+once per PAINTED frame, runs its frames back to back in about 10ms, then
+blocks on the handshake for the remaining ~23ms of a 33ms paint, producing
+nothing. Meanwhile the I2S task drains 256 samples per call. 700 - 507 = 193,
+which is below 256, so the callback ran dry partway through its block on most
+frames.
+
+**The two numbers that mattered were both on the consumer side.** The
+producer's own counters said `peak depth 700, overruns 0` -- a ring that looks
+perfectly healthy. `min depth 188` against a 256-sample drain is the number
+that says it is not, and nothing was measuring it. THE RING DEPTH TO WATCH IS
+THE ONE THE CONSUMER SEES AT THE START OF A CALL, not the one the producer
+sees when it finishes.
+
+The fix is `dkong_audio_set_fifo_target()`, called from the composition root
+with 1250. **The target is a board property, not a game one** -- it has to
+cover the longest gap between top-ups plus one consumer block -- so the sketch
+owns it and 700 stays the default. Measured after: **0 underruns in every
+window, minimum depth 482-798.** The cost is latency and that is the whole
+cost: 57ms before a jump is heard, up from 32ms.
+
+**The quietness was unrelated, board-independent, and real.** `dkong_host
+--wav` over 19s of play measured peaks at -15 to -21 dBFS and RMS at -26
+dBFS. The synthesis ends in `mix * 12000.0f` with `mix` already clamped to
++/-1.0, so 12000 was a self-imposed ceiling at 37% of int16 range -- and the
+game never got near even that. Pac-Man and Galaga scale a WSG mix that reaches
++/-17280 on a chord. DK was the outlier, not the ear.
+
+`OUTPUT_SCALE` is now 28000, and it is **safe against clipping by
+construction rather than by measurement**: the clamp immediately above it
+means the constant IS the peak, and 28000 < 32767. Re-measured: RMS -18.6
+dBFS, peak -11 dBFS, and zero samples at the int16 rail. The four channel
+constants below it (music 0.9, stomp 0.5, jump 0.12, walk 0.045) are a mix
+balanced by ear against recordings, which is precisely why the master scale
+was the right lever -- raising one channel would have re-opened a judgement
+that was already made.
+
+**A third thing the measurement settled for free.** The heartbeat reported
+`peak 0` through the entire attract loop, which looks like a dead audio path.
+It is not: `dkong_host --audio` shows the main CPU issuing **zero** sound
+commands, zero sound IRQs and zero signal-latch writes until a game starts.
+DK's attract loop is silent on the real machine. Without the host harness that
+would have been a bug hunt, and `dkong_fruitjam.ino` was actively pushing a
+reader toward one -- it still carried "SOUND IS NOT IMPLEMENTED for this game
+yet" from before the 8035 went in. Corrected.
+
+**Open, and the same shape:** Burger Time on this board has a 768-sample ring
+target against the same 256-sample drain and the same ~23ms production gap,
+which puts its trough around 261 -- margin of five samples. It has not been
+measured on hardware. Expect the same fix to be needed.

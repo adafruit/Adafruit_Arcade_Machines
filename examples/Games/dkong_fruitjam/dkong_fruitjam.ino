@@ -22,10 +22,12 @@
 // (g_video_ready gating hal_video_run() until Core 0 is continuously
 // feeding scanlines); both apply here unchanged.
 //
-// SOUND IS NOT IMPLEMENTED for this game yet -- see dkong_audio.h. The
-// audio hardware is still brought up and fed silence, so the DAC/I2S path
-// is exercised on every boot and whoever adds the 8035 finds a working
-// pipeline rather than an untested one.
+// SOUND IS IMPLEMENTED -- see dkong_audio.h. This comment used to say it
+// was not, and was left behind when the 8035 went in; it is corrected here
+// because it sent a later reader looking for a missing feature to explain a
+// quiet attract loop. The attract loop IS silent, and that is the machine:
+// the main CPU issues no sound commands at all until a game starts
+// (verified with extras/tools/dkong_host --audio).
 //
 // Core 0: game emulation, input polling, board-to-game input mapping.
 // Core 1: hal_video_run() -- drives the DVI signal; never returns.

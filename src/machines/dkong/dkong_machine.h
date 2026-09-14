@@ -122,6 +122,15 @@ void dkong_debug_take_band_minq(uint32_t *out8);
 
 void dkong_run_frame(dkong_system *system);
 
+// --- Two-core split, for boards that can run emulation off the video core -
+//
+// Safe to run concurrently on this machine: sprite codes are masked to 7
+// bits against a 128-entry cache and tile codes are a byte against 256, so
+// no live read can index out of range. A property of THIS machine -- check
+// before copying (DEVNOTES #115).
+void dkong_run_cpu_frames(dkong_system *system, uint32_t frames);
+void dkong_render_frame(dkong_system *system);
+
 // DEBUG: total DMA transfers and bytes moved since the last call, then
 // resets both. The host harness uses this to answer "is the 8257 actually
 // running" with a number -- if it is not, the screen has a background and

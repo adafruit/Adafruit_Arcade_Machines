@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
+#
+# SPDX-License-Identifier: MIT
+
+# The optimisation level is NOT set here -- sketch.yaml carries the FQBN and
+# not build properties, which was checked: adding one leaves
+# compiler.optimization_flags at -Os. It is pinned in build_opt.h beside this
+# file instead, which is the documented per-sketch flag mechanism and was
+# verified on hardware to produce the -O2 timings.
+default_fqbn: esp32:esp32:adafruit_feather_esp32_v2
