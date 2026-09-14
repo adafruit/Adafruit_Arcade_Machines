@@ -138,6 +138,24 @@ bool lrescue_load_assets(arcade_system *system, uint16_t *out_error_color);
 // sketch after lrescue_input_update() has updated `system` for the frame.
 void lrescue_run_frame(arcade_system *system);
 
+// SPLIT HALVES OF THE ABOVE, for a board that runs emulation and video on
+// separate cores (see lrescue_machine.cpp). `frames` advances that many
+// emulated frames -- firing that many pairs of interrupts -- while the
+// other core paints once, so the i8080 keeps the cabinet's interrupt rate
+// and only the picture is decimated. Do not call these on a board that uses
+// lrescue_run_frame(); they are alternatives to it, not additions.
+// Seeds total_cycles so the emulated clock starts AHEAD of the audio
+// clock by `lead_frames` frames. Call once, immediately before the first
+// emulated frame, on any board where meaningful time passes between asset
+// loading (which starts the audio clock) and the start of emulation --
+// otherwise that gap becomes a permanent offset that disables this game's
+// speaker-event reconstruction. See lrescue_machine.cpp for the full
+// mechanism and the measured numbers.
+void lrescue_sync_audio_clock(arcade_system *system, uint32_t lead_frames);
+
+void lrescue_run_cpu_frames(arcade_system *system, uint32_t frames);
+void lrescue_render_frame(arcade_system *system);
+
 #ifdef __cplusplus
 }
 #endif

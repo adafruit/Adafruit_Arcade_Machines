@@ -6057,3 +6057,97 @@ yet" from before the 8035 went in. Corrected.
 target against the same 256-sample drain and the same ~23ms production gap,
 which puts its trough around 261 -- margin of five samples. It has not been
 measured on hardware. Expect the same fix to be needed.
+
+### 120. Lunar Rescue on the ESP32: a clock that has to be told, not calculated
+
+Seventh game on the Feather ESP32 V2, and the port itself was the easy part
+-- 100% of 60.0Hz on the first flash, 33,296us against a 33,296us budget,
+rotation 3 correct, all nine samples loaded. Everything hard about it was one
+number, and chasing that number produced three lessons worth keeping.
+
+**GAME_HZ IS NOT THE CABINET RATE FOR THIS GAME, and copying its sibling
+would have been wrong.** Lunar Rescue runs on the same 8080bw board as Space
+Invaders, same 1,996,800Hz i8080, and its real cabinet rate is also
+59.541985Hz. But `lrescue_machine.cpp`'s `FRAMERATE` is **60.0368**, which is
+not a cabinet measurement at all -- it is an empirical calibration to the
+Fruit Jam's actual DVI rate, made because that board has no wall-clock
+limiter and its cycle budget had to be bent to match the rate the hardware
+really achieves. `CYCLES_PER_FRAME` derives from it (33,260, not 33,536), so
+the two must agree: pacing this board at 59.541985 while the machine spends
+33,260 cycles per frame would advance `total_cycles` 0.83% slow against the
+audio clock -- reintroducing the exact desync that calibration removed. This
+is #118's copied-scaffolding lesson with the polarity reversed: the danger
+was not a stale constant, it was a constant that LOOKS like a per-game fact
+and is actually a per-board one.
+
+**A 2.46-SECOND STARTUP GAP SILENTLY DISABLED THE SPEAKER RECONSTRUCTION.**
+`g_target_cycle` starts counting when the audio fill callback is registered,
+near the end of asset loading. `total_cycles` does not move until emulation
+starts. On this board the SPI bus handover and the panel's invert self-test
+sit between those two moments -- 2.46 seconds, or **4.9 million i8080
+cycles**, of permanent offset.
+
+That is not a small error, it is a different mode of operation.
+`speaker_level_at()` drains every queued transition whose timestamp has
+passed relative to `target_cycle`. Events are stamped with `total_cycles`, so
+with `total_cycles` permanently behind, EVERY event is eligible the instant
+it arrives: the queue stops being a reordering buffer and the speaker level
+just follows the newest write. That is precisely the "a whole frame's writes
+collapse to nearly the same instant" failure `lrescue_ports.cpp`'s
+clock-domain comment exists to prevent, reached by a different route. The
+Fruit Jam never showed it because its gap is shorter than one frame's cycle
+budget, so its lead stays positive on the sawtooth alone.
+
+`lrescue_sync_audio_clock()` seeds `total_cycles` from the audio clock
+immediately before the emulation task starts. Offset after: +47,580 cycles
+instead of -4,906,696.
+
+**THE PROBE CAUSED THE DRIFT IT WAS MEASURING.** With the offset fixed, the
+lead still decayed at ~3,400 cycles/second. The cause was the heartbeat added
+to watch it: ~200 bytes at 115200 baud is about 17ms, which overruns a 33ms
+budget, and the wall-clock limiter every sketch here uses FORGIVES an
+overrun rather than accumulating debt. One forgiven frame in 30 held the
+emulated rate at 59.5fps instead of 60.04 -- and the run immediately before
+the probe was added had read 60.0-60.1fps, which is what identified it.
+
+Forgiving the overrun is the right trade everywhere else, where the only cost
+is a few microseconds of game speed. Here the forgiven time walks the
+emulated clock away from the audio clock, which is the one thing this game
+cannot tolerate. The deadline is now monotonic with **bounded** debt
+repayment: only an overrun of more than a whole budget resyncs. Printing
+every 120 frames instead of 30 amortises the remaining cost to ~140us.
+
+**THEN THE DRIFT CHANGED SIGN, WHICH IS THE ACTUAL LESSON.** With the debt
+repaid the rate stopped decaying and started climbing: +2,270 cycles/second,
+the emulated clock now 0.11% FAST. Both directions are bugs -- too slow and
+the lead crosses the 23,180-cycle floor (one 256-sample I2S buffer) and the
+reconstruction stops working; too fast and the lead grows without bound,
+which is pure speaker latency. The event queue's peak depth climbing 4 -> 8
+was the visible symptom.
+
+The tempting fix is to nudge `GAME_HZ` down by 0.11%. **That is the wrong
+kind of fix and Burger Time's ring already established why** (#65's closing
+note): the consumer's clock is whatever the hardware actually does, not what
+the constant says. The I2S divider is integer-plus-fraction, so the real
+sample rate is near 22,050Hz and not exactly it, and it differs between
+units. A constant calibrated against this board's crystal is wrong on the
+next one.
+
+So the frame budget is now trimmed in proportion to how far the lead sits
+from a 60,000-cycle target -- deadbanded so it does not hunt, clamped to
+100us (0.3% of a frame, far below anything a player can feel, and still
+~6,000 cycles/second of authority against a 2,270 cycles/second drift).
+Measured over 100 seconds afterwards: lead oscillating **26,937-47,225 cycles
+with no trend**, always above the floor, queue depth stable at 5 instead of
+climbing, 100% of 60.0Hz throughout.
+
+**Three clocks, and only one of them can be trusted.** The cabinet's nominal
+rate is a historical fact. The frame budget is arithmetic. The audio
+consumer's rate is the only one that is physically true on the board in front
+of you -- so it is the one everything else has to be measured against.
+
+**Also:** `pcm_ram` (245,760 bytes) plus the two WAV staging buffers (5KB)
+moved to PSRAM. The first is forced -- it is twice the whole 124,580-byte
+static segment. The second two were not forced and were worth it anyway: they
+are touched only while loading, and 5KB is the difference between 7KB of
+headroom and 2KB.
