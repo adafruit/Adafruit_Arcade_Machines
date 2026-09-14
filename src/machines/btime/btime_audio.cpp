@@ -564,6 +564,8 @@ static int16_t  g_ring[RING_SIZE];
 static volatile uint32_t g_ring_head; // write index (producer, Core 0)
 static volatile uint32_t g_ring_tail; // read index  (consumer, ISR)
 static uint32_t g_underruns, g_overruns;
+// See fill_audio(). Reset by btime_audio_debug_take_min_depth().
+static uint32_t g_cons_min_depth = 0xFFFFFFFFu;
 static int32_t  g_peak;
 
 // Rolling mean microseconds per frame spent generating audio.
@@ -683,6 +685,15 @@ void btime_audio_set_reg_trace(btime_audio_reg_trace_cb cb) { g_reg_trace = cb; 
 static void ARCADE_FAST_FUNC(fill_audio)(int32_t *out, int count) {
     uint32_t tail = g_ring_tail;
     const uint32_t head = g_ring_head;
+
+    // THE DEPTH THE CONSUMER SEES AT THE START OF A CALL, which is a
+    // different number from the producer's g_queued and the only one that
+    // predicts a click. Donkey Kong's ring reported "peak depth 700,
+    // overruns 0" -- perfectly healthy -- while running dry partway through
+    // most fill calls, because the producer's view cannot see that this
+    // function needs `count` samples at once. DEVNOTES #119.
+    { const uint32_t d = head - tail;
+      if (d < g_cons_min_depth) g_cons_min_depth = d; }
 
     for (int i = 0; i < count; i++) {
         int16_t s = 0;
@@ -849,4 +860,10 @@ void btime_audio_debug_take_stats(uint32_t *out_underruns, uint32_t *out_overrun
     g_underruns = 0;
     g_overruns = 0;
     g_peak = 0;
+}
+
+uint32_t btime_audio_debug_take_min_depth(void) {
+    const uint32_t d = g_cons_min_depth;
+    g_cons_min_depth = 0xFFFFFFFFu;
+    return d;
 }

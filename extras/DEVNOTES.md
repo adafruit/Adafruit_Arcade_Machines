@@ -6151,3 +6151,44 @@ moved to PSRAM. The first is forced -- it is twice the whole 124,580-byte
 static segment. The second two were not forced and were worth it anyway: they
 are touched only while loading, and 5KB is the difference between 7KB of
 headroom and 2KB.
+### 121. Burger Time's ring was never at risk, and the reason inverts the intuition
+
+#119 closed by predicting that Burger Time on the ESP32 would need the same
+fix Donkey Kong had just been given: a 768-sample ring target against the
+same 256-sample drain and the same ~23ms production gap works out to a
+trough of about 261, which is five samples of margin. Measured on hardware
+with the consumer-side probe #119 added:
+
+```
+min depth: lowest=518 highest=788   underruns total=0   drain=256
+```
+
+**Over 45 seconds the ring never fell below 518 — better than twice the
+drain, and zero underruns.** The prediction was wrong by a factor of two,
+and being wrong about it is more useful than the guess was.
+
+**THE GAP THAT MATTERS IS SET BY HOW LONG EMULATION TAKES, NOT BY THE RING
+TARGET.** Both games run the same two-core pattern, so I assumed the same
+duty cycle. They do not have one. Donkey Kong's emulation is fast — roughly
+10ms of a 33ms paint — so its producer finishes early and then blocks on the
+handshake for ~23ms during which nothing is made. Burger Time is the
+heaviest machine in the project, most of its 34.7ms paint IS emulation, so
+its producer is running almost continuously and the silent gap is small.
+
+The two views of the ring show this directly without any extra measurement.
+For Burger Time the producer's `queued` oscillates 558-921 around its 768
+target while the consumer's minimum sits at 518-788 — the two numbers are
+close together, which is what continuous production looks like. For Donkey
+Kong the producer reported a peak of 700 while the consumer was seeing 188:
+a gap of 512 between the two views, which is the signature of a producer
+that works in bursts.
+
+**So the lightest machine on the board had the audio clicks and the heaviest
+one is fine.** That is backwards from the natural assumption — that a heavy
+game is the one at risk of starving its audio — and the reason is that the
+second core changed what "heavy" costs. Emulation that finishes early does
+not buy headroom for the audio ring; it buys idle time, and idle time on the
+producer side is exactly what a ring has to cover.
+
+Burger Time keeps the probe and the heartbeat line anyway. It costs one
+subtraction per fill call, and it is the number that predicts a click.

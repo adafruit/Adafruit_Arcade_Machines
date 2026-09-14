@@ -95,6 +95,14 @@ uint32_t btime_audio_debug_cost_us(void);
 void btime_audio_debug_take_stats(uint32_t *out_underruns, uint32_t *out_overruns,
                                   uint32_t *out_queued, int32_t *out_peak);
 
+// Lowest ring depth the AUDIO BACKEND saw at the START of a fill call, then
+// resets. This is the margin `underruns` is protecting and it must stay
+// above whatever the backend drains per call (256 samples on the Feather
+// ESP32's I2S task). Watch this rather than waiting for clicks: the
+// producer-side numbers above stay healthy-looking right up until the ring
+// runs dry mid-block. DEVNOTES #119.
+uint32_t btime_audio_debug_take_min_depth(void);
+
 // DEBUG: register-write trace. Set a callback and every AY register write
 // is reported (chip 0/1, register 0-15, value) as it happens; NULL disables
 // it at zero cost. Exists to answer "which channel carries this effect, and
