@@ -38,6 +38,7 @@
 #include <machines/btime/btime_machine.h>
 #include <machines/btime/btime_video.h>
 #include <machines/btime/btime_input.h>
+#include <machines/btime/btime_audio.h>
 
 // Two emulated frames per painted frame -- see pacman_run_frames(). The
 // panel cannot reach 60Hz, so the game would otherwise run in slow motion.
@@ -251,14 +252,24 @@ void loop() {
         // columns pillarboxed inside 320). It also makes a stray ROTATE
         // press visible -- GPIO 37 is input-only with no internal pull, so
         // an unwired or floating button line cycles this silently.
+        // AUDIO MARGIN IN THE HEARTBEAT. `ur` must be 0; `min` is the ring
+        // depth the I2S task saw at the START of a call and must stay above
+        // the 256 it drains per call. Donkey Kong's ring looked healthy on
+        // the producer's numbers while running dry mid-block -- this is the
+        // number that actually predicts a click. DEVNOTES #119.
+        uint32_t ur = 0, ov = 0, queued = 0; int32_t pk = 0;
+        btime_audio_debug_take_stats(&ur, &ov, &queued, &pk);
+        const unsigned long mind = (unsigned long)btime_audio_debug_take_min_depth();
         Serial.printf("[btime-esp32] frame %lu  %.1f fps display  "
                       "%.1f fps emulated (%.0f%% of %.1fHz)  frame %lu us  "
-                      "rot %u\n",
+                      "rot %u  audio ur %lu ov %lu queued %lu min %lu (drain 256)\n",
                       (unsigned long)frame, fps,
                       fps * EMULATED_FRAMES_PER_PAINT,
                       100.0f * fps * EMULATED_FRAMES_PER_PAINT / (GAME_HZ), (double)(GAME_HZ),
                       (unsigned long)(emul_us / 30u),
-                      (unsigned)g_system.rotation);
+                      (unsigned)g_system.rotation,
+                      (unsigned long)ur, (unsigned long)ov,
+                      (unsigned long)queued, mind);
         emul_us = 0; push_us = 0;
     }
 }
