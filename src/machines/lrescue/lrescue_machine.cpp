@@ -147,6 +147,91 @@ static inline void step_cpu(arcade_system *system, int *cyc, int *int_state) {
     }
 }
 
+// --- TWO-CORE SPLIT (Feather ESP32 V2) -----------------------------------
+//
+// Same pair invaders_machine.cpp grew, for the same board and the same
+// reason: on a panel that cannot reach 60Hz, emulation and painting are
+// separated so the CPU keeps the interrupt rate the real cabinet produced
+// while only the picture is decimated. The composition root runs these on
+// two cores; lrescue_run_frame() above is untouched and remains the Fruit
+// Jam's only path.
+//
+// THE #115 SAFETY CHECK PASSES, and it is worth saying why rather than
+// asserting it. That check asks whether the renderer can read a structure
+// the CPU is midway through writing. This renderer cannot: it reads live
+// VRAM on demand for every rotation and keeps no frame cache and no sprite
+// latch (see the interleaving comment in lrescue_run_frame), and VRAM is a
+// flat byte array addressed by screen position, so every read is in range
+// whatever the CPU has just written. The worst a torn read can produce here
+// is one pixel from the previous frame -- which is what real scanline-order
+// hardware does anyway.
+//
+// The debug instrumentation in lrescue_run_frame() is deliberately absent
+// here. It reports against a ~16.66ms PicoDVI budget that does not exist on
+// this board, and its per-second Serial.printf would land in the middle of
+// the emulation task's slice.
+// ALIGNS THE EMULATED CLOCK WITH THE AUDIO CLOCK, and this game needs it in
+// a way none of the others do.
+//
+// g_target_cycle starts counting from zero the moment the audio fill
+// callback is registered, near the end of asset loading. total_cycles does
+// not move until the emulation loop starts. Whatever sits between those two
+// moments becomes a permanent offset between the two clocks -- and on the
+// Feather ESP32 that is the SPI bus handover and the panel's invert
+// self-test, measured at 2.46 seconds, or 4.9 MILLION i8080 cycles.
+//
+// THAT OFFSET SILENTLY DISABLES THE SPEAKER RECONSTRUCTION. speaker_level_at()
+// drains every queued transition whose timestamp has passed relative to
+// target_cycle. Events are stamped with total_cycles, so if total_cycles
+// runs permanently behind target_cycle, EVERY event is already eligible the
+// instant it arrives: the queue stops being a reordering buffer and
+// speaker_last_level just follows the newest write. That is precisely the
+// "a whole frame's writes collapse to nearly the same instant" failure
+// lrescue_ports.cpp's clock-domain comment exists to prevent -- reached by
+// a different route, a constant offset rather than a wrong timestamp
+// domain. The Fruit Jam never showed it because its gap between those two
+// moments is shorter than one frame's cycle budget, so its lead stays
+// positive on the sawtooth alone.
+//
+// `lead_frames` is how far AHEAD of the audio clock to place the CPU. It
+// must exceed the audio backend's buffer span, because the consumer
+// resolves a whole buffer at once: 256 samples x (1,996,800 / 22,050) is
+// ~23,180 cycles, and the emulation task's burst-then-idle duty cycle
+// swings the lead by a full paint period on top of that. Two frames is
+// comfortably clear of both and costs one frame of speaker latency.
+void lrescue_sync_audio_clock(arcade_system *system, uint32_t lead_frames) {
+    system->total_cycles = lrescue_audio_debug_target_cycle() +
+                           (uint64_t)(CYCLES_PER_FRAME * (double)lead_frames);
+}
+
+void lrescue_run_cpu_frames(arcade_system *system, uint32_t frames) {
+    if (frames < 1u) frames = 1u;
+    // `cyc` carries across calls exactly as it does in lrescue_run_frame():
+    // cycles run past the budget are subtracted from the next frame, which
+    // is what keeps total_cycles aligned with real time for the audio
+    // path's event timestamps (see FRAMERATE's comment above).
+    static int cyc = 0;
+    for (uint32_t f = 0; f < frames; f++) {
+        int int_state = 0;
+        // Both interrupts, at their absolute cycle thresholds. Running the
+        // whole frame in one loop rather than interleaving it is correct
+        // HERE and only here: there is no scanline queue on this core to
+        // starve, because the rendering happens on the other one.
+        while (int_state != 2) {
+            step_cpu(system, &cyc, &int_state);
+        }
+        cyc = (int)CYCLES_PER_FRAME - cyc;
+    }
+}
+
+void lrescue_render_frame(arcade_system *system) {
+    for (uint32_t i = 0; i < HAL_VIDEO_HEIGHT; i++) {
+        uint16_t *buf = hal_video_acquire_scanline();
+        lrescue_video_render_scanline(i, buf, system);
+        hal_video_submit_scanline(buf);
+    }
+}
+
 void lrescue_run_frame(arcade_system *system) {
     // DEBUG (kept minimal -- see below): earlier versions of this function
     // printed a new Serial.printf() line every time either half of a frame
