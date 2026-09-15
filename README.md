@@ -403,9 +403,9 @@ flashing it.
 
 ### `arduino-lint`, and the two ways to run it wrong
 
-`arduino-lint` is what Library Manager submissions are checked against. As of
-the `extras/` reorganisation this library **passes**: 0 errors, 1 warning,
-exit 0, with all 13 examples clean.
+`arduino-lint` is what Library Manager submissions are checked against. This
+library **passes**: 0 errors, 1 warning, exit 0, with all 20 examples clean —
+fourteen games (seven per board) and six SelfTest sketches.
 
 ```bash
 # lint what the registry would actually clone, NOT the working tree
@@ -440,8 +440,12 @@ and the IDE ignores entirely. Root is `src/`, `examples/`, `extras/`,
 Submission itself is a separate decision: a PR to
 [`arduino/library-registry`](https://github.com/arduino/library-registry)
 adding this repo's URL to `repositories.txt`. The release tags already line
-up (`v1.2.0` matches `version=1.2.0` in `library.properties`), and the sole
-dependency is itself in Library Manager.
+up (`v2.10.2` matches `version=2.10.2` in `library.properties`), and all four
+dependencies — `PicoDVI - Adafruit Fork`, `SdFat - Adafruit Fork`,
+`Adafruit TLV320 I2S` and `Adafruit ILI9341` — are themselves in Library
+Manager. Two of the four are per-board rather than universal: PicoDVI is
+Fruit Jam only and ILI9341 is Feather ESP32 V2 only, but `depends` has no way
+to say so, so both are declared.
 
 ## Host test harnesses
 
