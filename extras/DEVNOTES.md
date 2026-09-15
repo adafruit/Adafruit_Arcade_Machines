@@ -6255,3 +6255,111 @@ clock, a physics step, a network cadence -- the deadline has to be monotonic
 and the debt has to be bounded rather than erased. And if the only thing
 reporting the rate is a print statement inside the loop being limited, budget
 for the print.
+
+### 123. The ESP32 error screen had never once been seen, and the panel's self-test was hiding it
+
+Reported as a display oddity: Burger Time on the Feather ESP32 V2 with no
+usable ROMs "just does the three white flashes on repeat", never the red or
+yellow error flood that `loop()` so plainly draws.
+
+The three flashes are not a fault -- they are `hal_video_run()`'s post-handover
+invert self-test (#112), three `INVON`/`INVOFF` pairs at 400ms, command bytes
+only. **The word that mattered in the report was "repeat".** That self-test is
+guarded by `if (s_dma) return;` at the top of `hal_video_run()`, so it is
+structurally incapable of running twice in one boot. Seeing it twice therefore
+proves the board is REBOOTING, and no amount of staring at the error-frame
+code could have found that -- it was never reached. Serial said it outright:
+
+```
+[btime-esp32] boot: assets FAILED
+[btime-esp32]   error colour 0xFFE0 -- ...
+[video] SPI handover to IDF driver: ok
+[video] invert self-test done (3 flashes if commands land)
+Guru Meditation Error: Core  0 panic'ed (LoadProhibited).
+EXCVADDR: 0x00000000
+Rebooting...
+```
+
+`addr2line` on the backtrace, against the `.elf` in the sketch's build
+directory:
+
+```
+ay_run              btime_audio.cpp:278
+generate_one_sample btime_audio.cpp:605
+btime_audio_run_slice btime_audio.cpp:824
+btime_run_cpu_frames  btime_machine.cpp:453
+emulation_task        btime_featheresp32.ino:87
+```
+
+**The emulation task was being created and primed whether or not the assets
+loaded.** Every one of the five dual-core ESP32 sketches (btime, dkong,
+invaders, galaga, lrescue) carried this comment above the `xTaskCreate`:
+
+> Started AFTER assets load -- it would otherwise run a machine with no ROM in it.
+
+and every one of them meant it. But the comment describes an ORDERING, and
+ordering is all that was ever enforced; the FAILURE CASE fell straight
+through. `setup()` checks `g_assets_ok` only to print, then creates the task
+and primes it with `EMULATED_FRAMES_PER_PAINT` notifications regardless.
+`loop()`'s error branch does return early and never notifies again -- so the
+task gets exactly its two primed frames, which is two more than enough.
+
+On this machine that is an immediate null dereference. `ay_reset()` sets
+`ay_t::vol_tab[]`/`env_tab[]` to point at the resistor-ladder amplitude
+tables, and it is called only from `btime_audio_init()`, which sits on the
+SUCCESS path of `btime_load_assets()` -- after the two early returns that
+report a missing card or missing ROMs. With the pointers still NULL,
+`ay_run()`'s `const int32_t lo0 = tab0[0]` loads from address 0 on the very
+first audio slice. The 6502s are equally unreset for the same reason
+(`btime_ports_reset_cpus()` is on that same success path), which is the
+milder half of the same bug.
+
+The fix is the guard the comment always implied: wrap the task creation and
+priming in `if (g_assets_ok)`, in all five sketches. Pac-Man and Ms. Pac-Man
+were never affected -- they are single-core here and have no emulation task.
+
+**ALL FIVE WERE CRASH-LOOPING, and the guess that only Burger Time was is the
+part worth recording.** Having decoded the NULL `vol_tab` mechanism, I reasoned
+that the other four would probably survive it -- none of them has that
+particular pointer, and a grep for null-initialised globals in their audio
+modules came back empty -- so they would run a garbage machine noisily and
+still reach the error screen. Flashing all four with a Space Invaders card in
+the slot said otherwise: `dkong`, `galaga` and `lrescue` had each been
+rebooting exactly like Burger Time. An unreset CPU is not one bug with one
+signature, it is a different fault in every machine, and grepping for the
+signature I had already seen could only ever have found that one.
+
+Verified afterwards, same card, all five:
+
+| sketch | result |
+| --- | --- |
+| btime, dkong, galaga, lrescue | yellow flood, `asset load failed -- halted`, no panic |
+| invaders | assets loaded OK -- 100% of 59.5Hz, 33,571us/frame |
+
+`invaders` is the valuable row: the card IS its card, so it exercised the
+SUCCESS path and showed the guard changes nothing when the assets are there.
+Galaga's loader names the files it could not find, which is what yellow is
+supposed to mean and is now what the panel says:
+
+```
+[galaga] hal_storage_mount() returned true
+[galaga]   /rom/gg1-1b.3p: open FAILED     (x6)
+[galaga] program ROM load FAILED -- unmounting, GALAGA_ROM_LOAD_NO_ROM_FILES
+```
+
+**Two things worth keeping:**
+
+**An error path that has never been exercised is not an error path.** This one
+had been in every sketch since the ESP32 port began, was read past in review
+repeatedly, and shipped through v2.9.0. It had simply never been run: every
+hardware session started with a working card, because the point of the session
+was always to play the game. The one boot that needed the error screen was the
+one boot nobody had done.
+
+**A diagnostic can be the loudest thing on the screen.** The self-test is a
+2.4-second, full-screen, high-contrast event that runs before the failure and
+looks deliberate, so it read as "the boot sequence" rather than as "the last
+thing that happened before the crash". It had already cost time once, as the
+2.46-second startup gap in #120. It is still worth keeping -- it is the first
+tool to reach for when an SPI panel shows nothing (#112) -- but anything that
+repeats it is reporting a reset, not a video problem.

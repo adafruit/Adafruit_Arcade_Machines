@@ -151,11 +151,29 @@ void setup() {
     // starts, is the last moment that offset can still be measured.
     lrescue_sync_audio_clock(&g_system, EMULATED_FRAMES_PER_PAINT);
 
-    g_video_task = xTaskGetCurrentTaskHandle();
-    xTaskCreatePinnedToCore(emulation_task, "lrescue_emu", 8192, NULL, 2,
-                            &g_emu_task, 0);
-    for (uint32_t f = 0; f < EMULATED_FRAMES_PER_PAINT; f++) {
-        xTaskNotifyGive(g_emu_task);   // prime: loop() opens by waiting
+    // ONLY WHEN THE ASSETS ACTUALLY LOADED. The note about starting this
+    // task after asset loading enforced the ORDER and not the FAILURE
+    // CASE: with no card it still started, emulating a machine whose CPUs
+    // were never reset and whose audio was never initialised, because both
+    // of those happen on the success path of lrescue_load_assets().
+    //
+    // The result is a panic on core 0 and a reboot, so what the panel
+    // actually shows is hal_video_run()'s three-flash invert self-test
+    // repeating forever rather than the red or yellow error flood. That is
+    // why the error screen had never once been seen on this board.
+    //
+    // ALL FIVE dual-core sketches did this, each by its own route; every
+    // one was confirmed on hardware. Burger Time is simply where it was
+    // decoded: ay_reset() never ran, so the AY volume-table pointers were
+    // still NULL and the first audio slice loaded from address 0
+    // (LoadProhibited, EXCVADDR 0). DEVNOTES #123.
+    if (g_assets_ok) {
+        g_video_task = xTaskGetCurrentTaskHandle();
+        xTaskCreatePinnedToCore(emulation_task, "lrescue_emu", 8192, NULL, 2,
+                                &g_emu_task, 0);
+        for (uint32_t f = 0; f < EMULATED_FRAMES_PER_PAINT; f++) {
+            xTaskNotifyGive(g_emu_task);   // prime: loop() opens by waiting
+        }
     }
 
     // Emulation on core 0, priority above the Arduino loop (1) so a long
