@@ -633,7 +633,9 @@ are non-obvious and worth reading before touching `src/boards/fruitjam/`,
   `btime` driver (`src/mame/dataeast/btime.cpp`, `decocpu7.cpp`) plus
   `ay8910.cpp`, `gen_latch.cpp` and `src/emu/video/generic.cpp` — see
   `extras/BTIME_PORT_PLAN.md` and `src/machines/btime/`'s file headers.
-- Pico SDK port this was ported from: [adafruit/invaders_pico](https://github.com/adafruit/invaders_pico)
+- The Pico SDK original this project was ported to Arduino from:
+  [adafruit/invaders_pico](https://github.com/adafruit/invaders_pico) — Space
+  Invaders on the same Fruit Jam hardware, built against the raw Pico SDK
 - DVI output: [PicoDVI](https://github.com/Wren6991/PicoDVI) by Luke Wren, via [Adafruit's fork](https://github.com/adafruit/PicoDVI)
 - I2S PIO program: Raspberry Pi's [pico-extras](https://github.com/raspberrypi/pico-extras)
   (`pico_audio_i2s/audio_i2s.pio`, BSD-3-Clause), reached via pico-infoNES —
