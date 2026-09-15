@@ -6,7 +6,7 @@ SPDX-License-Identifier: MIT
 # Adafruit Arcade Machines
 
 Classic arcade games for the [Adafruit Fruit Jam](https://www.adafruit.com/product/6200)
-(RP2350B), and [Feather ESP32 v2](https://www.adafruit/com/product/5438) running under the Arduino framework..
+(RP2350B) and the [Feather ESP32 V2](https://www.adafruit.com/product/5438), running under the Arduino framework instead of the raw Pico SDK.
 
 This started as an Arduino port of [adafruit/invaders_pico](https://github.com/adafruit/invaders_pico)
 (itself a Pico SDK port of Space Invaders), restructured as **SAMP** —
@@ -64,15 +64,47 @@ any known quirks. They all share the building steps below.
 
 ### A second board: Feather ESP32 V2
 
-| Game | Sketch | Notes |
-|---|---|---|
-| Pac-Man | [`pacman_featheresp32/`](examples/Games/pacman_featheresp32/) | Feather ESP32 V2 + 2.4" TFT FeatherWing (ILI9341) + dual MAX98357A. **Runs at true arcade speed**: the panel cannot reach 60Hz, so the emulator advances two frames per painted frame and a wall-clock limiter locks it to 60.606Hz — 30.3fps on screen, 100% game speed. |
+**All seven games run here too**, each at 100% of its own machine's refresh
+rate, on a Feather ESP32 V2 + 2.4" TFT FeatherWing (ILI9341) + dual
+MAX98357A. Not one line of `src/cpu/` or `src/machines/` differs between the
+two boards.
+
+| Game | Sketch | Emulated rate | On screen |
+|---|---|---|---|
+| Space Invaders | [`invaders_featheresp32/`](examples/Games/invaders_featheresp32/) | 59.542Hz | 29.8fps |
+| Lunar Rescue | [`lrescue_featheresp32/`](examples/Games/lrescue_featheresp32/) | 60.037Hz \* | 30.0fps |
+| Pac-Man | [`pacman_featheresp32/`](examples/Games/pacman_featheresp32/) | 60.606Hz | 30.3fps |
+| Galaga | [`galaga_featheresp32/`](examples/Games/galaga_featheresp32/) | 60.606Hz | 30.3fps |
+| Ms. Pac-Man | [`mspacman_featheresp32/`](examples/Games/mspacman_featheresp32/) | 60.606Hz | 30.3fps |
+| Donkey Kong | [`dkong_featheresp32/`](examples/Games/dkong_featheresp32/) | 60.606Hz | 30.3fps |
+| Burger Time | [`btime_featheresp32/`](examples/Games/btime_featheresp32/) | 57.445Hz | 28.7fps |
+
+\* Lunar Rescue's is the one number here that is **not** a cabinet
+measurement. It shares Space Invaders' 8080bw board and 59.542Hz refresh, but
+its machine code carries a 60.0368 calibration and its cycle budget derives
+from that, so the two have to agree — see `extras/DEVNOTES.md` #120.
+
+**The display rate is half the game rate on purpose.** The panel cannot reach
+60Hz, so each sketch advances the emulator *two* frames per painted frame and
+a wall-clock limiter locks the result to the rate above. The machine keeps the
+interrupt cadence the real cabinet produced and only the picture is decimated.
+**Game speed and display rate are therefore different numbers on this board** —
+conflating them is what hid a 40%-speed bug for most of the port.
+
+**The frame budget is per-game.** A shared 16,500us constant is right for the
+four 60.606Hz machines and silently wrong for the other three; it shipped that
+way in v2.7.0 and ran Burger Time 5.5% fast.
 
 The panel is the ceiling here, not the emulator: 320x240 RGB565 at 40MHz is
-30.7ms of unavoidable clocking, and the transport runs within 3% of that.
-**Game speed and display rate are different numbers on this board** —
-conflating them is what hid a 40%-speed bug for most of the port. See
-`extras/DEVNOTES.md` #104-#111 before changing anything about that path.
+30.7ms of unavoidable clocking, and the transport runs within 3% of that. See
+`extras/DEVNOTES.md` #104-#111 before changing anything about that path, and
+#122 for why a rate limiter must repay a missed deadline rather than forgive
+it.
+
+Two differences from the Fruit Jam sketches are worth knowing before you read
+one: there is no `setup1()`/`loop1()` second-core display pump — the panel is
+written from `submit_scanline()` — and `HAL_BTN_MIRROR` and `HAL_BTN_STRETCH`
+are not wired on this board and read false.
 
 ### Screen orientation and aspect ratio
 
