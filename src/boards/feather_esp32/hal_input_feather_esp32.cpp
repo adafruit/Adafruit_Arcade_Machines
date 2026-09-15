@@ -28,6 +28,7 @@
 #include <Arduino.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "driver/gpio.h"   // GPIO_IS_VALID_OUTPUT_GPIO
 #include "hal/arcade_hal_input.h"
 #include "board_config_feather_esp32.h"
 
@@ -101,13 +102,29 @@ static void input_task(void *arg) {
     }
 }
 
-// GPIO 34/36/39 and 37 are input-only with NO internal pull resistors --
-// INPUT_PULLUP silently does nothing on them, so each carries an external
-// 10K to 3V3. Requesting INPUT_PULLUP anyway is harmless and keeps the
-// table uniform; on those four it is simply ignored by the hardware.
+// GPIO 34/36/39 and 37 are input-only pads with NO internal pull resistors,
+// so START2, LEFT, RIGHT and ROTATE each carry an external 10K to 3V3.
+//
+// ASK FOR THE PULL-UP ONLY WHERE THE PAD HAS ONE. Requesting INPUT_PULLUP
+// on all nine was believed harmless -- the hardware does ignore it -- but
+// it is not silent: the IDF logs an error per pad on every boot,
+//
+//     E (2086) gpio: gpio_pullup_en(85): GPIO number error
+//               (input-only pad has no internal PU)
+//
+// four times, once each for those four buttons. That is noise in the one
+// place a bring-up log has to be trustworthy, and it is easy to read as a
+// pin-numbering fault -- the (85) is gpio.c's __LINE__, not a GPIO number,
+// which is exactly the misreading it invites.
+//
+// GPIO_IS_VALID_OUTPUT_GPIO() is the honest test rather than a hardcoded
+// 34..39: on this part the input-only pads are precisely the ones that
+// cannot drive an output, and the macro tracks that per SoC.
 void hal_input_init(void) {
     for (int i = 0; i < HAL_BTN_COUNT; i++) {
-        if (s_pin[i] >= 0) pinMode((uint8_t)s_pin[i], INPUT_PULLUP);
+        if (s_pin[i] >= 0)
+            pinMode((uint8_t)s_pin[i],
+                    GPIO_IS_VALID_OUTPUT_GPIO(s_pin[i]) ? INPUT_PULLUP : INPUT);
         s_filt[i].stable = false;
         s_filt[i].pending = false;
         s_filt[i].pending_since = 0;
