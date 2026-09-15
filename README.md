@@ -6,7 +6,7 @@ SPDX-License-Identifier: MIT
 # Adafruit Arcade Machines
 
 Classic arcade games for the [Adafruit Fruit Jam](https://www.adafruit.com/product/6200)
-(RP2350B), running under the Arduino framework instead of the raw Pico SDK.
+(RP2350B), and [Feather ESP32 v2](https://www.adafruit/com/product/5438)running under the Arduino framework..
 
 This started as an Arduino port of [adafruit/invaders_pico](https://github.com/adafruit/invaders_pico)
 (itself a Pico SDK port of Space Invaders), restructured as **SAMP** —
