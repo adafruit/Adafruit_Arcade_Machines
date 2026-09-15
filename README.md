@@ -591,6 +591,35 @@ are non-obvious and worth reading before touching `src/boards/fruitjam/`,
   [danjulio/gcore_galagino](https://github.com/danjulio/gcore_galagino) as
   the behavioural reference — see `src/machines/galaga/`'s file-header
   comments for what is cited and what is approximated.
+- ESP32 architecture: [harbaum/galagino](https://github.com/harbaum/galagino)
+  by Till Harbaum — a Galaga/Pac-Man/Donkey Kong emulator for the ESP32, and
+  the upstream of `gcore_galagino` above. **No code was taken from it**; it was
+  the reference this project reasoned *against* while bringing up the Feather
+  ESP32 V2, and it is cited in the files where the same problem came up:
+  - running emulation and video on **separate cores** behind a notify
+    handshake, rather than interleaving them — its own note is "let the cpu
+    emulation run on the second core, so the main core can completely focus
+    on video" (`src/machines/galaga/galaga_machine.cpp`,
+    `examples/Games/galaga_featheresp32/`);
+  - advancing the emulator **two frames per painted frame**, so a panel that
+    cannot reach 60Hz decimates the *picture* rather than the game
+    (`examples/Games/btime_featheresp32/`, `galaga_featheresp32/`);
+  - the consequence of that trade, which is the part easy to miss: anything
+    the **renderer** animates rather than the emulated machine needs its step
+    scaled to match. Galaga's starfield is exactly that
+    (`src/machines/pacman/pacman_machine.cpp`,
+    `src/machines/galaga/galaga_video.cpp`);
+  - letting the IDF `spi_master` driver own the transfers instead of driving
+    the DMA engine by hand. galagino reaching ~30Hz on this same panel at this
+    same 40MHz is what established that the silicon was fine and the
+    hand-written register sequence was not — nine failed fix attempts were
+    spent before that comparison was made
+    (`src/arch/esp32/arch_spi_dma.h`, `extras/DEVNOTES.md` #108).
+
+  Its full-frame `prepare_frame()` snapshot is the one design here that was
+  deliberately *not* followed — this renderer latches sprites once per frame
+  and reads little else live, so it does not need the stronger guarantee; see
+  `galaga_machine.cpp` for that reasoning.
 - 6502 CPU core (`src/cpu/m6502/`): [superzazu/6502](https://github.com/superzazu/6502) (MIT),
   the same author as the Z80 core above. Four documented changes from
   upstream (an `extern "C"` guard, a `uint32_t` cycle counter, an optional
