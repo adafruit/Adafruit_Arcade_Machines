@@ -184,6 +184,11 @@ belong on a release, not in the tree.
 
 ### Arduino IDE
 
+The two boards need different cores, different libraries and a different
+way of setting the optimisation level, so they are split here.
+
+#### Fruit Jam
+
 1. Install the **Raspberry Pi Pico/RP2040/RP2350** board core (Earle
    Philhower's, via Boards Manager — add
    `https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json`
@@ -231,6 +236,43 @@ once-per-frame sampler would have seen. Reach for it when an input misbehaves
 in a way `input_test_fruitjam` (which polls at 50Hz behind a `delay(20)`, and
 so is deliberately blind to bounce) cannot show. Read `extras/DEVNOTES.md` #32 before
 trusting what it tells you.
+
+#### Feather ESP32 V2
+
+1. Install the **esp32** board core (Espressif's, via Boards Manager — add
+   `https://espressif.github.io/arduino-esp32/package_esp32_index.json` as an
+   additional board URL first).
+2. Install this library exactly as above. Its dependencies **differ from the
+   Fruit Jam's**: this board needs `SdFat - Adafruit Fork` and
+   `Adafruit ILI9341` (which pulls in `Adafruit GFX` and `Adafruit BusIO`),
+   and does **not** need `PicoDVI - Adafruit Fork`. I2S audio comes from the
+   core's own `ESP_I2S`, so there is nothing to install for sound.
+3. Select board **Adafruit Feather ESP32 V2**.
+4. **There is no Tools → Optimize on this core** — do not go looking for it.
+   The level is pinned per sketch by a `build_opt.h` file sitting beside the
+   `.ino` (it contains one line, `-O3`), which is the IDE's own documented
+   per-sketch flag mechanism. `sketch.yaml` cannot do it here: it carries the
+   FQBN but not build properties, and adding one there silently leaves you on
+   `-Os`. **Keep `build_opt.h` with the sketch if you copy it anywhere** —
+   without it you get the core default and the same red screen the Fruit Jam
+   gives for the same reason.
+5. Assemble the hardware: a **2.4" TFT FeatherWing V1** (#3315) on top of the
+   Feather, and for sound a **stereo I2S 3W amp, dual MAX98357A** (#6513)
+   wired BCLK→`27`, LRC→`12`, DIN→`13`, Vin→VBUS. Nine buttons go active-low
+   to ground; four of them — A2, A3, A4 and GPIO 37 — land on input-only pads
+   with no internal pull-up and need an **external 10K to 3V3**. The full
+   pinout, and why 40MHz is a hard ceiling on this wing, is in
+   `src/boards/feather_esp32/board_config_feather_esp32.h`.
+6. Prepare the SD card exactly as for the Fruit Jam (FAT32, **MBR**) and put
+   it in the FeatherWing's microSD slot.
+7. **File → Examples → Adafruit Arcade Machines → Games →**
+   `<game>_featheresp32`, and upload over USB serial.
+
+The `SelfTest` examples are Fruit Jam only; there are no ESP32 equivalents
+yet. Each game prints a once-per-30-frames heartbeat over serial at 115200
+instead, reporting display fps, emulated fps, percentage of the machine's
+real rate, rotation and audio ring margin — which is the fastest way to tell
+a wiring problem from a performance one.
 
 ### arduino-cli
 
