@@ -151,32 +151,34 @@ frame-budget cost of each option.
 
 ### Prebuilt firmware
 
-If you'd rather not install the toolchain, ready-to-flash `.uf2` files for
-all seven games are attached to each [release](../../releases). Hold **BOOT**
-while connecting USB (or hold BOOT and tap **RESET**), then copy the `.uf2`
-onto the `RP2350` drive that appears.
+If you'd rather not install the toolchain, every [release](../../releases)
+carries **all seven games for both boards** — fourteen files in total.
+
+**Fruit Jam — `<game>_fruitjam.uf2`.** Hold **BOOT** while connecting USB (or
+hold BOOT and tap **RESET**), then copy the `.uf2` onto the `RP2350` drive
+that appears.
+
+**Feather ESP32 V2 — `<game>_featheresp32.bin`.** That board has no
+drag-and-drop bootloader, so it flashes over serial instead: write the file
+at offset `0x0` with Adafruit's browser tool,
+[Web Serial ESPTool](https://learn.adafruit.com/circuitpython-with-esp32-quick-start/web-serial-esptool).
+Each `.bin` is a complete flash image — bootloader, partition table and
+application at their correct offsets in one file — not a bare application
+binary.
 
 The binaries contain no ROM data — you still need the microSD card with
-legally-obtained ROMs described in each game's README. Each release build
-uses the optimization level that game's own `sketch.yaml` pins, which is
-not the same for every game; see below.
+legally-obtained ROMs described in each game's README, for either board. Each
+release build uses the optimization level that game's own `sketch.yaml` pins,
+which is not the same for every game; see below.
 
 To build the whole set yourself, ready to attach to a release:
 
 ```bash
-./extras/dist/build_all.sh      # writes extras/dist/<game>_fruitjam.uf2 for all seven
+./extras/dist/build_all.sh      # seven <game>_fruitjam.uf2 and seven <game>_featheresp32.bin
 ```
 
 `extras/dist/` is gitignored apart from that script and its README — the binaries
 belong on a release, not in the tree.
-
-The ESP32 build is also attached, as `pacman_featheresp32.bin`, and flashes
-**differently**: that board has no drag-and-drop bootloader, so use
-Adafruit's browser tool and write the file at offset `0x0` —
-[Web Serial ESPTool](https://learn.adafruit.com/circuitpython-with-esp32-quick-start/web-serial-esptool).
-It is a complete flash image (bootloader, partition table and application
-at their correct offsets in one file), and it needs the same microSD card
-the Fruit Jam build does.
 
 ## Building
 
