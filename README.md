@@ -276,6 +276,8 @@ a wiring problem from a performance one.
 
 ### arduino-cli
 
+**Fruit Jam:**
+
 ```bash
 arduino-cli core install rp2040:rp2040 \
   --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
@@ -286,9 +288,28 @@ arduino-cli lib install "PicoDVI - Adafruit Fork"
 arduino-cli compile --library . examples/Games/invaders_fruitjam
 ```
 
-(Each example's `sketch.yaml` pins its own required `opt=` level as the
-default `--fqbn`, so it can be omitted. `./extras/dist/build_all.sh` builds all
-seven games this way.)
+Each Fruit Jam example's `sketch.yaml` pins its own required `opt=` level as
+the default `--fqbn`, so it can be omitted.
+
+**Feather ESP32 V2:**
+
+```bash
+arduino-cli core install esp32:esp32 \
+  --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+arduino-cli lib install "SdFat - Adafruit Fork" "Adafruit ILI9341"
+
+arduino-cli compile --library . --fqbn esp32:esp32:adafruit_feather_esp32_v2 \
+  examples/Games/invaders_featheresp32
+```
+
+Here `sketch.yaml` carries only the FQBN — the optimisation level comes from
+the `build_opt.h` beside each `.ino`, which `arduino-cli` picks up
+automatically from the sketch directory. Upload over USB serial with
+`arduino-cli upload -p <port> --fqbn esp32:esp32:adafruit_feather_esp32_v2 ...`;
+`arduino-cli board list` will name the port.
+
+`./extras/dist/build_all.sh` builds all fourteen images — seven of each — the
+same way.
 
 ### Working in a checkout (rather than on an installed copy)
 
@@ -298,7 +319,9 @@ instead, so edits are live in the IDE with no copying:
 
 ```bash
 ln -s "$PWD" ~/Documents/Arduino/libraries/Adafruit_Arcade_Machines
-arduino-cli lib install "PicoDVI - Adafruit Fork"   # into that same sketchbook
+# into that same sketchbook -- both boards' dependencies
+arduino-cli lib install "PicoDVI - Adafruit Fork" \
+  "SdFat - Adafruit Fork" "Adafruit ILI9341"
 ```
 
 Then **File → Examples → Adafruit Arcade Machines** lists every example, and
@@ -446,14 +469,22 @@ this is by far the fastest place to find them. See `extras/tools/README.md`.
 
 ## Debugging on hardware
 
-Every game here is flashed firmware with no OS, so the loop is: add an
-instrument, reflash, read the serial line. `arduino-cli upload` takes
-seconds (a 1200-baud touch into BOOTSEL, then a UF2 copy), so this is faster
-than attaching a debugger and it leaves the instrument behind for next time.
+Every game here is flashed firmware with no OS, so the loop is the same on
+both boards: add an instrument, reflash, read the serial line. Reflashing
+takes seconds, which is faster than attaching a debugger and it leaves the
+instrument behind for next time. What differs is how you flash and what the
+heartbeat tells you.
 
-**No SWD/OpenOCD/Debug Probe is needed or used** — earlier sessions fought
-75–200 second SWD loads before working this out. See `extras/DEVNOTES.md`'s "How
-hardware debugging actually works on this project".
+For anything about the emulated *machine* rather than the board, use the host
+harnesses above instead — they answer the same questions in about a second.
+
+### Fruit Jam
+
+`arduino-cli upload` is a 1200-baud touch into BOOTSEL followed by a UF2
+copy. **No SWD/OpenOCD/Debug Probe is needed or used** — earlier sessions
+fought 75–200 second SWD loads before working this out. See
+`extras/DEVNOTES.md`'s "How hardware debugging actually works on this
+project".
 
 Each sketch prints a once-per-second heartbeat:
 
@@ -467,8 +498,38 @@ blocks, so it pins at the DVI frame period as soon as the work fits.
 Reading it while a serial monitor is open needs the port free — see
 `extras/DEVNOTES.md` for the Arduino IDE Serial Monitor conflict.
 
-For anything about the emulated machine rather than the board, use the host
-harnesses above instead; they answer the same questions in about a second.
+### Feather ESP32 V2
+
+This board flashes over USB serial (`arduino-cli upload -p <port>`), and the
+same port carries the log at 115200. There is no bootloader button dance.
+
+The heartbeat is a different shape, once every 30 frames, because the
+questions are different — this board's display rate is fixed by SPI
+bandwidth, so the number that matters is whether the *game* is keeping its
+own rate:
+
+```
+[btime-esp32] frame 180  28.7 fps display  57.5 fps emulated (100% of 57.4Hz)  frame 34427 us  rot 3  audio ur 0 ov 0 queued 666 min 572 (drain 256)
+```
+
+- **`fps display` and `fps emulated` are different numbers on purpose**, the
+  second being twice the first; conflating them hid a 40%-speed bug for most
+  of the port. The percentage is the one to read — it should be 100%.
+- **`rot`** makes a stray ROTATE press visible. GPIO 37 is input-only with no
+  internal pull, so an unwired or floating button line cycles it silently.
+- **`min` is the audio ring depth the I2S task saw at the *start* of a call,
+  and it must stay above the 256 it drains per call.** `ur` must be 0. The
+  producer's own peak and overrun counters can read perfectly healthy while
+  the ring runs dry mid-block — this is the number that actually predicts a
+  click (`extras/DEVNOTES.md` #119).
+
+A `Guru Meditation Error` backtrace on this board decodes to file and line
+with the core's own `addr2line` against the `.elf` in the sketch's build
+directory:
+
+```bash
+xtensa-esp-elf-addr2line -pfiaC -e <sketch>.ino.elf <backtrace addresses>
+```
 
 ## Porting a new machine
 
