@@ -2,14 +2,21 @@
 //
 // SPDX-License-Identifier: MIT
 
-// Adafruit Feather ESP32 V2 (#5400) + 2.4" TFT FeatherWing V1 (#3315)
+// Adafruit Feather ESP32 V2 (#5400) + 2.4" TFT FeatherWing (#3315)
 // + Stereo I2S 3W amp, dual MAX98357A (#6513).
+//
+// BOTH REVISIONS OF THE WING WORK, and #3315 has shipped as V2 since
+// Adafruit redesigned it on 2023-10-11 -- so the part number above buys a
+// V2 today even though this port was brought up on a V1. Everything this
+// file names is common to the two: same ILI9341, same microSD slot, same
+// CS/DC/SD pins. The single difference that reaches the code is the touch
+// controller, and it is handled at FEATHER_TOUCH_CS_IRQ below.
 //
 // On ESP32 the Arduino pin number IS the GPIO number.
 #ifndef BOARD_CONFIG_FEATHER_ESP32_H
 #define BOARD_CONFIG_FEATHER_ESP32_H
 
-// --- TFT FeatherWing V1: fixed by the wing, not reassignable ---------------
+// --- TFT FeatherWing: fixed by the wing, not reassignable ------------------
 // Shared hardware SPI: SCK 5, MOSI 19, MISO 21 (the variant's defaults).
 // NOTE these are NOT the ESP32's IOMUX SPI pins, so the signals route via the
 // GPIO matrix. **40MHz IS THE CEILING ON THIS WING AND IT HAS BEEN TESTED.**
@@ -30,8 +37,36 @@
 #define FEATHER_TFT_CS    15
 #define FEATHER_TFT_DC    33
 #define FEATHER_SD_CS     14
-#define FEATHER_STMPE_CS  32  // touch, unused -- must be driven HIGH or the
-                              // STMPE610 fights the SD card on MISO
+// Touch, which this port does not use -- but the pin cannot simply be
+// ignored, and WHAT IT IS depends on which revision of the wing is fitted:
+//
+//   V1   STMPE610 chip select, an INPUT to a device on this same SPI bus.
+//        Left floating it can select itself and drive MISO against the SD
+//        card, so it has to be held deasserted-high.
+//   V2   TSC2007 PENIRQ, an open-drain OUTPUT (the TSC2007 is on I2C, so
+//        there is no chip select at all). It idles high through the part's
+//        own internal pull-up -- 50K by default, 90K if asked -- and is
+//        pulled LOW by the controller whenever the screen is touched.
+//
+// The V2 half was MEASURED on hardware, not taken from the datasheet: with
+// the pin read as plain INPUT it still rests HIGH (so the pull-up is out
+// there on the wing, not in the ESP32) and it follows a finger on the glass
+// LOW/HIGH in both INPUT and INPUT_PULLUP. DEVNOTES #124.
+//
+// INPUT_PULLUP is the one setting that is correct on both. It holds V1's
+// CS high through the ESP32's ~45K (nothing else drives that line, and the
+// traces are centimetres), while on V2 it is simply a second pull-up on a
+// pin that already has one -- a touch then sinks about 70uA and nothing
+// contends.
+//
+// DO NOT GO BACK TO OUTPUT/HIGH. That was the original code and it is
+// correct only on V1: on a V2 wing it drives the pad hard high into the
+// TSC2007's pull-down FET every time a finger lands on the screen, which
+// is a short between two active drivers on a panel the player is sitting
+// in front of. The V2 wing puts a cuttable solder jumper on this line, so
+// a board that has had it cut leaves the pin floating -- INPUT_PULLUP is
+// right there too.
+#define FEATHER_TOUCH_CS_IRQ 32
 
 // --- Dual MAX98357A --------------------------------------------------------
 #define FEATHER_I2S_BCLK  27

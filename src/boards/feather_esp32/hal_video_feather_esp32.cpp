@@ -122,10 +122,14 @@ static inline void swap_to_wire_order(uint16_t *px, uint32_t n) {
 }
 
 bool hal_video_init(void) {
-    // Both other devices on the shared bus must be deselected before the
-    // display is talked to, or the STMPE610 drives MISO against the SD card.
-    pinMode(FEATHER_SD_CS, OUTPUT);    digitalWrite(FEATHER_SD_CS, HIGH);
-    pinMode(FEATHER_STMPE_CS, OUTPUT); digitalWrite(FEATHER_STMPE_CS, HIGH);
+    // Everything else on the shared bus must be deselected before the display
+    // is talked to, or a V1 wing's STMPE610 drives MISO against the SD card.
+    // A V2 wing has no SPI touch device at all -- its TSC2007 is on I2C -- so
+    // there the second line is only making sure an open-drain IRQ is not
+    // driven. See FEATHER_TOUCH_CS_IRQ for why this is INPUT_PULLUP and must
+    // not go back to OUTPUT/HIGH.
+    pinMode(FEATHER_SD_CS, OUTPUT); digitalWrite(FEATHER_SD_CS, HIGH);
+    pinMode(FEATHER_TOUCH_CS_IRQ, INPUT_PULLUP);
 
     s_tft.begin();
     s_tft.setSPISpeed(40000000);

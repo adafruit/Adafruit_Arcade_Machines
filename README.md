@@ -256,13 +256,21 @@ trusting what it tells you.
    `-Os`. **Keep `build_opt.h` with the sketch if you copy it anywhere** —
    without it you get the core default and the same red screen the Fruit Jam
    gives for the same reason.
-5. Assemble the hardware: a **2.4" TFT FeatherWing V1** (#3315) on top of the
+5. Assemble the hardware: a **2.4" TFT FeatherWing** (#3315) on top of the
    Feather, and for sound a **stereo I2S 3W amp, dual MAX98357A** (#6513)
    wired BCLK→`27`, LRC→`12`, DIN→`13`, Vin→VBUS. Nine buttons go active-low
    to ground; four of them — A2, A3, A4 and GPIO 37 — land on input-only pads
    with no internal pull-up and need an **external 10K to 3V3**. The full
    pinout, and why 40MHz is a hard ceiling on this wing, is in
    `src/boards/feather_esp32/board_config_feather_esp32.h`.
+
+   **Either revision of the wing works.** #3315 shipped as V1 until Adafruit
+   redesigned it on 2023-10-11 and as V2 since, so that part number buys a V2
+   today; this port was brought up on a V1. Same ILI9341, same microSD, same
+   pins — the only change that reaches the code is the touch controller
+   (V1 STMPE610 on SPI, V2 TSC2007 on I2C), which this port does not use but
+   does have to leave alone correctly. See `FEATHER_TOUCH_CS_IRQ` in the board
+   config for why that pin is `INPUT_PULLUP` on both and must not be driven.
 6. Prepare the SD card exactly as for the Fruit Jam (FAT32, **MBR**) and put
    it in the FeatherWing's microSD slot.
 7. **File → Examples → Adafruit Arcade Machines → Games →**
@@ -556,6 +564,11 @@ be one, the `-Os`-isn't-fast-enough finding, the cycle-vs-real-time
 audio-clock lesson)
 are non-obvious and worth reading before touching `src/boards/fruitjam/`,
 `src/cpu/i8080/`, or adding a new synthesized-audio channel to any game.
+
+`extras/HDMI_AUDIO_NOTES.md` is a possible future feature rather than a
+record of the present: audio over the HDMI cable on the Fruit Jam, which
+would mean replacing the PIO-bitbanged DVI backend with an HSTX one. Nothing
+is implemented; the file exists so the research does not have to be repeated.
 
 ## Credits
 

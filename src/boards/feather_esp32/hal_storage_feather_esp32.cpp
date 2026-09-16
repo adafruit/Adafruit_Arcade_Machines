@@ -19,7 +19,7 @@ static bool  s_mounted = false;
 
 bool hal_storage_mount(void) {
     if (s_mounted) return true;
-    pinMode(FEATHER_STMPE_CS, OUTPUT); digitalWrite(FEATHER_STMPE_CS, HIGH);
+    pinMode(FEATHER_TOUCH_CS_IRQ, INPUT_PULLUP); // V1 CS deasserted / V2 IRQ left alone
     s_mounted = s_sd.begin(SdSpiConfig(FEATHER_SD_CS, SHARED_SPI,
                                        SD_SCK_MHZ(16), &SPI));
     return s_mounted;

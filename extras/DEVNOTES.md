@@ -6363,3 +6363,93 @@ thing that happened before the crash". It had already cost time once, as the
 2.46-second startup gap in #120. It is still worth keeping -- it is the first
 tool to reach for when an SPI panel shows nothing (#112) -- but anything that
 repeats it is reporting a reset, not a video problem.
+
+### 124. The TFT FeatherWing changed revision underneath us, and one pin changed DIRECTION
+
+Nothing was broken and nothing was reported. The question was only whether the
+2.4" TFT FeatherWing's V1 and V2 differ in any way this port cares about, and
+the answer turned out to be one pin -- but a pin whose **direction** reverses.
+
+Adafruit redesigned #3315 on 2023-10-11. The part number did not change, so
+**the wing this port was brought up on is no longer the wing that part number
+buys.** Almost everything is common to both: same ILI9341, same microSD slot,
+same CS/DC/SD pins, and (measured below) the same behaviour at 40MHz. The
+touch controller is the exception, and it is the one that reaches the code:
+
+| | V1 | V2 |
+|---|---|---|
+| Touch controller | STMPE610 | TSC2007 |
+| Interface | SPI, on the display's bus | I2C (0x48), off it entirely |
+| GPIO 32 | chip select -- an **input** | PENIRQ -- an open-drain **output** |
+
+This port does not use touch, so GPIO 32 looks like a pin to ignore. It is
+not. On V1 it has to be held deasserted-high or the STMPE610 can select itself
+and drive MISO against the SD card, and the code did that the obvious way:
+
+```c
+pinMode(FEATHER_STMPE_CS, OUTPUT); digitalWrite(FEATHER_STMPE_CS, HIGH);
+```
+
+**On a V2 wing that is a push-pull driver aimed at the TSC2007's pull-down
+FET**, and the TSC2007 pulls PENIRQ low every time a finger lands on the
+glass. Two active drivers, on opposite rails, on a panel the player sits in
+front of. It had never been noticed because this repo has no touch code, no
+test touches the screen, and nothing in the logs would ever mention it.
+
+**The fix is one setting that is correct on both revisions**: `INPUT_PULLUP`,
+and no `digitalWrite` at all. On V1 the ESP32's ~45K holds the STMPE610's CS
+high (nothing else drives that line and the traces are centimetres); on V2 it
+is a second pull-up on a pin that already has one, and a touch sinks about
+70uA into it.
+
+**Both halves were then confirmed on hardware rather than argued from the two
+datasheets**, because the V1 half is a genuine regression risk -- swapping a
+hard-driven high for a weak pull-up is exactly the kind of change that works
+until the SD card is asked for something.
+
+*V1, Burger Time, the change applied:*
+
+```
+[btime-esp32] boot: assets loaded OK
+[btime-esp32] frame 480  28.7 fps display  57.5 fps emulated (100% of 57.4Hz)
+              frame 34417 us  rot 3  audio ur 0 ov 0 queued 806 min 562
+```
+
+`assets loaded OK` is the whole point: the card mounted **and** every ROM file
+was read over the shared bus with only the internal pull-up holding CS.
+
+*V2, the same binary, straight swap:* identical. `assets loaded OK`, 28.7 fps,
+and a frame time of 34417us matching V1 **to the microsecond**. So the
+redesigned PCB behaves the same at 40MHz too -- one datapoint against the
+worry that #105's ceiling might not carry over.
+
+*And GPIO 32 itself, via a throwaway probe alternating INPUT and
+INPUT_PULLUP:*
+
+```
+[probe]  169057 ms  INPUT_PULLUP  pin32 = LOW      <- finger down
+[probe]  169651 ms  INPUT_PULLUP  pin32 = HIGH     <- released
+[probe]  165696 ms  INPUT         pin32 = LOW
+[probe]  166499 ms  INPUT         pin32 = HIGH
+```
+
+Resting HIGH in plain `INPUT` proves the pull-up is on the wing rather than in
+the ESP32; following a finger in **both** modes proves something out there
+drives it low. It is a PENIRQ, not a chip select.
+
+**Two things worth keeping:**
+
+**A part number is not a hardware revision.** The board config said
+`2.4" TFT FeatherWing V1 (#3315)` and was accurate when written and misleading
+three years later, because the number stayed put while the board moved. Anyone
+following that README bought a V2 and got code written for a V1. When a
+config names a part, it is naming something the vendor can change without
+telling you.
+
+**"We don't use that peripheral" is not the same as "that pin is free."** The
+reason this survived review repeatedly is that the pin belongs to a feature
+this port deliberately ignores, so the mind skips it. But an unused peripheral
+still has an opinion about its own pins, and an unused *output* has a strong
+one. The safe default for a pin belonging to something you do not drive is the
+weakest thing that satisfies the requirement -- here, a pull-up rather than a
+driver.
