@@ -259,7 +259,7 @@ trusting what it tells you.
 5. Assemble the hardware: a **2.4" TFT FeatherWing** (#3315) on top of the
    Feather, and for sound an **I2S 3W Class-D amp, MAX98357A**
    ([#3006](https://www.adafruit.com/products/3006)) wired BCLK→`27`,
-   LRC→`12`, DIN→`13`, GND→GND and **Vin→BAT**. The stereo pair (#6513)
+   LRC→`12`, DIN→`13`, GND→GND and **Vin→3V**. The stereo pair (#6513)
    works unchanged if you have one — the games mix to mono, so there is no
    second channel to lose. Nine buttons go active-low to ground; four of
    them — A2, A3, A4 and GPIO 37 — land on input-only pads with no internal
@@ -267,18 +267,27 @@ trusting what it tells you.
    40MHz is a hard ceiling on this wing, is in
    `src/boards/feather_esp32/board_config_feather_esp32.h`.
 
-   **The amp's Vin belongs on BAT**, and the other two rails both drive it
-   but fail in their own way. **VBUS** is the loudest — 5V is what the 3W
-   rating assumes — and is dead on battery, so a board wired that way plays
-   on the bench and goes silent the moment it is unplugged, with picture and
-   input still working. **3V** survives unplugging but puts a Class-D amp's
-   current bursts on the same regulator as the ESP32 and the panel, where
-   they can show up as resets or display corruption on loud sounds; it is
-   also the quietest, at roughly 44% of VBUS's power. **BAT** is 3.7–4.2V,
-   sits upstream of that regulator, and is still powered over USB because
-   the charger holds it up. All three have been run on this board and all
-   three make sound on USB; the VBUS-on-battery silence and the 3V droop are
-   reasoned from which rail is which, not observed.
+   **The amp's Vin belongs on 3V**, which is the only one of the three rails
+   that is right however the board is powered:
+
+   | | USB, no battery | Battery only | USB + battery |
+   |---|---|---|---|
+   | **VBUS** | loudest | **dead** | loudest |
+   | **3V** | fine | fine | fine |
+   | **BAT** | **crunchy** | great | great |
+
+   **VBUS** is the loudest — 5V is what the 3W rating assumes — and is dead
+   on battery, so a board wired that way plays on the bench and goes silent
+   the moment it is unplugged, with picture and input still working.
+   **BAT** is better than 3V *once a cell is actually fitted*: 3.7–4.2V, so
+   most of VBUS's volume, and upstream of the regulator the ESP32 and panel
+   share. With no cell it is not a battery rail at all but the charger's
+   output, which has no reservoir — the amp's current bursts sag it at audio
+   rate and it sounds crunchy (a 470µF–1000µF cap at Vin substitutes for the
+   missing cell). **3V** is the quietest, at roughly 44% of VBUS's power, and
+   in principle shares its regulator with the ESP32 and the panel — not
+   something seen here. It wins on the middle row: there is no way to power
+   this board that it gets wrong.
 
    **Either revision of the wing works.** #3315 shipped as V1 until Adafruit
    redesigned it on 2023-10-11 and as V2 since, so that part number buys a V2

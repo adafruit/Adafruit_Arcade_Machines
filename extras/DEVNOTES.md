@@ -6453,3 +6453,62 @@ still has an opinion about its own pins, and an unused *output* has a strong
 one. The safe default for a pin belonging to something you do not drive is the
 weakest thing that satisfies the requirement -- here, a pull-up rather than a
 driver.
+
+### 125. The battery is the amplifier's bulk capacitor, and removing it is audible
+
+Not a firmware bug. Not even a wiring mistake in the usual sense -- the wire
+was where the docs said to put it, and the docs were wrong in a way that only
+one of three power configurations reveals.
+
+The MAX98357A's Vin had been moved from VBUS to BAT, for two good reasons:
+VBUS is the USB 5V rail and is **dead on battery**, and BAT sits upstream of
+the LDO that the ESP32 and the panel share, so the amp's current cannot
+disturb them. On battery it sounded great. Then the same board was run on USB
+with **no cell fitted**, and the audio was crunchy and distorted.
+
+**With no battery installed, BAT is not a battery rail.** It is the LiPo
+charger's output, and a linear charger is a poor general-purpose supply: a
+current limit of a few hundred mA, and -- decisively -- **no reservoir**. A
+Class-D amplifier draws in bursts that track the audio waveform, peaking into
+the hundreds of mA, and what normally absorbs those bursts is the cell
+itself. A LiPo is an enormous, very low-impedance capacitor wired directly to
+that pin. Take it out and the rail sags and recovers at audio rate, which
+modulates the amp's own supply voltage. The distortion is the power supply
+being played through the speaker.
+
+A 470uF-1000uF bulk cap at the amp's Vin substitutes for the missing cell if
+BAT is wanted anyway. The charger's current limit is still a ceiling, but the
+amp averages only ~15mA -- it is the transients that matter, and a cap is
+what transients want.
+
+**The honest matrix, which is what the docs now carry:**
+
+|      | USB, no battery | Battery only | USB + battery |
+|------|-----------------|--------------|---------------|
+| VBUS | loudest         | **dead**     | loudest       |
+| 3V   | fine            | fine         | fine          |
+| BAT  | **crunchy**     | great        | great         |
+
+**3V is the only rail that is right in all three**, so it is now the
+documented default, with BAT named as the better choice once a cell is
+actually fitted.
+
+**Two things worth keeping:**
+
+**A battery is not only a power source, it is bulk capacitance.** This is
+obvious stated plainly and easy to miss in practice, because a battery is
+drawn in schematics as a source and reasoned about as a source. Every claim
+made for BAT here -- more volume than 3V, isolation from the ESP32's
+regulator -- was true, and all of them silently assumed a component that was
+merely usually present. **A rail that behaves perfectly with a battery fitted
+can be unusable without one, and nothing about the wiring changes between
+those two cases.**
+
+**Observed beats reasoned, and the recommendation had it backwards.** The
+argument against 3V was that a Class-D amp's transients could droop a rail
+the ESP32 and panel depend on. That was flagged in the same commit as
+reasoned rather than measured -- and it was still allowed to outrank the
+alternative, whose failure then turned out to be real and audible on the
+first board that met it. When a comparison rests on one risk that has been
+seen and one that has only been argued, the argued one does not get to
+decide. The 3V droop remains unobserved to this day.
