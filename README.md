@@ -263,7 +263,12 @@ trusting what it tells you.
    works unchanged if you have one — the games mix to mono, so there is no
    second channel to lose. Nine buttons go active-low to ground; four of
    them — A2, A3, A4 and GPIO 37 — land on input-only pads with no internal
-   pull-up and need an **external 10K to 3V3**. The full pinout, and why
+   pull-up and need an **external resistor to 3V3**: 10K is the sensible
+   pick, 4.7K–47K is comfortable, and 1K–100K works. Below 1K is just wasted
+   current while a button is held; above 100K the noise margin starts to
+   matter on long cabinet wiring. The other five buttons already run on the
+   ESP32's internal pull-up at a nominal ~45K, so the middle of that range is
+   the measured status quo rather than a guess. The full pinout, and why
    40MHz is a hard ceiling on this wing, is in
    `src/boards/feather_esp32/board_config_feather_esp32.h`.
 

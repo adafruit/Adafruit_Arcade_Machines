@@ -79,8 +79,36 @@
 #define FEATHER_I2S_DIN   13  // shares the onboard red LED; it flickers on audio
 
 // --- Buttons ---------------------------------------------------------------
-// 34, 36, 39 and 37 are INPUT-ONLY with no internal pulls: external 10K to
-// 3V3 required. The rest use INPUT_PULLUP.
+// 34, 36, 39 and 37 are INPUT-ONLY with no internal pulls: they each need an
+// external resistor to 3V3. The rest use INPUT_PULLUP.
+//
+// 10K IS A SENSIBLE PICK, NOT A REQUIREMENT. Anything from 4.7K to 47K is
+// comfortable and 1K to 100K works; use whatever the parts drawer has. The
+// two edges fail for unrelated reasons:
+//
+//   below ~1K    nothing is stressed -- a tactile switch shrugs at
+//                milliamps -- it is simply wasted current while a button is
+//                HELD, at 3.3V/R straight to ground: 330uA at 10K, 3.3mA at
+//                1K, 7mA at 470R. On a battery build several buttons held
+//                during play starts to be comparable to other loads, and
+//                there is no speed to be bought in exchange (see below).
+//   above ~100K  not leakage: the ESP32 leaks on the order of 50nA, which
+//                across 100K is a 5mV droop against a 3.3V rail. What goes
+//                is NOISE IMMUNITY. A high-impedance node is an antenna,
+//                and in a cabinet with long button runs alongside this
+//                board's 40MHz SPI and its I2S lines that is the real
+//                limit. Short bench wiring would tolerate far more.
+//
+// Two things say the middle of that range is safe HERE specifically. The
+// other five buttons already run on the ESP32's own internal pull-up,
+// nominally ~45K, and they work on this hardware with these wires -- so 45K
+// is not a theory, it is the measured status quo on five of the nine.
+//
+// And timing is a non-issue anywhere in the range. hal_input's task samples
+// at 1kHz and holds a release for 25ms (RELEASE_HOLD_US) before believing
+// it. Even 100K against 100pF of wiring rises in ~100us: 10x faster than one
+// sample interval and 250x faster than the shortest event the filter can
+// resolve. Pull-up value cannot show up as input lag on this board.
 #define FEATHER_BTN_COIN    26 // A0
 #define FEATHER_BTN_START1  25 // A1
 #define FEATHER_BTN_START2  34 // A2  external pull-up

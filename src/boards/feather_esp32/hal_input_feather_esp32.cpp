@@ -103,7 +103,9 @@ static void input_task(void *arg) {
 }
 
 // GPIO 34/36/39 and 37 are input-only pads with NO internal pull resistors,
-// so START2, LEFT, RIGHT and ROTATE each carry an external 10K to 3V3.
+// so START2, LEFT, RIGHT and ROTATE each carry an external resistor to 3V3 --
+// 10K on this build, though board_config has the range and 10K is only the
+// convenient pick within it.
 //
 // ASK FOR THE PULL-UP ONLY WHERE THE PAD HAS ONE. Requesting INPUT_PULLUP
 // on all nine was believed harmless -- the hardware does ignore it -- but
