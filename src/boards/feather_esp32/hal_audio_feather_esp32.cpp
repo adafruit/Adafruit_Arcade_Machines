@@ -2,8 +2,15 @@
 //
 // SPDX-License-Identifier: MIT
 
-// hal_audio.h implementation for the Adafruit Feather ESP32 V2 with a
-// Stereo I2S 3W amp, dual MAX98357A (Adafruit #6513).
+// hal_audio.h implementation for the Adafruit Feather ESP32 V2 with an
+// I2S 3W Class-D amp, MAX98357A (Adafruit #3006).
+//
+// THE MONO BREAKOUT IS THE DEFAULT AND THE STEREO PAIR (#6513) ALSO WORKS,
+// unchanged, because there is nothing stereo to lose: hal_audio.h's fill
+// callback packs one mono mix into both channels as
+// (sample << 16) | (uint16_t)sample, and the MAX98357A's SD_MODE pin
+// selects (L+R)/2 by default. Averaging two identical channels returns the
+// same signal. One speaker is also the obvious choice for a cabinet.
 //
 // THIS FILE IS ALMOST EMPTY, AND THAT IS THE POINT. Compare
 // boards/fruitjam/hal_audio_fruitjam.cpp, which spends sixty lines
@@ -19,8 +26,38 @@
 //                    them, on the core's own ESP_I2S library.
 //
 // Wiring, from the board's silkscreen: BCLK to IO27, LRC to IO12, DIN to
-// IO13, Vin to VBUS, GND to GND. Vin on VBUS gives the amp the full 5V,
-// which is what the 3W rating assumes; on 3.3V it simply plays quieter.
+// IO13, GND to GND, and **Vin to BAT**.
+//
+// VIN IS A REAL CHOICE AND BAT IS THE ONLY ONE THAT IS ALWAYS RIGHT. All
+// three rails on the Feather header will drive this amp -- it runs on
+// 2.5-5.5V -- but they fail in different ways:
+//
+//   VBUS  the USB 5V rail, and the loudest: 5V is what the 3W rating
+//         assumes. It is also DEAD ON BATTERY. A board wired this way
+//         plays perfectly on the bench and goes silent the moment it is
+//         unplugged, with picture and input still working, which is about
+//         the most confusing failure available.
+//   3V    the regulated rail, so it survives unplugging -- but it puts the
+//         amp on the SAME LDO as the ESP32 and the panel. A Class-D amp
+//         draws in bursts tracking the audio waveform, and those transients
+//         can droop a rail the rest of the board depends on. The symptom
+//         would be resets or display corruption specifically on loud
+//         sounds, which reads as an emulation fault and is not one. It is
+//         also the quietest: power goes as V^2, so 3.3V against 5V is about
+//         44%, roughly -3.5dB.
+//   BAT   the cell itself, 3.7-4.2V, and what this port documents. Most of
+//         VBUS's volume, upstream of the LDO so the amp's transients cannot
+//         reach the ESP32 or the display, and still powered over USB
+//         because the charger holds that rail up. The only cost is that it
+//         is unregulated: volume sags slightly as the cell drains toward
+//         3.4V, which is not audible in play.
+//
+// All three have been run on this board and all three make sound on USB.
+// BE HONEST ABOUT WHICH PART IS MEASURED: the choice between them is not.
+// VBUS going silent on battery and 3V drooping under transients are both
+// reasoned from which rail is which -- neither has been reproduced here,
+// because nobody wants to spend a session confirming a fault they can
+// simply wire around.
 //
 // TWO PIN HAZARDS ON THIS BOARD, both recorded in board_config:
 //

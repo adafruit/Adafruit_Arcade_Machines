@@ -26,7 +26,7 @@ to one game or one board are reusable for the next port:
   contracts: PicoDVI video, TLV320DAC3100 + I2S audio, GPIO input, SD card
   storage on SdFat.
 - **`src/boards/feather_esp32/`** — a second board, proving the split is
-  real: Feather ESP32 V2 + 2.4" TFT FeatherWing (SPI ILI9341) + dual
+  real: Feather ESP32 V2 + 2.4" TFT FeatherWing (SPI ILI9341) + a
   MAX98357A. Entirely different silicon, display technology and audio
   path; not one line of `src/cpu/` or `src/machines/` changed to add it.
 - **`src/arch/`** — the layer between the two: chip facts rather than board
@@ -65,7 +65,7 @@ any known quirks. They all share the building steps below.
 ### A second board: Feather ESP32 V2
 
 **All seven games run here too**, each at 100% of its own machine's refresh
-rate, on a Feather ESP32 V2 + 2.4" TFT FeatherWing (ILI9341) + dual
+rate, on a Feather ESP32 V2 + 2.4" TFT FeatherWing (ILI9341) + a
 MAX98357A. Not one line of `src/cpu/` or `src/machines/` differs between the
 two boards.
 
@@ -257,12 +257,28 @@ trusting what it tells you.
    without it you get the core default and the same red screen the Fruit Jam
    gives for the same reason.
 5. Assemble the hardware: a **2.4" TFT FeatherWing** (#3315) on top of the
-   Feather, and for sound a **stereo I2S 3W amp, dual MAX98357A** (#6513)
-   wired BCLK→`27`, LRC→`12`, DIN→`13`, Vin→VBUS. Nine buttons go active-low
-   to ground; four of them — A2, A3, A4 and GPIO 37 — land on input-only pads
-   with no internal pull-up and need an **external 10K to 3V3**. The full
-   pinout, and why 40MHz is a hard ceiling on this wing, is in
+   Feather, and for sound an **I2S 3W Class-D amp, MAX98357A**
+   ([#3006](https://www.adafruit.com/products/3006)) wired BCLK→`27`,
+   LRC→`12`, DIN→`13`, GND→GND and **Vin→BAT**. The stereo pair (#6513)
+   works unchanged if you have one — the games mix to mono, so there is no
+   second channel to lose. Nine buttons go active-low to ground; four of
+   them — A2, A3, A4 and GPIO 37 — land on input-only pads with no internal
+   pull-up and need an **external 10K to 3V3**. The full pinout, and why
+   40MHz is a hard ceiling on this wing, is in
    `src/boards/feather_esp32/board_config_feather_esp32.h`.
+
+   **The amp's Vin belongs on BAT**, and the other two rails both drive it
+   but fail in their own way. **VBUS** is the loudest — 5V is what the 3W
+   rating assumes — and is dead on battery, so a board wired that way plays
+   on the bench and goes silent the moment it is unplugged, with picture and
+   input still working. **3V** survives unplugging but puts a Class-D amp's
+   current bursts on the same regulator as the ESP32 and the panel, where
+   they can show up as resets or display corruption on loud sounds; it is
+   also the quietest, at roughly 44% of VBUS's power. **BAT** is 3.7–4.2V,
+   sits upstream of that regulator, and is still powered over USB because
+   the charger holds it up. All three have been run on this board and all
+   three make sound on USB; the VBUS-on-battery silence and the 3V droop are
+   reasoned from which rail is which, not observed.
 
    **Either revision of the wing works.** #3315 shipped as V1 until Adafruit
    redesigned it on 2023-10-11 and as V2 since, so that part number buys a V2

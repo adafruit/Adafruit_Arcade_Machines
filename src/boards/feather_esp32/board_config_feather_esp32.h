@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: MIT
 
 // Adafruit Feather ESP32 V2 (#5400) + 2.4" TFT FeatherWing (#3315)
-// + Stereo I2S 3W amp, dual MAX98357A (#6513).
+// + I2S 3W Class-D amp, MAX98357A (#3006), its Vin on BAT.
 //
 // BOTH REVISIONS OF THE WING WORK, and #3315 has shipped as V2 since
 // Adafruit redesigned it on 2023-10-11 -- so the part number above buys a
@@ -68,7 +68,10 @@
 // right there too.
 #define FEATHER_TOUCH_CS_IRQ 32
 
-// --- Dual MAX98357A --------------------------------------------------------
+// --- MAX98357A (mono #3006 by default; the stereo pair #6513 also works) ---
+// Vin belongs on BAT, not VBUS or 3V -- see hal_audio_feather_esp32.cpp for
+// why each of the other two is wrong, and how VBUS fails silently the moment
+// the board runs on battery.
 #define FEATHER_I2S_BCLK  27
 #define FEATHER_I2S_LRC   12  // strapping pin (MTDI): must read LOW at boot
 #define FEATHER_I2S_DIN   13  // shares the onboard red LED; it flickers on audio
