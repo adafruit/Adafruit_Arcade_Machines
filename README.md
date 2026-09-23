@@ -222,6 +222,30 @@ way of setting the optimisation level, so they are split here.
 5. Prepare an SD card (FAT32, **MBR** partition scheme — not GPT/exFAT,
    which macOS Disk Utility defaults to on "Erase") with that game's own
    ROM/sample layout — see its README.
+
+   On macOS, Disk Utility's GUI gives you GPT, so use the command line:
+
+   ```bash
+   diskutil list external physical                       # find the card
+   diskutil eraseDisk FAT32 ARCADE MBRFormat /dev/diskN  # N from above
+   ```
+
+   `MBRFormat` is the whole point. **Read the identifier off that first
+   command every time** — disk numbers are handed out in attach order and
+   move between reboots, so today's `disk5` is tomorrow's something else, and
+   the command erases whatever you name without asking. Target the whole
+   disk (`/dev/disk5`), never a slice (`/dev/disk5s1`), and keep the volume
+   name to 11 characters or fewer.
+
+   Check it with `diskutil list /dev/diskN`: line 0 must read
+   `FDisk_partition_scheme`, which is MBR. The filesystem line may come back
+   `DOS_FAT_32` or `DOS_FAT_16` — both are fine, and small cards often get
+   FAT16 whatever you ask for. SdFat is built here with `SDFAT_FILE_TYPE 1`
+   and `FAT12_SUPPORT 1`, so it reads FAT12/16/32 and only excludes exFAT.
+   What it cannot read is GPT: `FatPartition::init()` takes the start sector
+   straight out of the MBR partition table and never looks for a GPT header,
+   so on a GPT disk it lands on the protective entry and finds no BPB. That
+   is why the partition scheme is the part that matters.
 6. **File → Examples → Adafruit Arcade Machines → Games →** your game, and
    upload.
 
@@ -301,8 +325,9 @@ trusting what it tells you.
    (V1 STMPE610 on SPI, V2 TSC2007 on I2C), which this port does not use but
    does have to leave alone correctly. See `FEATHER_TOUCH_CS_IRQ` in the board
    config for why that pin is `INPUT_PULLUP` on both and must not be driven.
-6. Prepare the SD card exactly as for the Fruit Jam (FAT32, **MBR**) and put
-   it in the FeatherWing's microSD slot.
+6. Prepare the SD card exactly as for the Fruit Jam (FAT32, **MBR** — the
+   `diskutil eraseDisk ... MBRFormat` recipe in step 5 above) and put it in
+   the FeatherWing's microSD slot.
 7. **File → Examples → Adafruit Arcade Machines → Games →**
    `<game>_featheresp32`, and upload over USB serial.
 
