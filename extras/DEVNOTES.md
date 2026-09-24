@@ -6551,21 +6551,43 @@ symbol. A multiset, because several files each define a file-local
 matched exactly: no object dropped, nothing resized. The images are not
 byte-identical, because link order changes and code moves (942 of Pac-Man's
 1,330 symbols changed address). Where code sits relative to flash and the
-XIP cache has decided timing here before (#7, #17, #60), so Galaga, the
-tightest frame budget, was flashed in both builds on both boards:
+XIP cache has decided timing here before (#7, #17, #60), so every game was
+flashed in both builds on both boards, in attract mode with no input, and
+the serial heartbeats compared frame for frame:
 
-| Galaga | Baseline | Archive |
-|--------|----------|---------|
-| Fruit Jam, worst work per frame (frames 240-2880) | 14,187 us | 14,216 us |
-| Fruit Jam, DVI queue starvation | 0 | 0 |
-| Feather, emulated speed mean / min (frames 60-1230) | 60.33 / 58.6 fps | 60.33 / 58.6 fps |
+| Game | Fruit Jam: mean work change | Fruit Jam: worst frame, base / archive | Feather: emulated rate, base / archive |
+|------|-----------------------------|----------------------------------------|----------------------------------------|
+| Pac-Man | -336 us (3% faster) | 10,245 / 9,822 us | 60.60 / 60.60 fps |
+| Ms. Pac-Man | -110 us | 11,366 / 11,049 us | 60.60 / 60.60 fps |
+| Donkey Kong | -39 us | 14,226 / 14,197 us | 60.60 / 60.60 fps |
+| Galaga | +105 us (within run-to-run spread) | 14,187 / 14,216 us | 60.33 / 60.33 fps |
+| Space Invaders | +51 us | 6,164 / 6,231 us | 59.54 / 59.54 fps |
+| Burger Time | +99 us | 15,469 / 15,591 us | 57.46 / 57.46 fps |
+| Lunar Rescue | **+480 us (8% slower)** | 6,449 / 7,089 us | 60.00 / 60.00 fps |
 
-The Fruit Jam's mean per-heartbeat difference was +105 us, inside the
-+/-1 ms spread between runs of the same attract demo. Feather audio, the
-file that had collided, was confirmed by ear. The other six games have not
-been run on hardware with the flag.
+- **No regression anywhere.** No game starved the DVI queue after boot in
+  either build. Burger Time's 5 starvation events happen during boot, in
+  both builds and in the release. Every Feather game held its full arcade
+  rate on every heartbeat. Where the Feather heartbeat reports audio
+  health, it was clean: no dropped speaker samples (Lunar Rescue) and no
+  underruns after boot (Donkey Kong, Burger Time). Feather audio, the file
+  that had collided, was confirmed by ear on Galaga.
+- **Lunar Rescue's 8% is real.** It was repeated: 6,084 and 6,100 us baseline
+  against 6,590 and 6,565 us archive. It isn't in the audio ISR (154 us per
+  call baseline, 150 archive) or the renderer (also slightly faster). That leaves the
+  emulated 8080 itself, i.e. the interpreter's hot loop landing somewhere
+  worse in flash. Space Invaders, on the same core, moved only +51 us. On the
+  Feather the two builds of Lunar Rescue agree to the cycle on 8 of 9
+  heartbeats.
+- **Burger Time has the least headroom of the seven** in attract, about
+  1.1 ms. It still fits, but it's the game to recheck first if anything adds
+  per-frame work.
+- **Found in the baseline, not caused here:** on the Feather, Lunar Rescue's
+  audio lead dips below its 23,180-cycle floor once around frame 360, in
+  both builds (to 2,028 cycles in the release). No samples were dropped, but
+  the margin there is thinner than the averages suggest.
 
-**Two things worth keeping:**
+**Three things worth keeping:**
 
 **A file name is a global identifier the moment anything archives it.**
 Directory-per-architecture is a natural layout, and it quietly assumes the
@@ -6573,6 +6595,15 @@ path is part of an object's identity. For `ar` it isn't. Any source added
 under `src/` needs a name unique across the whole tree. That matters most for
 vendored code, whose files are named `cpu.c`, `sound.c` and `z80.c`, and
 this tree already has a `z80.c`.
+
+**The same code can run 3% faster or 8% slower depending only on where the
+linker puts it.** Seven games, one change that altered no instructions,
+and a spread from -336 to +480 us per frame, different for each game and
+different again on each board. For a game near its budget, any timing
+change after an unrelated code change should be suspected as layout before
+anything else, and a hot loop whose speed matters can be pinned in RAM
+(`__not_in_flash_func`, as the audio mixer already is, #7) to take it out
+of the lottery.
 
 **"It links" was not the test; "it links the same thing" was.** Had only
 the Fruit Jam been built, archive linkage would have looked clean, and it
