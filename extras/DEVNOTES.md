@@ -6512,3 +6512,70 @@ alternative, whose failure then turned out to be real and audible on the
 first board that met it. When a comparison rests on one risk that has been
 seen and one that has only been argued, the argued one does not get to
 decide. The 3V droop remains unobserved to this day.
+
+### 126. Two files with one name, and a Fruit Jam build that was right by alphabetical order
+
+Found while testing `dot_a_linkage=true` in `library.properties`, which a
+future mixed-license tree needs (so an arcade sketch never links a GPL
+console core; see the consoles plan). The flag makes the Arduino builder
+archive the library into a `.a` file and link only the members a sketch
+references, instead of handing every object file to the linker.
+
+**All seven Feather ESP32 builds then failed to link**, each with
+`undefined reference to 'arch_i2s_init'` and its three siblings. All seven
+Fruit Jam builds were fine.
+
+**An `ar` archive keys its members by file name alone, not by path.**
+`src/arch/esp32/arch_audio_i2s.cpp` and `src/arch/rp2040/arch_audio_i2s.cpp`
+both compile to `arch_audio_i2s.cpp.o`, so adding the second replaces the
+first. The RP2040 copy is added last, and on ESP32 its `#if` guard leaves it
+empty. The archive's only `arch_audio_i2s.cpp.o` therefore defined nothing,
+and the real ESP32 I2S driver was gone. `ar t` shows one member where the
+tree has two files, and extracting it shows zero `arch_i2s` symbols in the
+ESP32 archive against four in the Fruit Jam one.
+
+**The Fruit Jam builds were correct by accident.** The member that survives
+happens to be the RP2040 one. Had the directories sorted the other way, the
+Fruit Jam would have been the board that broke. Nothing in the build ever
+said the collision existed: without archive linkage every object is passed
+by path and the duplicate name is harmless.
+
+**Fix:** the two files are now `arch_audio_i2s_esp32.cpp` and
+`arch_audio_i2s_rp2040.cpp`. It was the only duplicate file name in `src/`.
+
+**How it was verified that archive linkage changes nothing else.** Every
+example was built twice from the same tree, with and without the flag, and
+the ELFs compared as a multiset of (name, type, size) over every defined
+symbol. A multiset, because several files each define a file-local
+`g_system`; comparing by name alone reported false size changes. All 14
+matched exactly: no object dropped, nothing resized. The images are not
+byte-identical, because link order changes and code moves (942 of Pac-Man's
+1,330 symbols changed address). Where code sits relative to flash and the
+XIP cache has decided timing here before (#7, #17, #60), so Galaga, the
+tightest frame budget, was flashed in both builds on both boards:
+
+| Galaga | Baseline | Archive |
+|--------|----------|---------|
+| Fruit Jam, worst work per frame (frames 240-2880) | 14,187 us | 14,216 us |
+| Fruit Jam, DVI queue starvation | 0 | 0 |
+| Feather, emulated speed mean / min (frames 60-1230) | 60.33 / 58.6 fps | 60.33 / 58.6 fps |
+
+The Fruit Jam's mean per-heartbeat difference was +105 us, inside the
++/-1 ms spread between runs of the same attract demo. Feather audio, the
+file that had collided, was confirmed by ear. The other six games have not
+been run on hardware with the flag.
+
+**Two things worth keeping:**
+
+**A file name is a global identifier the moment anything archives it.**
+Directory-per-architecture is a natural layout, and it quietly assumes the
+path is part of an object's identity. For `ar` it isn't. Any source added
+under `src/` needs a name unique across the whole tree. That matters most for
+vendored code, whose files are named `cpu.c`, `sound.c` and `z80.c`, and
+this tree already has a `z80.c`.
+
+**"It links" was not the test; "it links the same thing" was.** Had only
+the Fruit Jam been built, archive linkage would have looked clean, and it
+would have been clean only by luck. Comparing symbol sets against a baseline
+is cheap, and it is the check that would also have caught a silently
+dropped object. The ESP32 happened to fail loudly.
