@@ -19,7 +19,7 @@
 // 256 frames, matching the RP2 transport's BUFFER_SAMPLES. That number was
 // re-derived there the hard way: shortening it to 64 to cut per-call ISR
 // cost was measured as a NET LOSS, because more calls pay the same fixed
-// overhead more often (see arch/rp2040/arch_audio_i2s.cpp). At 22050Hz a
+// overhead more often (see arch/rp2040/arch_audio_i2s_rp2040.cpp). At 22050Hz a
 // 256-frame block is 11.6ms of audio.
 #define I2S_FRAMES 256
 
