@@ -284,7 +284,9 @@ not the game, which is why they're worth keeping:
   upright monitors.
 - **MIRROR:** optional. It only matters for Pepper's Ghost cabinets. The
   button costs nothing to keep, and dropping it saves nothing, so it can
-  simply stay.
+  simply stay. **On the Game Boy it cycles the colour palette for now**
+  (decided 2026-09-25, see "Game Boy colour palettes" below), so the Game
+  Boy has no mirror toggle; the renderer still supports mirroring.
 
 **Consoles boot in landscape: rotation 0** (decided 2026-09-24), the upright
 monitor, unlike the arcade games, which each boot in their own cabinet's
@@ -657,18 +659,39 @@ Tested on the Fruit Jam, in `examples/Consoles/gameboy_fruitjam`.
 | Kirby's Dream Land | 0x01, MBC1 | 256 KB | Plays; its level-load screen needed the halt-yield fix (DEVNOTES #128) |
 | The Legend of Zelda: Link's Awakening (DMG, v1.2) | 0x03, MBC1 + RAM + battery | 512 KB | Plays from PSRAM (DEVNOTES #129). Saves persist across a power cycle, with no effect on the picture (DEVNOTES #130) |
 
-### Later: Game Boy colour palettes
+### Game Boy colour palettes (decided 2026-09-25)
 
-To explore (requested 2026-09-25): the colour palettes many Game Boy
-emulators offer in place of the four greys, such as the original DMG's
-green, the Game Boy Pocket's neutral greys, and the Super Game Boy and Game
-Boy Color built-in palettes that recolour DMG games. The renderer already
-maps each pixel's shade (0-3) through a four-entry RGB565 table
-(`gameboy_video.cpp`), so a palette is at heart a different table. The
-design questions are which palettes to offer, how to choose one (a button,
-a build option, or per cartridge), and whether to go as far as the Game
-Boy Color's per-palette recolouring, which uses the bits above the shade
-that Peanut-GB reports with each pixel.
+Four palettes, cycled in this order by MIRROR (Button 3), **starting on
+DMG green**:
+
+| Palette | What it is | Source |
+|---------|------------|--------|
+| DMG green | The original Game Boy's screen | SameBoy `GB_PALETTE_DMG` (Core/display.c) |
+| Greys | Neutral greys, 255/170/85/0: what the port showed first, and dmg-acid2's reference levels | this project |
+| Pocket | The Game Boy Pocket's screen | SameBoy `GB_PALETTE_MGB` |
+| Game Boy Color | The colours a Game Boy Color gives an original Game Boy game, chosen by title | SameBoy `BootROMs/cgb_boot.asm` |
+
+**Left out, by decision:** the Super Game Boy palettes, and the Game Boy
+Color's 12 palettes chosen by holding a button combination at power-on.
+The choice is not remembered across power cycles (that would mean
+another SD card write).
+
+**The Game Boy Color lookup** is the boot ROM's own: only Nintendo's games
+(old licensee 0x01, or 0x33 with new licensee "01") are looked up, by the
+sum of the 16 title bytes, with the 4th title letter breaking ties. Any
+other game gets the default combination (white, light green, dark blue
+and black background; white, salmon and dark red sprites). A combination
+is 12 colours: four for each sprite palette (OBJ0, OBJ1) and four for the
+background, which Peanut-GB tells apart in bits 4-5 of every pixel. That is
+why Link is green on a red background.
+
+The table is **extracted, not retyped**:
+`extras/tools/gb_palettes/gen_gbc_palettes.py` reads SameBoy's boot ROM
+source (Expat/MIT) and writes `src/machines/gb/gameboy_palette_gbc.h`, and
+records the SameBoy commit it came from. The colours are shown uncorrected
+(BGR555 straight to RGB565). A Game Boy Color's own screen was dim and
+washed out, so on a modern display these look more saturated than the
+games did. A colour-correction curve is a possible later refinement.
 
 ## What changes in how the project works
 

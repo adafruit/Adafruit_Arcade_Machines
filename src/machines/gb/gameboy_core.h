@@ -77,8 +77,10 @@ void gameboy_core_frame_begin(void);
 bool gameboy_core_step(uint32_t max_instructions);
 
 // Double-buffered framebuffer. The core draws each frame into the back
-// buffer; swap() makes it the front. Pixels are shade indices 0 (lightest)
-// to 3 (darkest), after the game's own palette registers.
+// buffer; swap() makes it the front. Each pixel is Peanut-GB's: bits 0-1
+// the shade, 0 (lightest) to 3, after the game's own palette registers, and
+// bits 4-5 the layer it came from, 0 OBJ0, 1 OBJ1, 2 background -- so 0x00
+// to 0x23, the index into the renderer's colour table (gameboy_video.h).
 typedef uint8_t gameboy_row_t[GAMEBOY_LCD_W];
 const gameboy_row_t *gameboy_core_front(void);
 void gameboy_core_swap(void);

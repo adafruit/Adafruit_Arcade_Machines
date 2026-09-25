@@ -20,6 +20,7 @@
 #include <stdbool.h>
 
 #include "gameboy_core.h"
+#include "gameboy_palette.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,6 +33,10 @@ extern "C" {
 void gameboy_video_render_scanline(uint32_t canvas_y, uint16_t *buf,
                                    const gameboy_row_t *fb,
                                    uint8_t rotation, bool mirror);
+
+// Sets the 12 colours the picture is drawn in (gameboy_palette_colours()).
+// Takes effect from the next scanline rendered.
+void gameboy_video_set_palette(const uint16_t colours[GAMEBOY_LAYERS][4]);
 
 // A whole canvas line of one colour, for the boot error screens.
 void gameboy_video_fill_scanline(uint16_t *buf, uint16_t colour);

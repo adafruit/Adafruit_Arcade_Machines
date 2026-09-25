@@ -100,12 +100,12 @@ static void core_error(struct gb_s *gb, const enum gb_error_e err, const uint16_
     g_errors++;
 }
 
-// Bits 0-1 are the shade after the game's palette registers; the bits
-// above say which palette it came from, which a DMG picture doesn't need.
+// Bits 0-1 are the shade after the game's palette registers, bits 4-5 the
+// layer it came from; a Game Boy Color palette colours the layers apart.
 static void lcd_draw_line(struct gb_s *gb, const uint8_t *pixels, const uint_fast8_t line) {
     (void)gb;
     uint8_t *dst = g_fb[g_back][line];
-    for (int x = 0; x < GAMEBOY_LCD_W; x++) dst[x] = pixels[x] & 3u;
+    for (int x = 0; x < GAMEBOY_LCD_W; x++) dst[x] = pixels[x] & 0x33u;
 }
 
 gameboy_core_status_t gameboy_core_init(const uint8_t *rom, uint32_t rom_size) {
@@ -115,7 +115,7 @@ gameboy_core_status_t gameboy_core_init(const uint8_t *rom, uint32_t rom_size) {
     memcpy(g_bank0, rom, rom_size < sizeof g_bank0 ? rom_size : sizeof g_bank0);
     g_errors = 0;
     memset(g_cart_ram, 0xFF, sizeof g_cart_ram);
-    memset(g_fb, 0, sizeof g_fb);
+    memset(g_fb, 0x20, sizeof g_fb); // background, lightest shade
     g_back = 0;
 
     memset(g_title, 0, sizeof g_title);

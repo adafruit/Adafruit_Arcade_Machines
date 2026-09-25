@@ -56,9 +56,11 @@ const char *gameboy_boot_error_text(gameboy_boot_error_t e);
 typedef struct {
     uint8_t rotation;  // 0 = landscape (the console default), 1 = 90 CCW,
                        // 2 = 180, 3 = 90 CW -- the arcade machines' numbering
-    bool    mirror_x;  // left-right flip, for Pepper's Ghost cabinets
+    bool    mirror_x;  // left-right flip, for Pepper's Ghost cabinets (no
+                       // button for now: MIRROR cycles the palette instead)
+    uint8_t palette;   // gameboy_palette_t; starts at GAMEBOY_PALETTE_DEFAULT
     uint8_t pad;       // GAMEBOY_PAD_* bits currently held
-    bool    rotate_prev, mirror_prev; // edge detection for the meta buttons
+    bool    rotate_prev, palette_prev; // edge detection for the meta buttons
 
     // Filled in by gameboy_load_cart(), for the sketch to report.
     char     cart_name[64];
@@ -67,6 +69,8 @@ typedef struct {
     uint8_t  cart_type;    // header byte 0x147 (0x00 = ROM only)
     uint32_t cart_matches; // candidate files found in /cart
     uint32_t mount_attempts; // which try mounted the card (see cart_loader)
+    uint8_t  gbc_combo;    // the Game Boy Color palette combination for
+                           // this cartridge (0 = the default)
     gameboy_boot_error_t boot_error;
     uint32_t rom_buffer_size;  // bytes of bulk memory given to the ROM
 } gameboy_system;
@@ -80,12 +84,16 @@ void gameboy_init(gameboy_system *sys);
 bool gameboy_load_cart(gameboy_system *sys, uint16_t *out_error_color);
 
 // Called once per frame by the sketch, before gameboy_run_frame(), with the
-// buttons already mapped to Game Boy meanings. ROTATE and MIRROR act on
-// their press edge, so a held button does not cycle.
+// buttons already mapped to Game Boy meanings. `rotate` cycles the
+// rotation and `palette_next` the palette, each on its press edge, so a
+// held button does not cycle.
 void gameboy_input_update(gameboy_system *sys,
                           bool up, bool down, bool left, bool right,
                           bool a, bool b, bool start, bool select,
-                          bool rotate, bool mirror);
+                          bool rotate, bool palette_next);
+
+// Selects a palette (gameboy_palette_t) for the loaded cartridge.
+void gameboy_set_palette(gameboy_system *sys, uint8_t palette);
 
 // Emulates one Game Boy frame and feeds the display while doing it. See
 // gameboy_machine.cpp for how emulation and scanline output interleave.

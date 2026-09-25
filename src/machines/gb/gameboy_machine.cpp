@@ -11,6 +11,7 @@
 #include "gameboy_video.h"
 #include "gameboy_audio.h"
 #include "gameboy_save.h"
+#include "gameboy_palette.h"
 #include "cart/cart_loader.h"
 #include "hal/arcade_hal_video.h"
 #include "hal/arcade_hal_storage.h"
@@ -94,6 +95,8 @@ bool gameboy_load_cart(gameboy_system *sys, uint16_t *out_error_color) {
     // saves (gameboy_save.h); anything else never touches the card again.
     if (!gameboy_save_init(sys->cart_name)) hal_storage_unmount();
     memcpy(sys->cart_title, gameboy_core_title(), sizeof sys->cart_title);
+    sys->gbc_combo = gameboy_palette_gbc_combo(g_rom);
+    gameboy_set_palette(sys, GAMEBOY_PALETTE_DEFAULT);
 
     gameboy_audio_init();
     hal_input_init();
@@ -103,7 +106,7 @@ bool gameboy_load_cart(gameboy_system *sys, uint16_t *out_error_color) {
 void gameboy_input_update(gameboy_system *sys,
                           bool up, bool down, bool left, bool right,
                           bool a, bool b, bool start, bool select,
-                          bool rotate, bool mirror) {
+                          bool rotate, bool palette_next) {
     uint8_t p = 0;
     if (up)     p |= GAMEBOY_PAD_UP;
     if (down)   p |= GAMEBOY_PAD_DOWN;
@@ -116,9 +119,18 @@ void gameboy_input_update(gameboy_system *sys,
     sys->pad = p;
 
     if (rotate && !sys->rotate_prev) sys->rotation = (uint8_t)((sys->rotation + 1u) & 3u);
-    if (mirror && !sys->mirror_prev) sys->mirror_x = !sys->mirror_x;
+    if (palette_next && !sys->palette_prev)
+        gameboy_set_palette(sys, (uint8_t)((sys->palette + 1u) % GAMEBOY_PALETTE_COUNT));
     sys->rotate_prev = rotate;
-    sys->mirror_prev = mirror;
+    sys->palette_prev = palette_next;
+}
+
+void gameboy_set_palette(gameboy_system *sys, uint8_t palette) {
+    if (palette >= GAMEBOY_PALETTE_COUNT) palette = GAMEBOY_PALETTE_DEFAULT;
+    sys->palette = palette;
+    uint16_t colours[GAMEBOY_LAYERS][4];
+    gameboy_palette_colours((gameboy_palette_t)palette, g_rom, colours);
+    gameboy_video_set_palette(colours);
 }
 
 // --- Frame loop: emulation interleaved with scanline output ---------------

@@ -6909,3 +6909,46 @@ filesystem bookkeeping around them, which no amount of splitting shortens.
 cycle.** The first recording of an in-game save was lost when the board was
 unplugged, as the test itself required. The replacement appends as it goes
 and reopens the port after a disconnect.
+
+### 131. Game Boy colour palettes: extract the table, and keep a palette that reproduces the old pixels
+
+Four palettes, cycled by MIRROR (Button 3) and starting on DMG green:
+DMG green, Greys, Pocket, and the colours a Game Boy Color gives an
+original Game Boy game, chosen by title (extras/CONSOLES_PLAN.md, "Game Boy
+colour palettes").
+
+**The Game Boy Color table is extracted, not retyped.** The boot ROM's
+table has 94 title sums, a 29-letter tie-break string, 51 combinations and
+120 colours, and several combinations start partway through a palette
+(SameBoy's `raw_palette_comb`). A hand copy of that invites an off-by-one
+error that no test would catch. Every entry is plausible-looking colour
+data. So `extras/tools/gb_palettes/gen_gbc_palettes.py` reads SameBoy's
+`BootROMs/cgb_boot.asm` (Expat/MIT) and writes
+`src/machines/gb/gameboy_palette_gbc.h`, asserting that the table lengths
+agree and that every offset stays in range, and records the commit it came
+from. Peanut-GB's own SDL example has a title-palette function too, but its
+comment says "Not all checksums are programmed in yet", and it skips the
+Nintendo-licensee check and the 4th-letter tie-break. SameBoy's lookup
+follows the real boot ROM's steps, so ours does too.
+
+**Per-layer colour was already in every pixel.** Peanut-GB's 12-colour
+mode is on by default and marks each pixel's source (OBJ0, OBJ1 or
+background) in bits 4-5. The wrapper had masked those bits off
+(`& 3u`); keeping them (`& 0x33u`) makes each framebuffer byte a direct
+index into a 36-entry colour table, so the per-pixel cost is unchanged.
+The one data change elsewhere: the framebuffer's initial fill is 0x20
+(background, lightest) rather than 0, so a frame drawn before the first
+LCD line uses the background's white, not OBJ0's.
+
+**Regression stays bit-identical because Greys is the old table.** The
+host SHA baseline (`gb_host/out/before.sha`: eight Tetris frames, its WAV,
+dmg-acid2) matched unchanged with `gb_host --palette greys`. That proves
+the table and pixel-format change altered nothing, before any new colour
+was looked at. Compare regressions with `--palette greys` from now on,
+since the default is now green.
+
+Verified on the Fruit Jam with Link's Awakening, which the Game Boy Color
+table gives combination 44 (green Link on a red background). 14 MIRROR
+presses stepped through the palettes exactly once each. Over 370
+heartbeats: zero starvation (lowest queue level 11), no audio underruns,
+no core errors. The user judged the four palettes on the TV.
