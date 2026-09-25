@@ -55,6 +55,11 @@ _Static_assert(GAMEBOY_LCD_W == LCD_WIDTH && GAMEBOY_LCD_H == LCD_HEIGHT,
 static struct gb_s g_gb;
 static const uint8_t *g_rom;
 static uint32_t g_rom_size;
+
+// Bank 0 in SRAM. Games run their interrupt handlers and most core routines
+// from here, so it is read far more than any switchable bank; the rest of
+// the ROM may be in PSRAM, which shares the XIP cache with the program.
+static uint8_t g_bank0[0x4000];
 static char g_title[17];
 
 // Cartridge RAM. Phase 1a (Tetris) needs none; this covers MBC1/MBC3 carts
@@ -66,6 +71,7 @@ static uint8_t g_back = 0;
 
 static uint8_t rom_read(struct gb_s *gb, const uint_fast32_t addr) {
     (void)gb;
+    if (addr < sizeof g_bank0) return g_bank0[addr];
     return addr < g_rom_size ? g_rom[addr] : 0xFF;
 }
 
@@ -99,6 +105,8 @@ static void lcd_draw_line(struct gb_s *gb, const uint8_t *pixels, const uint_fas
 gameboy_core_status_t gameboy_core_init(const uint8_t *rom, uint32_t rom_size) {
     g_rom = rom;
     g_rom_size = rom_size;
+    memset(g_bank0, 0xFF, sizeof g_bank0);
+    memcpy(g_bank0, rom, rom_size < sizeof g_bank0 ? rom_size : sizeof g_bank0);
     g_errors = 0;
     memset(g_cart_ram, 0xFF, sizeof g_cart_ram);
     memset(g_fb, 0, sizeof g_fb);

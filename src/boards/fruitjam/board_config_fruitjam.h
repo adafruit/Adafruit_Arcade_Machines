@@ -56,6 +56,13 @@ enum {
                         // The arcade sketches never read them.
 };
 
+// Sets the system clock AND retimes the PSRAM interface to match, in the
+// order that keeps the PSRAM clock legal (hal_memory_fruitjam.cpp). Use this
+// instead of set_sys_clock_khz() in any sketch that uses bulk memory
+// (hal/arcade_hal_memory.h); after a bare set_sys_clock_khz(252000), PSRAM
+// runs past its rated clock and returns corrupt data.
+void fruitjam_set_sys_clock_khz(uint32_t khz);
+
 // Undebounced button level, bypassing hal_input_read()'s filter (see
 // hal_input_fruitjam.cpp). Board-specific and diagnostic-only -- games use
 // the ArcadeHAL contract's hal_input_read() instead.

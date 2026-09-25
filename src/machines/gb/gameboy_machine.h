@@ -28,12 +28,30 @@ extern "C" {
 #define GAMEBOY_COLOR_ERROR_BAD_CART 0xF81Fu // magenta: bad header, unsupported type,
                                              //          too big, or unreadable
 
-// Largest cartridge ROM held in SRAM. Phase 1a (Tetris, 32 KB) needs far
-// less; 256 KB also covers bank-switched carts that need no battery save,
-// such as blargg's 64 KB cpu_instrs. Bigger carts need PSRAM (Phase 1b).
+// Largest cartridge ROM. The ROM lives in BULK memory (PSRAM: 8 MB on the
+// Fruit Jam, 2 MB on the Feather, hal/arcade_hal_memory.h), except for its
+// first 16 KB, bank 0, which gameboy_core keeps in SRAM because every game
+// runs its interrupt handlers and core routines from it. 4 MB is more than
+// any original Game Boy cartridge; on a board with less bulk memory free,
+// the buffer is whatever is free, less a margin.
 #ifndef GAMEBOY_ROM_MAX
-#define GAMEBOY_ROM_MAX (256u * 1024u)
+#define GAMEBOY_ROM_MAX (4u * 1024u * 1024u)
 #endif
+
+// Why a boot failed, for the sketch to report. The colour alone lumps
+// several of these together.
+typedef enum {
+    GAMEBOY_BOOT_OK = 0,
+    GAMEBOY_BOOT_NO_CARD,         // red
+    GAMEBOY_BOOT_NO_ROM,          // yellow
+    GAMEBOY_BOOT_TOO_BIG,         // magenta: larger than the ROM buffer
+    GAMEBOY_BOOT_READ_ERROR,      // magenta: found, but unreadable
+    GAMEBOY_BOOT_BAD_CHECKSUM,    // magenta: failed the header check
+    GAMEBOY_BOOT_UNSUPPORTED,     // magenta: cartridge type not supported
+    GAMEBOY_BOOT_NO_BULK_MEMORY,  // magenta: no PSRAM to hold the ROM
+} gameboy_boot_error_t;
+
+const char *gameboy_boot_error_text(gameboy_boot_error_t e);
 
 typedef struct {
     uint8_t rotation;  // 0 = landscape (the console default), 1 = 90 CCW,
@@ -49,6 +67,8 @@ typedef struct {
     uint8_t  cart_type;    // header byte 0x147 (0x00 = ROM only)
     uint32_t cart_matches; // candidate files found in /cart
     uint32_t mount_attempts; // which try mounted the card (see cart_loader)
+    gameboy_boot_error_t boot_error;
+    uint32_t rom_buffer_size;  // bytes of bulk memory given to the ROM
 } gameboy_system;
 
 // Game-state defaults and hal_video_init() (buffers only; it does not start

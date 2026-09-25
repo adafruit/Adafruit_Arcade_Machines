@@ -6765,3 +6765,66 @@ told them apart.** Starvation went from 100/s at queue level 1, to the same
 rate with every call short, to 52 events with no visible red line, to zero
 with a margin of 13. Judged by the screen alone, the third state would have
 passed. The margin, not the absence of red, is the result.
+
+### 129. PSRAM on the Fruit Jam returns garbage after the 252 MHz clock change, unless it is retimed afterwards
+
+Phase 1b's first cartridge is Link's Awakening (MBC1 with RAM and battery,
+512 KB), too big for the SRAM ROM buffer, so the Game Boy ROM moved to
+PSRAM through a new HAL contract (`hal/arcade_hal_memory.h`: `pmalloc()` on
+the Fruit Jam, `ps_malloc()` on the Feather, `malloc()` on the host). Bank
+0, the first 16 KB, stays mirrored in SRAM. SRAM use went from 81% to 34%.
+
+**The ROM failed its header checksum** on the board, though the file's
+header and global checksums were both correct on the Mac and the core ran
+it there. Three theories, each wrong:
+
+1. **DMA writing PSRAM behind the cache.** Reading each SD chunk into an
+   SRAM buffer and copying it with the CPU changed nothing. Reverted.
+2. **The PSRAM clock divider was left set for the boot clock.**
+   arduino-pico sets the PSRAM interface's timing at boot for `F_CPU` (125
+   MHz on this board) and retimes it only for its own startup clock change.
+   The sketch then calls `set_sys_clock_khz(252000)` for PicoDVI, which
+   drives the PSRAM at 126 MHz, past its 109 MHz rating. That theory was
+   right. The first fix, retiming before the clock change the way
+   arduino-pico's startup code does, did nothing.
+3. **Retiming with core 1 running.** `psram_init()` puts the shared QMI
+   interface into direct mode, which takes flash off the bus. From
+   `setup()`, core 1 is already spinning in `setup1()` from flash, so it
+   crashed, the display never started, and core 0 then blocked forever
+   waiting for a scanline buffer: a silent board. Parking the other core
+   and disabling interrupts fixed the hang, but not the checksum.
+
+**A diagnostic settled it:** a PSRAM self-test got **72% of bytes wrong**,
+and two reads of the same memory disagreed with each other. Then the
+source: **`psram_reinit_timing(hz)` ignores `hz`**. `psram_init()` always
+reads the *current* `clk_sys`. So retiming before the clock change computed
+timing for 125 MHz, a no-op. `fruitjam_set_sys_clock_khz()` in
+`boards/fruitjam/hal_memory_fruitjam.cpp` now:
+- parks the other core and disables interrupts;
+- changes the clock;
+- then retimes, and does the dummy access and barrier the datasheet asks
+  for.
+
+The PSRAM is briefly overclocked between the clock change and the retime,
+which is harmless because nothing can touch it then. Any sketch that uses
+bulk memory must call this helper instead of `set_sys_clock_khz()`. The
+arcade sketches don't use PSRAM on the Fruit Jam and are unchanged.
+(arduino-pico's own startup path for `F_CPU` above 150 MHz passes the new
+frequency to the same function, so it likely has the same flaw. That may
+be worth reporting upstream; it doesn't affect this library.)
+
+**Result:** Link's Awakening plays, with correct graphics and music. Over 31
+seconds of intro and title: 5.3-11.1 ms of work per frame, worst 11.2 ms,
+no starvation (lowest queue level 12), clean audio, no core errors.
+**Reading the ROM from PSRAM costs no more than SRAM did**, so the hot-bank
+SRAM cache the plan anticipated isn't needed for this game.
+
+**Worth keeping:** when data is wrong, **test the memory before the data.**
+Two of the three theories were about how the ROM got into PSRAM; a
+64-KB write-and-read-back test would have shown on the first flash that
+PSRAM itself was broken. And an API's parameter can be decorative: read the
+function, not the signature.
+
+Also: boot errors now say which of the magenta causes applies (too big,
+unreadable, bad header checksum, unsupported type, no PSRAM), rather than
+the colour alone.

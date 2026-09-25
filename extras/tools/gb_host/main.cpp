@@ -117,10 +117,7 @@ int main(int argc, char **argv) {
            g_sys.cart_name, g_sys.cart_size, g_sys.cart_title, g_sys.cart_type,
            g_sys.cart_matches);
     if (!g_ok) {
-        const char *what = g_error_color == GAMEBOY_COLOR_ERROR_NO_CARD ? "RED (no card)" :
-                           g_error_color == GAMEBOY_COLOR_ERROR_NO_ROM  ? "YELLOW (no .gb in /cart)" :
-                           g_error_color == GAMEBOY_COLOR_ERROR_BAD_CART ? "MAGENTA (bad cartridge)" : "?";
-        printf("boot error: %s\n", what);
+        printf("boot error: %s\n", gameboy_boot_error_text(g_sys.boot_error));
         std::string path = std::string(out) + "/gameboy_error.ppm";
         if (host_ppm_write(path.c_str(), render, nullptr)) printf("error frame -> %s\n", path.c_str());
         return 1;
