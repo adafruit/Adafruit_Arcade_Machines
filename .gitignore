@@ -51,6 +51,14 @@ extras/tools/m6502_test/m6502_test
 extras/tools/m6502_test/*.dSYM/
 extras/tools/m6502_test/programs/
 
+# Game Boy core conformance runner (extras/tools/gb_test/) -- its binary and
+# macOS debug bundle, the third-party test ROMs it fetches (see
+# fetch_roms.sh), and its frame/audio dumps.
+extras/tools/gb_test/gb_test
+extras/tools/gb_test/*.dSYM/
+extras/tools/gb_test/roms/
+extras/tools/gb_test/out/
+
 # Claude Code worktrees -- transient checkouts with their own build output.
 # Narrow on purpose: a future tracked .claude/settings.json stays visible.
 .claude/worktrees/
