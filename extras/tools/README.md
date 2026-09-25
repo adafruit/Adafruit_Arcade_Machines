@@ -20,6 +20,7 @@ dkong_host/      src/machines/dkong    (1x Z80 + i8257 DMA + 8035 sound CPU)
 btime_host/      src/machines/btime    (2x 6502, one of them encrypted)
 m6502_test/      ArcadeCPU_M6502 conformance runner -- NOT a machine harness
 gb_test/         Game Boy core (Peanut-GB + minigb_apu) conformance runner -- NOT a machine harness
+gb_host/         src/machines/gb      (the Game Boy console: SD card as cartridge)
 geom_test/       arcade_video_geom conformance runner -- NOT a machine harness
 ```
 
@@ -72,6 +73,25 @@ PPM and audio as WAV. The test ROMs are fetched, not vendored:
 ./gb_test/gb_test gb_test/roms/dmg-acid2.gb --frames 60 --ppm-at 60 --out gb_test/out
 python3 gb_test/acid2_compare.py gb_test/out/dmg-acid2_f60.ppm gb_test/roms/reference-dmg.png
 ```
+
+`gb_host/` runs the whole Game Boy machine the way the sketch does:
+cartridge loader, the queue-driven frame loop and double buffer, the
+canvas renderer in every rotation, and the audio ring, drained in
+256-sample chunks at 22050 Hz the way the board's ISR drains it. `--rom`
+is the cartridge's `/cart` folder, so give each cartridge its own folder
+under `gb_host/carts/` (git-ignored). `--press` scripts the pad, so a run
+can get past a title screen:
+
+```sh
+./gb_host/build.sh
+./gb_host/gb_host --rom gb_host/carts/tetris --frames 1500 \
+    --press start@900-905 --press start@1000-1005 --press start@1100-1105 \
+    --ppm-at 1500 --rotation 0 --wav gb_host/out/tetris.wav
+```
+
+It exits nonzero on any core error or audio underrun or overrun, and an
+empty folder or a ROM with a bad header shows the same yellow or magenta
+boot error the board would.
 
 Each harness searches upward for its own `*_assets/` directory, or takes an
 explicit path (`--rom DIR` for the two Namco games, `--assets DIR` for

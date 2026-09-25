@@ -59,6 +59,14 @@ extras/tools/gb_test/*.dSYM/
 extras/tools/gb_test/roms/
 extras/tools/gb_test/out/
 
+# Game Boy machine host harness (extras/tools/gb_host/) -- its binary and
+# macOS debug bundle, the per-cartridge /cart folders it is run against
+# (they hold commercial ROMs such as Tetris), and its frame/audio dumps.
+extras/tools/gb_host/gb_host
+extras/tools/gb_host/*.dSYM/
+extras/tools/gb_host/carts/
+extras/tools/gb_host/out/
+
 # Claude Code worktrees -- transient checkouts with their own build output.
 # Narrow on purpose: a future tracked .claude/settings.json stays visible.
 .claude/worktrees/

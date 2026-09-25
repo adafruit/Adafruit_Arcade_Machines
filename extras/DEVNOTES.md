@@ -6610,3 +6610,81 @@ the Fruit Jam been built, archive linkage would have looked clean, and it
 would have been clean only by luck. Comparing symbol sets against a baseline
 is cheap, and it is the check that would also have caught a silently
 dropped object. The ESP32 happened to fail loudly.
+
+### 127. The first console: Tetris on a Game Boy, and three things the host couldn't see
+
+The Game Boy is the first console (extras/CONSOLES_PLAN.md, Phase 1a): an
+SD card is the cartridge, and whatever `.gb` ROM is in `/cart/` at power-up
+is the game. The machine is `src/machines/gb/` on top of vendored upstream
+Peanut-GB and minigb_apu (`core/VENDORED.md`), with the shared loader in
+`src/cart/`. The core passed blargg's `cpu_instrs` and `dmg-acid2` first
+(`extras/tools/gb_test`), and the whole machine ran on the host
+(`extras/tools/gb_host`) before any flashing. On the Fruit Jam it plays
+Tetris with sound in all four rotations: five minutes of play, worst frame
+11.5 ms of 16.67, zero starvation, zero audio underruns or overruns, zero
+core errors.
+
+**Interleaving by the queue, not the CPU.** The DVI queue holds 32 lines,
+about 2.2 ms, so a frame can't be emulated first and drawn afterwards; the
+arcade machines interleave by their CPU's cycle count. Peanut-GB keeps no
+running cycle count and its step function returns nothing, and slicing by
+the Game Boy's own scanline would stall whenever a game switches the LCD off,
+as Tetris does between screens. So the machine steps the CPU 16
+instructions at a time and draws the next canvas line whenever fewer than
+16 are queued. The picture comes from a double buffer, swapped only at
+canvas line 0, and waiting for that swap is what paces emulation to one
+Game Boy frame per display frame. The core's frame flag fires every 70224
+cycles even with the LCD off, so a frame always ends.
+
+**1. An audio burst starved the queue while `work` sat at 10 ms.** minigb
+generates a whole frame of audio (368 samples) in one call, and nothing is
+drawn during it. The first hardware heartbeat showed `starve 4, minq 1/32`
+once the title music started, with `gen_max` at 1.23 ms, about 18 lines,
+against a queue the loop kept only 16 deep. It is #35's and #65's failure
+again: a frame total can't see an uneven patch inside the frame. The fix
+tops the queue up to 28 lines immediately before the call, leaving about 10
+lines at its end, and the lowest level measured afterwards was 9 in every
+rotation. The host harness could not have caught this; its queue never
+drains.
+
+**2. A RED screen that was a bad card, found by asking SdFat why.** With
+`/cart/Tetris.gb` in the slot, the mount failed. Three theories cost a flash
+each and were each ruled out: power-up timing (20 retries over 2 s, then a
+2 s delay), card format (the card was MBR/FAT32 when inspected on the Mac,
+though it had just been reformatted), and SRAM use (81%, then 44% with a
+64 KB ROM buffer). The storage backend returns only a bool, so a throwaway
+diagnostic printed SdFat's own error every two seconds:
+`SD_CARD_ERROR_CMD0`, data `0xFF`. The card never answered the first
+command, at 12.5 MHz or 1 MHz, the signature of nothing on the bus. A
+different card mounted on the first attempt. The card-detect pin read 1
+both with the bad card and with the good one, so it says nothing about
+whether a card is working. **When a mount fails, get the library's error
+code before theorising;** it would have saved three flashes.
+
+**3. A ring level misread as a slow audio clock.** The ring settled around
+975 samples, above the correction's 864 threshold, and that was read as the
+correction being saturated by a board audio clock nearer 22020 Hz. The
+correction was widened to three samples per frame, and the level didn't
+move. Counters for samples produced and consumed per second then showed the
+ISR takes exactly 22050/s (86 or 87 drains of 256), minigb makes 22080/s,
+and the correction drops about 30 a second: a constant surplus held at the
+deadband's edge, which is exactly what a threshold controller does. The
+widening stays as harmless headroom, and the counters stay in the
+heartbeat. **Measure the rate before inferring it from a level.**
+
+**Also found on the way:**
+
+- `minigb_apu.h` has an `#error` unless an audio format macro is defined,
+  and the Arduino builder compiles every `.c` under `src/` for every sketch
+  with no way to pass it one. It is vendored as `minigb_apu.c.inc` and
+  included by the one file that configures it. All 14 arcade builds still
+  link identical symbols, and the Game Boy files compile for both boards.
+- Serial capture on the Fruit Jam loses everything printed in the first
+  seconds after a flash (`arduino-cli` returns after the board re-enumerates,
+  and the CDC port drops output until the host listens), and a raw
+  `os.read()` capture sometimes got nothing at all where pyserial with DTR
+  asserted got output at once. The console sketch therefore repeats its
+  cartridge report periodically and prints a boot error's cause every two
+  seconds for as long as the error screen is up.
+- Both input self-tests walked tables smaller than the board's button count
+  (fixed in the commit that added ACTION2/ACTION3).
