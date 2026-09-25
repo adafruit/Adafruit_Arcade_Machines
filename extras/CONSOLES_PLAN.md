@@ -269,6 +269,112 @@ controller also removes the pressure to give up the Feather's ROTATE line
 (GPIO 37) as B. Genesis on the Feather is low-confidence anyway, so its
 missing C button isn't a blocker.
 
+### I2C controllers: Wii Classic protocol (decided 2026-09-25)
+
+Wii Classic-protocol controllers plug into the STEMMA QT port through
+Adafruit's Wii Nunchuck Breakout Adapter (product 4836). The same protocol
+covers the Wii Classic Controller, the Classic Controller Pro, and the NES
+Classic and SNES Classic controllers.
+
+**The driver is our own, MIT-licensed.** The protocol is publicly
+documented (WiiBrew). It follows two prior implementations for behaviour
+only; neither is copied, because an input driver is linked into every
+game:
+
+- **pico-infonesPlus** (`pico_shared/wiipad.cpp`, GPL-3).
+- **NintendoExtensionCtrl** (LGPL-3). It documents the knockoff quirk
+  that shapes the design: genuine controllers support both the standard
+  6-byte report and the NES/SNES Classic's 8-byte "high resolution" one,
+  but knockoff Classic Controllers do only the first and knockoff NES
+  Classic controllers only the second.
+
+The driver asks for high resolution, always reads 8 bytes, and decides
+the format on every read. In standard mode, bytes 6-7 are zero. In high
+resolution, byte 6 bit 0 is always set, so both can never be zero.
+
+**Where it sits:**
+
+- `src/input/wii_classic.{h,cpp}` holds the driver. It uses Arduino's
+  `TwoWire`, so both boards share it.
+- It polls once per frame and never blocks on start-up. Start-up and
+  hot-plug retries run as a timed state machine instead of `delay()`s.
+- Its buttons are combined with the GPIO buttons in the board's input
+  layer, and a button is pressed if either source has it pressed. Machines
+  still only call `hal_input_read()`.
+- The pad-to-`HAL_BTN_*` mapping is a table in the sketch, because it
+  depends on both the machine and the board.
+- **Fruit Jam:** `Wire` on GPIO 20/21, shared with the DAC (0x18), which
+  is configured only at boot. **Feather ESP32 V2:** SDA 22 / SCL 20. The
+  I2C power pin (GPIO 2) must be on, and the TFT FeatherWing V2's TSC2007
+  touch controller (0x48) shares the bus. The controller is at 0x52.
+- **Timing:** a poll is about 250 µs of bus traffic at 400 kHz, plus about
+  200 µs before the controller's data is ready. The poll must not starve
+  the Fruit Jam's roughly 2.2 ms display queue. The self-test measures the
+  cost first; the heartbeat's `starve` and `minq` then judge it in
+  Galaga, the tightest game, and on the Game Boy.
+
+**Mapping (decided 2026-09-25):**
+
+| Controller | Arcade games (both boards) | Game Boy, Fruit Jam | Game Boy, Feather |
+|------------|----------------------------|---------------------|-------------------|
+| D-pad | UP / DOWN / LEFT / RIGHT | D-pad | D-pad |
+| A | SHOOT | A | A |
+| B | ACTION2 | B | B |
+| Start (+) | START1 | Start | Start |
+| Select (-) | COIN | Select | Select |
+| Y | START2 | (unmapped) | MIRROR, Button 3 (palette) |
+| L trigger | (unmapped) | (unmapped) | STRETCH, Button 1 |
+| R trigger | (unmapped) | (unmapped) | ROTATE, Button 2 |
+| X, ZL, ZR, Home | (unmapped) | (unmapped) | (unmapped) |
+
+On the Feather, the pad then replaces the on-board display buttons. A
+Game Boy build there needs no GPIO buttons at all. (The Game Boy is not
+yet ported to the Feather; this row is for when it is.)
+
+**Test controllers:** first-party Wii Classic and SNES Classic now; clones
+later, which is when the knockoff format handling gets its real test.
+One player only: every controller uses address 0x52, so a second needs a
+second bus or an I2C multiplexer.
+
+**FOUND IN STEP 1 (2026-09-25): on the Fruit Jam, the HDMI display can
+answer at 0x52.** The Fruit Jam's HDMI DDC lines are wired to the same
+GPIO 20/21 bus as STEMMA QT. Adafruit's guide says an I2C scan shows "the
+built-in DAC, the AHT20, and possibly EDID". The test TV's EDID memory
+answers at every address from 0x50 to 0x57, plus 0x3A (HDCP), so it
+answers at 0x52 together with the controller:
+
+- With the TV connected and no controller, start-up "succeeds" against
+  the TV and then fails the identity check.
+- With both connected, reads are corrupted.
+- With HDMI unplugged, both test controllers work perfectly (DEVNOTES
+  #132).
+
+How many displays answer at 0x52 is unknown; many answer only at 0x50.
+The Feather has no HDMI and is unaffected.
+
+**DECIDED 2026-09-25: I2C controllers are PARKED on the Fruit Jam and go
+to the Feather first.** The Fruit Jam has USB host Type-A ports, so USB
+gamepads are its controller path. I2C matters most on the Feather, which
+has no USB host and few spare GPIO pins. The driver and self-test stay in
+the tree. If the Fruit Jam comes back to I2C, two fixes were considered:
+
+- **An LTC4316 address translator** (Adafruit 5914), moving 0x52 to
+  0x12. Its guide says it "doesn't seem to support clock-stretching", and
+  the Wii Classic looks like it stretches, so it would need testing.
+- **A separate I2C bus** (the RP2350's I2C1, or PIO) on two spare pins,
+  which the display never sees.
+
+**Steps:**
+
+1. **Done.** A self-test sketch (`examples/SelfTest/wii_classic_test_fruitjam`)
+   prints the identity, report format, raw bytes, decoded buttons and
+   poll timing.
+2. **The Feather** (next, when the Feather comes up): a Feather self-test,
+   then the driver plus board input merging, measured in the Feather's
+   games. Check the I2C power pin and the shared TSC2007 touch
+   controller.
+3. The Fruit Jam: parked (above); USB gamepads come first there.
+
 ### The on-board buttons: keep STRETCH and ROTATE
 
 The Fruit Jam's three on-board buttons control the display: Button 1
