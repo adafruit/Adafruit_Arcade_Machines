@@ -38,6 +38,7 @@
 
 #include <SdFat_Adafruit_Fork.h>
 
+#include <string.h>
 #include "hal/arcade_hal_storage.h"
 
 // PIN_SD_* come from the arduino-pico Fruit Jam variant, and are the same
@@ -130,6 +131,105 @@ void hal_storage_close(hal_file_t *f) {
     if (!f) return;
     f->fil.close();
     f->in_use = false;
+}
+
+
+// --- Writing -----------------------------------------------------------------
+
+hal_file_t *hal_storage_create(const char *path) {
+    if (!s_mounted) return NULL;
+    hal_file_t *slot = NULL;
+    for (int i = 0; i < MAX_OPEN_FILES; i++)
+        if (!file_pool[i].in_use) { slot = &file_pool[i]; break; }
+    if (!slot) return NULL;
+    if (!slot->fil.open(path, O_WRONLY | O_CREAT | O_TRUNC)) return NULL;
+    slot->in_use = true;
+    return slot;
+}
+
+uint32_t hal_storage_write(hal_file_t *f, const void *buf, uint32_t len) {
+    if (!f) return 0;
+    const size_t n = f->fil.write((const uint8_t *)buf, (size_t)len);
+    return (uint32_t)n;
+}
+
+bool hal_storage_remove(const char *path) {
+    if (!s_mounted) return false;
+    if (!s_sd.exists(path)) return true;
+    return s_sd.remove(path);
+}
+
+bool hal_storage_rename(const char *from, const char *to) {
+    if (!s_mounted) return false;
+    if (s_sd.exists(to)) return false; // FAT can't rename over a file
+    return s_sd.rename(from, to);
+}
+
+// --- Contiguous files, written one sector at a time without blocking --------
+
+bool hal_storage_make_contiguous(const char *path, uint32_t size,
+                                 const uint8_t *content, hal_storage_extent_t *out) {
+    if (!s_mounted || size == 0) return false;
+    memset(out, 0, sizeof *out);
+    File32 f;
+    if (s_sd.exists(path)) {
+        uint32_t bgn = 0, end = 0;
+        bool reuse = false;
+        if (f.open(path, O_RDONLY)) {
+            reuse = f.fileSize() >= size && f.contiguousRange(&bgn, &end);
+            f.close();
+        }
+        if (reuse) {
+            out->first_sector = bgn;
+            out->sectors = (size + HAL_STORAGE_SECTOR - 1u) / HAL_STORAGE_SECTOR;
+            strncpy(out->path, path, sizeof out->path - 1);
+            return true;
+        }
+        if (!s_sd.remove(path)) return false;
+    }
+    // preAllocate() claims one contiguous run and sets the size; the data in
+    // it is whatever was on the card, so `content` is written over it.
+    if (!f.open(path, O_RDWR | O_CREAT | O_TRUNC)) return false;
+    bool ok = f.preAllocate(size) && f.write(content, size) == size;
+    f.close();
+    uint32_t bgn = 0, end = 0;
+    ok = ok && f.open(path, O_RDONLY) && f.contiguousRange(&bgn, &end);
+    if (f.isOpen()) f.close();
+    if (!ok) return false;
+    out->first_sector = bgn;
+    out->sectors = (size + HAL_STORAGE_SECTOR - 1u) / HAL_STORAGE_SECTOR;
+    strncpy(out->path, path, sizeof out->path - 1);
+    return true;
+}
+
+// The card is always SPI on this board, so SdFat's generic card pointer is
+// its SPI card, whose streaming calls are what make this non-blocking:
+// writeData() and writeStop() each wait for the card only at their START,
+// which returns at once when isBusy() has just said the card is free.
+// (writeSector() is no good: it also waits for the flash to be programmed.)
+static SdSpiCard *spi_card(void) { return static_cast<SdSpiCard *>(s_sd.card()); }
+
+hal_storage_result_t hal_storage_extent_write_begin(const hal_storage_extent_t *e) {
+    if (!s_mounted || !e || e->sectors == 0) return HAL_STORAGE_ERROR;
+    SdSpiCard *c = spi_card();
+    if (c->isBusy()) return HAL_STORAGE_BUSY;
+    // In dedicated-SPI mode SdFat can leave the card partway through a
+    // multi-sector READ; close that before starting a write.
+    if (!c->syncDevice()) return HAL_STORAGE_ERROR;
+    if (c->isBusy()) return HAL_STORAGE_BUSY;
+    return c->writeStart(e->first_sector) ? HAL_STORAGE_OK : HAL_STORAGE_ERROR;
+}
+
+hal_storage_result_t hal_storage_extent_write_sector(const uint8_t *data) {
+    SdSpiCard *c = spi_card();
+    if (c->isBusy()) return HAL_STORAGE_BUSY;
+    return c->writeData(data) ? HAL_STORAGE_OK : HAL_STORAGE_ERROR;
+}
+
+hal_storage_result_t hal_storage_extent_write_end(void) {
+    SdSpiCard *c = spi_card();
+    if (c->isBusy()) return HAL_STORAGE_BUSY;
+    return c->writeStop() ? HAL_STORAGE_OK : HAL_STORAGE_ERROR;
 }
 
 #endif // ARDUINO_ADAFRUIT_FRUITJAM_RP2350

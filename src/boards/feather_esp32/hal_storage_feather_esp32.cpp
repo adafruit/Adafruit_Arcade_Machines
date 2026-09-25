@@ -81,4 +81,52 @@ void hal_storage_close(hal_file_t *f) {
     f->fil.close();
     f->in_use = false;
 }
+
+// --- Writing -----------------------------------------------------------------
+
+hal_file_t *hal_storage_create(const char *path) {
+    if (!s_mounted) return NULL;
+    hal_file_t *slot = NULL;
+    for (int i = 0; i < MAX_OPEN_FILES; i++)
+        if (!file_pool[i].in_use) { slot = &file_pool[i]; break; }
+    if (!slot) return NULL;
+    if (!slot->fil.open(path, O_WRONLY | O_CREAT | O_TRUNC)) return NULL;
+    slot->in_use = true;
+    return slot;
+}
+
+uint32_t hal_storage_write(hal_file_t *f, const void *buf, uint32_t len) {
+    if (!f) return 0;
+    const size_t n = f->fil.write((const uint8_t *)buf, (size_t)len);
+    return (uint32_t)n;
+}
+
+bool hal_storage_remove(const char *path) {
+    if (!s_mounted) return false;
+    if (!s_sd.exists(path)) return true;
+    return s_sd.remove(path);
+}
+
+bool hal_storage_rename(const char *from, const char *to) {
+    if (!s_mounted) return false;
+    if (s_sd.exists(to)) return false; // FAT can't rename over a file
+    return s_sd.rename(from, to);
+}
+
+// --- Contiguous files, written one sector at a time: NOT YET SUPPORTED ------
+//
+// On this board the SD card shares its SPI bus with the TFT, so a multi-
+// sector write spread across frames would interleave with the display's own
+// transfers. That needs its own design (extras/CONSOLES_PLAN.md, Phase 4).
+// Until then these refuse, so a console machine keeps running and simply
+// doesn't persist its save, rather than trying something half-working.
+bool hal_storage_make_contiguous(const char *path, uint32_t size,
+                                 const uint8_t *content, hal_storage_extent_t *out) {
+    (void)path; (void)size; (void)content; (void)out;
+    return false;
+}
+hal_storage_result_t hal_storage_extent_write_begin(const hal_storage_extent_t *e) { (void)e; return HAL_STORAGE_ERROR; }
+hal_storage_result_t hal_storage_extent_write_sector(const uint8_t *data) { (void)data; return HAL_STORAGE_ERROR; }
+hal_storage_result_t hal_storage_extent_write_end(void) { return HAL_STORAGE_ERROR; }
+
 #endif

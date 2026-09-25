@@ -6828,3 +6828,84 @@ function, not the signature.
 Also: boot errors now say which of the magenta causes applies (too big,
 unreadable, bad header checksum, unsupported type, no PSRAM), rather than
 the colour alone.
+
+### 130. Battery saves: measure the card first, then never wait on it
+
+Phase 1b's second half: the Game Boy cartridge's battery-backed save RAM
+persisted to a standard `.sav` next to the ROM, `/cart/<rom name>.sav`.
+Saves happen only as the original cartridge's did, when the game writes its
+save RAM: no save button, no save states.
+
+**The design we'd agreed on didn't survive measurement.** The plan was to
+write the save to a temporary file after a second of quiet, then rename it
+over the old one. `examples/SelfTest/sd_write_test_fruitjam` timed each
+step over 100 8-KB save cycles on the Fruit Jam at 252 MHz:
+
+| Operation | Mean | Worst |
+|---|---|---|
+| create | 1.4 ms | 1.6 ms |
+| write 512 bytes | 0.7 ms | 29.9 ms |
+| close (commit) | 5.9 ms | 13.3 ms |
+| remove old | 8.3 ms | 10.6 ms |
+| rename | 6.4 ms | 6.9 ms |
+| whole save | 32.6 ms | 61.0 ms |
+
+All 100 cycles read back correctly, but the display queue holds ~2.2 ms of
+picture. Close, remove and rename each block for longer than that on every
+save, and a single write occasionally blocks for 30 ms while the card
+manages its flash. No chunking fixes an operation that blocks for 13 ms on
+its own.
+
+**What was built instead** (decided with the user; the alternative, a
+power-safe two-slot format, would have made the file non-standard):
+
+- **At boot**, while blocking is allowed:
+  - load the `.sav` if there is one;
+  - make it full-size and contiguous on the card
+    (`hal_storage_make_contiguous()`: SdFat `preAllocate()`, then
+    `contiguousRange()` for its sectors);
+  - keep storage mounted, for battery cartridges only.
+- **In the game** (`gameboy_save.cpp`):
+  - count only save-RAM writes that change a byte;
+  - after 60 frames with none, snapshot the RAM and stream it out, **one
+    512-byte sector per frame at most**, through
+    `hal_storage_extent_write_begin/sector/end`.
+- **Why those calls don't block.** SdFat's `writeSector()` also waits for
+  the flash to be programmed, so it's no good here. The streaming
+  `writeStart/writeData/writeStop` calls wait only at their start, and each
+  step is issued only after `isBusy()` has said the card is free, so that
+  wait returns at once. A busy card costs a frame, not a stall. In
+  dedicated-SPI mode SdFat can leave the card partway through a multi-sector
+  read, so `begin` calls `syncDevice()` first.
+- **Each save step gets its own queue top-up**, after the audio burst's.
+- **On the Feather,** whose SD card shares its SPI bus with the TFT, these
+  calls return "unsupported" for now, and a battery cartridge runs without
+  persisting its save.
+
+**On the Fruit Jam with Link's Awakening:**
+- **First boot:** the game initialized its save RAM, and the save streamed
+  out in 34 frames (the card was busy on 16 of them, each costing a frame).
+- **Power cycle:** the `.sav` loaded (`loaded yes`), and the game made no
+  save at all, so it had found valid data. The user's saved file was on the
+  file-select screen and continued correctly.
+- **An in-game save:** the longest single step was **650 us**, against 6-61
+  ms for the file operations. Zero starvation that second (lowest queue
+  level 14), and none across five minutes (lowest 11), with clean audio and
+  no core errors. No red lines, by eye.
+
+**The trade-off, as agreed:** the `.sav` is rewritten in place, so a power
+cut during the ~0.6 s a save takes could leave it half old, half new, as a
+real cartridge's RAM could be. Games guard against that themselves (Link's
+Awakening keeps three files, each checksummed).
+
+**Worth keeping:**
+
+**Measure the operation before designing around it.** The agreed design
+assumed a write could be split into pieces short enough for the display.
+One latency test showed the slow parts weren't the writes at all but the
+filesystem bookkeeping around them, which no amount of splitting shortens.
+
+**A recorder that saves only at the end loses everything to a power
+cycle.** The first recording of an in-game save was lost when the board was
+unplugged, as the test itself required. The replacement appends as it goes
+and reopens the port after a disconnect.

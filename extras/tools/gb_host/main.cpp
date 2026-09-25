@@ -29,6 +29,7 @@
 #include "machines/gb/gameboy_core.h"
 #include "machines/gb/gameboy_video.h"
 #include "machines/gb/gameboy_audio.h"
+#include "machines/gb/gameboy_save.h"
 #include "host_ppm.h"
 
 extern "C" void host_storage_set_rom_dir(const char *dir);
@@ -185,6 +186,15 @@ int main(int argc, char **argv) {
         fclose(wav);
         printf("audio -> %s (%.1f s at %d Hz, drained like the board's ISR)\n", wav_path,
                wav_bytes / 2.0 / GAMEBOY_AUDIO_SAMPLE_RATE, GAMEBOY_AUDIO_SAMPLE_RATE);
+    }
+    {
+        gameboy_save_stats_t ss;
+        gameboy_save_take_stats(&ss);
+        static const char *const names[] = { "none", "UNAVAILABLE", "ready", "writing" };
+        if (ss.state != GAMEBOY_SAVE_NONE)
+            printf("save: %s %s (%u bytes, loaded %s), saves %u, last took %u frames, errors %u\n",
+                   names[ss.state], ss.path, ss.size, ss.loaded ? "yes" : "no", ss.saves,
+                   ss.last_save_frames, ss.errors);
     }
     printf("ran %u frames; core errors %u; audio underruns %u overruns %u, ring depth after the "
            "first second %u..%u\n", frames, gameboy_core_errors(), underruns, overruns,

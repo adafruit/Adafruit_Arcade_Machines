@@ -80,9 +80,15 @@ static uint8_t cart_ram_read(struct gb_s *gb, const uint_fast32_t addr) {
     return addr < sizeof g_cart_ram ? g_cart_ram[addr] : 0xFF;
 }
 
+// Counts writes that CHANGE a byte: games rewrite unchanged values often,
+// and those must not trigger a save (gameboy_save.cpp).
+static volatile uint32_t g_ram_changes;
 static void cart_ram_write(struct gb_s *gb, const uint_fast32_t addr, const uint8_t val) {
     (void)gb;
-    if (addr < sizeof g_cart_ram) g_cart_ram[addr] = val;
+    if (addr < sizeof g_cart_ram && g_cart_ram[addr] != val) {
+        g_cart_ram[addr] = val;
+        g_ram_changes++;
+    }
 }
 
 // The core reports an invalid opcode or access and carries on; nothing
@@ -182,3 +188,25 @@ uint32_t gameboy_core_audio_frame(int16_t *out) {
 }
 
 uint32_t gameboy_core_error_count(void) { return g_errors; }
+
+// Header byte 0x147 values whose cartridge has a battery-backed save.
+bool gameboy_core_has_battery(void) {
+    if (g_rom_size <= 0x147u) return false;
+    switch (g_bank0[0x147]) {
+    case 0x03: case 0x06: case 0x09: case 0x0D: case 0x0F: case 0x10:
+    case 0x13: case 0x1B: case 0x1E: case 0x22: case 0xFF:
+        return true;
+    default:
+        return false;
+    }
+}
+
+uint32_t gameboy_core_save_size(void) {
+    size_t n = 0;
+    if (gb_get_save_size_s(&g_gb, &n) != 0) return 0;
+    return n <= sizeof g_cart_ram ? (uint32_t)n : 0;
+}
+
+uint8_t *gameboy_core_save_ram(void) { return g_cart_ram; }
+
+uint32_t gameboy_core_save_changes(void) { return g_ram_changes; }

@@ -34,6 +34,7 @@
 #include <machines/gb/gameboy_machine.h>
 #include <machines/gb/gameboy_audio.h>
 #include <machines/gb/gameboy_core.h>
+#include <machines/gb/gameboy_save.h>
 #include <boards/fruitjam/board_config_fruitjam.h>
 
 static gameboy_system  g_system;
@@ -201,6 +202,32 @@ void loop() {
             Serial.println(slong);
         }
         work_sum = blk_sum = work_n = 0; work_max = 0;
+        {
+            gameboy_save_stats_t ss;
+            gameboy_save_take_stats(&ss);
+            if (ss.state != GAMEBOY_SAVE_NONE) {
+                static const char *const names[] = { "none", "UNAVAILABLE", "ready", "writing" };
+                Serial.print("[gameboy] save ");
+                Serial.print(names[ss.state]);
+                Serial.print(" ");
+                Serial.print(ss.path);
+                Serial.print(" (");
+                Serial.print(ss.size);
+                Serial.print(" bytes, loaded ");
+                Serial.print(ss.loaded ? "yes" : "no");
+                Serial.print("), saves ");
+                Serial.print(ss.saves);
+                Serial.print(", last took ");
+                Serial.print(ss.last_save_frames);
+                Serial.print(" frames, busy waits ");
+                Serial.print(ss.busy_waits);
+                Serial.print(", errors ");
+                Serial.print(ss.errors);
+                Serial.print(", step_max ");
+                Serial.print(ss.step_us_max);
+                Serial.println("us");
+            }
+        }
         // Every tenth heartbeat, say which cartridge this is -- the boot
         // message saying so never reaches the host (see loop()'s error path).
         if ((frame_count % 600u) == 60u) print_cart();

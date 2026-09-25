@@ -190,3 +190,91 @@ void hal_storage_close(hal_file_t *f) {
     if (f->fp) fclose(f->fp);
     free(f);
 }
+
+// Writing, with the boards' semantics: rename refuses to replace an
+// existing file, as FAT does, although POSIX rename() would silently.
+static void host_path_for(const char *path, char *full, size_t n) {
+    const char *slash = strrchr(path, '/');
+    snprintf(full, n, "%s/%s", host_dir_for(path), slash ? slash + 1 : path);
+}
+
+hal_file_t *hal_storage_create(const char *path) {
+    char full[2048];
+    host_path_for(path, full, sizeof full);
+    FILE *fp = fopen(full, "wb");
+    if (!fp) return NULL;
+    hal_file_t *f = (hal_file_t *)malloc(sizeof(hal_file_t));
+    if (!f) { fclose(fp); return NULL; }
+    f->fp = fp;
+    return f;
+}
+
+uint32_t hal_storage_write(hal_file_t *f, const void *buf, uint32_t len) {
+    if (!f || !f->fp) return 0;
+    return (uint32_t)fwrite(buf, 1, len, f->fp);
+}
+
+bool hal_storage_remove(const char *path) {
+    char full[2048];
+    host_path_for(path, full, sizeof full);
+    FILE *fp = fopen(full, "rb");
+    if (!fp) return true;
+    fclose(fp);
+    return remove(full) == 0;
+}
+
+// Contiguous-file writes. The host has no sectors, so an extent is just its
+// file, rewritten from the start through stdio; every call succeeds at once.
+// That exercises the machine's save logic, not the card's timing, which is a
+// device question.
+bool hal_storage_make_contiguous(const char *path, uint32_t size,
+                                 const uint8_t *content, hal_storage_extent_t *out) {
+    char full[2048];
+    host_path_for(path, full, sizeof full);
+    memset(out, 0, sizeof *out);
+    FILE *fp = fopen(full, "rb");
+    long have = -1;
+    if (fp) { fseek(fp, 0, SEEK_END); have = ftell(fp); fclose(fp); }
+    if (have < (long)size) {
+        fp = fopen(full, "wb");
+        if (!fp) return false;
+        const bool ok = fwrite(content, 1, size, fp) == size;
+        fclose(fp);
+        if (!ok) return false;
+    }
+    out->first_sector = 0;
+    out->sectors = (size + HAL_STORAGE_SECTOR - 1u) / HAL_STORAGE_SECTOR;
+    snprintf(out->path, sizeof out->path, "%s", path);
+    return true;
+}
+
+static FILE *g_extent_fp = NULL;
+static uint32_t g_extent_left = 0;
+hal_storage_result_t hal_storage_extent_write_begin(const hal_storage_extent_t *e) {
+    char full[2048];
+    host_path_for(e->path, full, sizeof full);
+    g_extent_fp = fopen(full, "r+b");
+    g_extent_left = e->sectors;
+    return g_extent_fp ? HAL_STORAGE_OK : HAL_STORAGE_ERROR;
+}
+hal_storage_result_t hal_storage_extent_write_sector(const uint8_t *data) {
+    if (!g_extent_fp || g_extent_left == 0) return HAL_STORAGE_ERROR;
+    g_extent_left--;
+    return fwrite(data, 1, HAL_STORAGE_SECTOR, g_extent_fp) == HAL_STORAGE_SECTOR
+         ? HAL_STORAGE_OK : HAL_STORAGE_ERROR;
+}
+hal_storage_result_t hal_storage_extent_write_end(void) {
+    if (!g_extent_fp) return HAL_STORAGE_ERROR;
+    fclose(g_extent_fp);
+    g_extent_fp = NULL;
+    return HAL_STORAGE_OK;
+}
+
+bool hal_storage_rename(const char *from, const char *to) {
+    char a[2048], b[2048];
+    host_path_for(from, a, sizeof a);
+    host_path_for(to, b, sizeof b);
+    FILE *fp = fopen(b, "rb");
+    if (fp) { fclose(fp); return false; }
+    return rename(a, b) == 0;
+}
