@@ -6952,3 +6952,60 @@ table gives combination 44 (green Link on a red background). 14 MIRROR
 presses stepped through the palettes exactly once each. Over 370
 heartbeats: zero starvation (lowest queue level 11), no audio underruns,
 no core errors. The user judged the four palettes on the TV.
+
+### 132. Wii Classic controllers on the Fruit Jam: the TV answers at the controller's address
+
+Step 1 of the I2C controller plan (extras/CONSOLES_PLAN.md, "I2C
+controllers") is a self-test, `examples/SelfTest/wii_classic_test_fruitjam`,
+running the new driver `src/input/wii_classic.{h,cpp}`. Plugged in through
+Adafruit's Wii Nunchuck adapter, **neither first-party controller ever
+connected**: zero connects in four minutes of button presses on both.
+
+**The clue came with nothing plugged in.** The driver's state line kept
+showing it partway through start-up, which requires the first write to
+0x52 to be ACKed. Something with no controller present was answering at
+the controller's address. A bus scan settled it: `0x18 0x3A 0x50 0x51
+0x52 0x53 0x54 0x55 0x56 0x57`.
+
+- 0x18 is the DAC.
+- 0x50-0x57 is an EDID memory chip that decodes a block number from the
+  address bits, as 2 KB EEPROMs do.
+- 0x3A is HDCP.
+
+That is the HDMI display. The Fruit Jam's DDC lines share GPIO 20/21 with
+STEMMA QT. Adafruit's guide says a scan shows "the built-in DAC, the
+AHT20, and possibly EDID", and the pinout documents no jumper that
+separates them. So the TV answered at 0x52 along with the controller:
+
+- The start-up writes were ACKed by the TV.
+- The identity read returned EDID bytes (128 identity failures).
+- With a controller also present, the reads were corrupted.
+
+**With HDMI unplugged, everything worked on the first try.** The scan
+dropped to 0x18.
+
+| Controller | Identity | Report format | Buttons decoded | Poll time at 400 kHz (request + collect) |
+|---|---|---|---|---|
+| SNES Classic | `01 00 A4 20 03 01` | high resolution | all 12 it has | ~60 + ~255 us |
+| Wii Classic | `00 00 A4 20 03 01` | high resolution, after the driver asked | all 15 | ~87 + ~386 us |
+
+Both controllers:
+
+- Idle at 7F sticks (SNES) or live analog values (Wii), with FF FF in
+  bytes 6-7 when no button is held.
+- Report L and R both as a trigger byte (00 to FF) and as the full-press
+  bit.
+- Reconnected cleanly across four plug-ins.
+
+The Wii Classic's slower collect suggests it stretches the clock.
+
+**Three smaller facts:**
+
+- **A bus scan cannot find these controllers.** They never ACKed the
+  address-only probe while working, so detect them with the start-up
+  sequence, not a scan.
+- **arduino-pico reports a missing device as endTransmission() code 4**,
+  not 2.
+- **Why pico-infonesPlus lists the Fruit Jam as supported:** it presumably
+  worked with displays whose EDID answers only at 0x50, which many do. The
+  collision depends on the display.
