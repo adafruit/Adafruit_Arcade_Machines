@@ -32,9 +32,9 @@
 #include "hal/arcade_hal_input.h"
 #include "board_config_feather_esp32.h"
 
-// -1 marks a control this board does not wire. HAL_BTN_MIRROR and
-// HAL_BTN_STRETCH read false forever, which is why the game sketches can
-// call them unchanged.
+// -1 marks a control this board does not wire. HAL_BTN_MIRROR,
+// HAL_BTN_STRETCH, HAL_BTN_ACTION2 and HAL_BTN_ACTION3 read false forever,
+// which is why the game sketches can call them unchanged.
 static const int8_t s_pin[HAL_BTN_COUNT] = {
     [HAL_BTN_ROTATE] = FEATHER_BTN_ROTATE,
     [HAL_BTN_MIRROR] = -1,
@@ -47,6 +47,8 @@ static const int8_t s_pin[HAL_BTN_COUNT] = {
     [HAL_BTN_UP]     = FEATHER_BTN_UP,
     [HAL_BTN_DOWN]   = FEATHER_BTN_DOWN,
     [HAL_BTN_STRETCH]= -1,
+    [HAL_BTN_ACTION2]= -1,
+    [HAL_BTN_ACTION3]= -1,
 };
 
 // ASYMMETRIC, matching the Fruit Jam's: a press is believed the instant it

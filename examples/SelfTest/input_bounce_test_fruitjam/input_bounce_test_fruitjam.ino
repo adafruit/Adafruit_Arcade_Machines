@@ -72,10 +72,31 @@
 #include <stdarg.h>
 #include <stdio.h>
 
-static const char *names[] = {
-    "ROTATE (B2)", "MIRROR (B3)", "COIN", "START1", "START2",
-    "LEFT", "RIGHT", "SHOOT", "UP", "DOWN"
+// Indexed by the HAL_BTN_* constants themselves, and read only through
+// btn_name(), which returns "?" for anything past the end. This used to be a
+// plain list one name short of the board (it stopped at DOWN, missing
+// STRETCH), so a STRETCH press read past its end. A designated-initializer
+// table can't drift out of order, and a button added later prints "?".
+static const char *const names[] = {
+    [HAL_BTN_ROTATE]  = "ROTATE (B2)",
+    [HAL_BTN_MIRROR]  = "MIRROR (B3)",
+    [HAL_BTN_COIN]    = "COIN (A5)",
+    [HAL_BTN_START1]  = "START1 (D6)",
+    [HAL_BTN_START2]  = "START2 (D7)",
+    [HAL_BTN_LEFT]    = "LEFT (D8)",
+    [HAL_BTN_RIGHT]   = "RIGHT (D9)",
+    [HAL_BTN_SHOOT]   = "SHOOT (D10)",
+    [HAL_BTN_UP]      = "UP (A3)",
+    [HAL_BTN_DOWN]    = "DOWN (A4)",
+    [HAL_BTN_STRETCH] = "STRETCH (B1)",
+    [HAL_BTN_ACTION2] = "ACTION2 (A2)",
+    [HAL_BTN_ACTION3] = "ACTION3 (A1)",
 };
+
+static const char *btn_name(uint8_t i) {
+    if (i >= sizeof names / sizeof names[0] || !names[i]) return "?";
+    return names[i];
+}
 
 #define SAMPLE_US    100    // 10kHz -- fast enough to resolve contact bounce
 #define MAX_EVENTS   256
@@ -93,7 +114,7 @@ static repeating_timer_t  timer;
 static bool sample_cb(repeating_timer_t *t) {
     (void)t;
     uint32_t now = micros();
-    for (uint8_t i = 0; i < HAL_INPUT_BUTTON_COUNT; i++) {
+    for (uint8_t i = 0; i < HAL_INPUT_BUTTON_COUNT && i < sizeof last_level; i++) {
         bool now_level = hal_input_read_raw(i); // RAW -- see below
         if (now_level != last_level[i]) {
             last_level[i] = now_level;
@@ -200,7 +221,7 @@ static void report(void) {
         if (count == 0) continue;
 
         rprintf("  %s: %u transitions spanning %lu.%02lu ms\n",
-                names[b], (unsigned)count,
+                btn_name(b), (unsigned)count,
                 (unsigned long)((last - first) / 1000u),
                 (unsigned long)(((last - first) % 1000u) / 10u));
 
@@ -227,7 +248,7 @@ void setup() {
     Serial.begin(115200);
     delay(1500);
     hal_input_init();
-    for (uint8_t i = 0; i < HAL_INPUT_BUTTON_COUNT; i++)
+    for (uint8_t i = 0; i < HAL_INPUT_BUTTON_COUNT && i < sizeof last_level; i++)
         last_level[i] = hal_input_read_raw(i);
 
     Serial.println();
