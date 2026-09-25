@@ -50,7 +50,6 @@ bool hal_video_init(void) { return true; }
 // model the board's real multi-buffer scanline queue. (If a future test
 // wants to assert on rendered output, capture inside submit instead.)
 uint16_t *hal_video_acquire_scanline(void) { return host_scanbuf; }
-void hal_video_submit_scanline(uint16_t *buf) { (void)buf; }
 void hal_video_run(void) { for (;;) { } } // never called by the harness
 
 // Nothing blocks on the host, so no time is ever spent waiting for the
@@ -61,6 +60,21 @@ uint32_t hal_video_take_blocked_us(void) { return 0; }
 // point: this failure mode is device-only, which is exactly why it needs an
 // on-device counter rather than a harness measurement.
 uint32_t hal_video_take_starve_count(void) { return 0; }
+
+// Queue level. The host has no display draining a queue, so it models one
+// that only ever FILLS: each submit adds a line, up to the Fruit Jam's 32
+// buffers, and nothing removes them. The Game Boy machine is the first to
+// read this -- it draws whenever fewer than 16 are waiting, and tops the
+// queue up before its audio burst (gameboy_machine.cpp) -- and a queue that
+// fills and stays full is its "emulation is ahead of the display" path,
+// where the frame's lines are drawn after the frame is emulated. A constant
+// level would make that top-up loop spin forever. How the lines interleave
+// in time is a device question the heartbeat answers, not this.
+static uint32_t host_valid = 0;
+void hal_video_submit_scanline(uint16_t *buf) { (void)buf; if (host_valid < 32u) host_valid++; }
+uint32_t hal_video_valid_level(void) { return host_valid; }
+uint32_t hal_video_take_min_valid_level(void) { return host_valid; }
+uint32_t hal_video_scanbuf_count(void) { return 32u; }
 
 // --- input ---------------------------------------------------------------
 

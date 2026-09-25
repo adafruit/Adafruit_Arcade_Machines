@@ -140,6 +140,12 @@ enum {
     HAL_BTN_UP,
     HAL_BTN_DOWN,
     HAL_BTN_STRETCH,    // not wired on this board -- always reads false
+    HAL_BTN_ACTION2,    // not wired on this board -- always reads false
+    HAL_BTN_ACTION3,    // not wired on this board -- always reads false
+                        // The Fruit Jam's console buttons (see its board
+                        // config). Defined here so a sketch's name set is the
+                        // same on both boards; the Feather's own console
+                        // layout is still to be chosen (CONSOLES_PLAN.md).
     HAL_BTN_COUNT
 };
 

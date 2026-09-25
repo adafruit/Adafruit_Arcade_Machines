@@ -5,16 +5,16 @@ SPDX-License-Identifier: MIT
 
 # Consoles: SD cards as cartridges
 
-**STATUS: PROPOSAL, NOT STARTED.** No code exists yet. Three decisions
-were made on 2026-09-23: GPL cores are acceptable (decision 1), they live
-in this library, in one repo (decision 2), and consoles start on the
-existing GPIO arcade panel (decision 3). Saving is limited to the
-cartridge's own battery-backed RAM: no save states, no save button. The
-first two decisions reshaped the plan
-around adopting existing cores into a mixed-license tree. This document asks
-for a direction decision on the rest. It is not a spec: API signatures and
-per-mapper detail belong in a PORTING.md addendum once the direction is
-approved.
+**STATUS: GAME BOY FIRST, STARTED 2026-09-24** on branch `gameboy-port`,
+beginning with the host harness (Phase 1a). Decided that day: the **Game
+Boy comes first**, ahead of the NES, because its whole port can be MIT;
+consoles **boot in landscape, rotation 0**; and the Game Boy picture starts
+at **1× centered**. Decided on 2026-09-23: GPL cores are acceptable
+(decision 1), they live in this library, in one repo (decision 2),
+consoles start on the existing GPIO arcade panel (decision 3), and saving
+is limited to the cartridge's own battery-backed RAM, with no save states
+and no save button. This document is not a spec: API signatures and
+per-mapper detail belong in a PORTING.md addendum.
 
 ## The idea
 
@@ -57,7 +57,7 @@ everything to GPL-3.0.
 src/machines/nes/          our glue: cartridge hookup, video, audio, input (MIT)
 src/machines/nes/core/     vendored InfoNES, as adapted by pico-infonesPlus (GPL-2.0-or-later, to verify)
 src/machines/gb/           our glue (MIT)
-src/machines/gb/core/      vendored Peanut-GB (MIT)
+src/machines/gb/core/      vendored upstream Peanut-GB and minigb_apu (MIT)
 src/machines/sms/          our glue (MIT)
 src/machines/sms/core/     vendored SMS Plus, its Z80 removed (GPL)
 src/cart/                  cartridge find/validate/load, save RAM (MIT)
@@ -67,7 +67,10 @@ examples/Consoles/<console>_<board>/
 Consoles stay under `src/machines/`, because a console is a machine. Every
 vendored core sits in a `core/` subdirectory, so REUSE annotations and a
 reviewer's eye both find the GPL code by path. Everything we write stays
-MIT, as does Peanut-GB, so the Game Boy port is MIT end to end.
+MIT, as do Peanut-GB and minigb_apu, so the Game Boy port is MIT end to
+end, provided both are vendored from **upstream** (deltabeard's
+repositories). PicoPlus's adapted copies sit in a GPL-3.0 repository, so
+taking them from there would cloud the license for no benefit.
 
 ### The build problem, and the fix it requires
 
@@ -283,6 +286,17 @@ not the game, which is why they're worth keeping:
   button costs nothing to keep, and dropping it saves nothing, so it can
   simply stay.
 
+**Consoles boot in landscape: rotation 0** (decided 2026-09-24), the upright
+monitor, unlike the arcade games, which each boot in their own cabinet's
+orientation. ROTATE then cycles through the other three.
+
+Careful with the names here. `arcade_video_geom` calls rotations 0 and 2
+"yoko" and maps a portrait arcade raster's LONG axis onto canvas rows. A
+console's raster is landscape-native, its LONG axis horizontal, so a
+console in rotation 0 needs the mapping the module currently calls "tate."
+The Game Boy's 1× centered start doesn't use the geometry module at all, so
+this only matters once scaled modes or other rotations arrive.
+
 Keeping ROTATE changes one earlier assumption: console mode in
 `arcade_video_geom` can't be "landscape only, no rotation." It needs all
 four rotations, like the arcade games have. The geometry module was built
@@ -490,7 +504,7 @@ Adafruit's legal review, not a legal conclusion.**
 |------|---------|---------------|--------|
 | InfoNES | NES | GPL-2 (`infones/doc/GPL2`) | **OK**, but verify it's "v2 or later": GPL-2-only can't be combined with GPL-3.0 |
 | Peanut-GB | Game Boy | MIT (header of `peanut_gb.h`) | **OK**; the Game Boy port is MIT end to end |
-| minigb_apu | Game Boy audio | not checked | Verify |
+| minigb_apu | Game Boy audio | MIT (header of upstream `minigb_apu.c`: "released under the terms of the MIT license"; README says MIT) | **OK**, from upstream. The PicoPlus copy's header only points at a LICENSE file, which in their repo is GPL-3.0 |
 | SMS Plus | SMS / Game Gear | GPL (`system.c`), **but its bundled `z80.c` (Juergen Buchmueller) is "freeware for non-commercial purposes"** | **Swap the Z80** for our own MIT `src/cpu/z80/`, then OK |
 | Gwenesis | Genesis | GPL (bus, VDP, I/O, `z80inst.c`), **but its bundled Musashi 68000 (`cpus/M68K/`) says "may be freely used for non-commercial purposes"** | **Swap the 68000.** Current upstream Musashi is believed to have been relicensed MIT; verify, and replace the vendored copy with it |
 | snes9x | SNES | "freeware for PERSONAL USE only. Commercial users should seek permission" | **Out of scope** |
@@ -616,11 +630,12 @@ project's hardware-verified standard.
 
 | Phase | Scope | Done when |
 |-------|-------|-----------|
-| **0. Groundwork** | ~~`dot_a_linkage=true` and the I2S file rename it requires~~ (**done**, PR #22). Storage write/seek/rename, memory contract. The `nm` release check in the `extras/dist/` build. `HAL_BTN_ACTION2` / `HAL_BTN_ACTION3` on the Fruit Jam (GPIO 42 / 41), and as `false` on the Feather. | New SelfTest sketches pass on hardware: SD write/readback round-trip, PSRAM allocate/fill/verify. The two new Fruit Jam buttons read correctly over serial, and the arcade games are unaffected. The `nm` check runs and passes on every arcade binary. |
-| **1. NES** | Port InfoNES onto the HAL: `src/cart/`, PicoDVI video at 252 MHz, our audio and input, console mode in `arcade_video_geom`. InfoNES brings its mappers with it, so there's no mapper-by-mapper build-up. | blargg's NES CPU tests pass on the host harness. Super Mario Bros. (NROM) and an MMC3 game run at 60 fps on the Fruit Jam with sound, **in all four rotations**. A compatibility list exists, even if short. |
-| **2. Game Boy** | Port Peanut-GB (MIT), MBC battery saves through the new storage write path | blargg's GB CPU instruction tests pass on host. mooneye results are recorded but not required (see [Why Peanut-GB, not SameBoy](#why-peanut-gb-not-sameboy)). A compatibility list exists. A save survives a power cycle on hardware. |
+| **0. Groundwork** | ~~`dot_a_linkage=true` and the I2S file rename it requires~~ (**done**, PR #22). `HAL_BTN_ACTION2` / `HAL_BTN_ACTION3` on the Fruit Jam (GPIO 42 / 41), and as `false` on the Feather, needed before Phase 1a. Storage write/seek/rename and the memory contract, needed only from Phase 1b. The `nm` release check in the `extras/dist/` build, needed once the first GPL core lands. | The two new Fruit Jam buttons read correctly over serial, and the arcade games are unaffected. Later: SelfTest sketches for SD write/readback and PSRAM allocate/fill/verify; the `nm` check passes on every arcade binary. |
+| **1a. Game Boy, Tetris** | Upstream Peanut-GB + minigb_apu (MIT). Host harness first (`extras/tools/gb_host`). `src/cart/` loader, 1× centered video, audio, input, rotation 0 default. Tetris is 32 KB with no memory-bank chip and no battery, so no PSRAM and no SD writes. | blargg's `cpu_instrs` pass on the host (`dmg-acid2` recorded). Tetris plays at 60 fps with sound on the Fruit Jam, in all four rotations, with no queue starvation. All 14 arcade builds still link identical symbols. |
+| **1b. Game Boy, bank-switched carts** | MBC1/3/5, ROMs in PSRAM, battery saves through the new storage write path. mooneye results recorded but not required (see [Why Peanut-GB, not SameBoy](#why-peanut-gb-not-sameboy)). | A save survives a power cycle on hardware. A compatibility list exists. |
+| **2. NES** | Port InfoNES onto the HAL (the first GPL core): PicoDVI video at 252 MHz, our audio and input, console geometry. InfoNES brings its mappers with it, so there's no mapper-by-mapper build-up. | blargg's NES CPU tests pass on the host harness. Super Mario Bros. (NROM) and an MMC3 game run at 60 fps on the Fruit Jam with sound, **in all four rotations**. The `nm` check passes on every arcade binary. |
 | **3. SMS / Game Gear** | Port SMS Plus **with its Z80 replaced by our `src/cpu/z80/`** | The license table shows no non-commercial files left. One title per system runs at 60 fps. |
-| **4. Feather ESP32** | NES and Game Boy on the second board, which is the part of our case PicoPlus doesn't cover | Both run on hardware, including a save over the shared SPI bus (see Risks) |
+| **4. Feather ESP32** | Game Boy and NES on the second board, which is the part of our case PicoPlus doesn't cover | Both run on hardware, including a save over the shared SPI bus (see Risks) |
 | **5. Genesis** *(spike only)* | Swap Gwenesis's 68000 for MIT Musashi, then measure it at 252 MHz. If it doesn't fit, estimate the cost of an HSTX Fruit Jam backend at a higher clock. | A go/no-go number and a clock requirement, not a port |
 
 ## What changes in how the project works

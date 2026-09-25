@@ -17,3 +17,19 @@ version = 1
 path = "examples/Games/*_featheresp32/build_opt.h"
 SPDX-FileCopyrightText = "2026 John Park for Adafruit Industries"
 SPDX-License-Identifier = "MIT"
+
+# Vendored Game Boy core (src/machines/gb/core/VENDORED.md). These files are
+# kept byte-identical to upstream, so their licensing is declared here rather
+# than by editing their headers. All three are MIT: peanut_gb.h says so in its
+# header, including for the parts it marks as taken from SameBoy; minigb_apu.c
+# (vendored as .c.inc) says so in its header, and minigb_apu's README says MIT
+# for the project, which covers minigb_apu.h.
+[[annotations]]
+path = "src/machines/gb/core/peanut_gb.h"
+SPDX-FileCopyrightText = ["2018-2023 Mahyar Koshkouei", "2015-2019 Lior Halphon"]
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = ["src/machines/gb/core/minigb_apu.h", "src/machines/gb/core/minigb_apu.c.inc"]
+SPDX-FileCopyrightText = ["2019 Mahyar Koshkouei", "2017 Alex Baines"]
+SPDX-License-Identifier = "MIT"

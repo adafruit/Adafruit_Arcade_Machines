@@ -44,6 +44,16 @@ enum {
                         // project uses Serial1 -- diagnostics go over USB
                         // CDC -- so it is free, but that is why it was the
                         // last button left.
+    HAL_BTN_ACTION2,    // GPIO 42 (header A2) -- second action button
+    HAL_BTN_ACTION3,    // GPIO 41 (header A1) -- third action button
+                        //
+                        // Added for the consoles (extras/CONSOLES_PLAN.md):
+                        // a Game Boy or NES pad needs B beside A (SHOOT), and
+                        // a Genesis pad needs C as well. Named for their place
+                        // on the panel, like SHOOT, not for a console's button
+                        // names, so a two- or three-button arcade game can use
+                        // them too. What they mean is the sketch's business.
+                        // The arcade sketches never read them.
 };
 
 // Undebounced button level, bypassing hal_input_read()'s filter (see
