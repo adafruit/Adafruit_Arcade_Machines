@@ -350,17 +350,30 @@ answers at 0x52 together with the controller:
   #132).
 
 How many displays answer at 0x52 is unknown; many answer only at 0x50.
-The Feather has no HDMI and is unaffected. **The fix is still to be
-chosen** before step 2 on the Fruit Jam.
+The Feather has no HDMI and is unaffected.
+
+**DECIDED 2026-09-25: I2C controllers are PARKED on the Fruit Jam and go
+to the Feather first.** The Fruit Jam has USB host Type-A ports, so USB
+gamepads are its controller path. I2C matters most on the Feather, which
+has no USB host and few spare GPIO pins. The driver and self-test stay in
+the tree. If the Fruit Jam comes back to I2C, two fixes were considered:
+
+- **An LTC4316 address translator** (Adafruit 5914), moving 0x52 to
+  0x12. Its guide says it "doesn't seem to support clock-stretching", and
+  the Wii Classic looks like it stretches, so it would need testing.
+- **A separate I2C bus** (the RP2350's I2C1, or PIO) on two spare pins,
+  which the display never sees.
 
 **Steps:**
 
 1. **Done.** A self-test sketch (`examples/SelfTest/wii_classic_test_fruitjam`)
    prints the identity, report format, raw bytes, decoded buttons and
    poll timing.
-2. The driver plus board merging on the Fruit Jam, measured in Galaga
-   and on the Game Boy.
-3. The Feather.
+2. **The Feather** (next, when the Feather comes up): a Feather self-test,
+   then the driver plus board input merging, measured in the Feather's
+   games. Check the I2C power pin and the shared TSC2007 touch
+   controller.
+3. The Fruit Jam: parked (above); USB gamepads come first there.
 
 ### The on-board buttons: keep STRETCH and ROTATE
 
