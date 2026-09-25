@@ -6688,3 +6688,80 @@ heartbeat. **Measure the rate before inferring it from a level.**
   seconds for as long as the error screen is up.
 - Both input self-tests walked tables smaller than the board's button count
   (fixed in the commit that added ACTION2/ACTION3).
+
+### 128. Red lines on Kirby's load screen: a halted CPU the core never let go of, and two flaws of my own behind it
+
+Kirby's Dream Land, the second cartridge and the first bank-switched one
+(MBC1, 256 KB, exactly the SRAM ROM buffer), played cleanly, except that its
+first level's load screen showed red lines. The heartbeat put numbers on it:
+about 100 starvation events a second for the six seconds of that screen,
+queue level 1, while `work` was LOWER than in play (7.3 ms against 10).
+Lower work with a starving queue ruled out "too slow"; something was
+blocking drawing without doing much.
+
+It took three fixes, each found by measuring what the previous one left.
+
+**1. The core held a halted CPU for up to 2.2 ms (patched in Peanut-GB).**
+While the CPU is halted with no interrupt pending, upstream
+`__gb_step_cpu()` loops inside one call until an interrupt arrives. With the
+LCD off, as games do while copying graphics, no VBLANK interrupt comes, and
+the machine only draws between calls. A profiling build
+(`-DGAMEBOY_CORE_PROFILE`, timing every call) confirmed it before anything
+was changed: on the load screen, single calls of 1244-2249 us, about 50 a
+second; everywhere else, never over 83 us.
+
+The patch (`core/peanut_gb-halt-yield.patch`, `core/VENDORED.md`) makes a
+halted CPU return at a frame boundary and after at most 4560 cycles, ten LCD
+lines, and resumes the halt loop on the next call with the step size it was
+about to use. The first version returned only at frame boundaries and
+changed nothing measurable: Kirby halts partway through each frame until
+the frame ends, so that halt is one call whatever happens at the boundary.
+The red lines moved lower down the screen, following where the halt began.
+
+The resume can't simply return and carry on: upstream's interrupt code
+assumes a halt only ends once an interrupt has occurred, so a halt that
+returns early would be taken as a wake-up. The first working version
+re-ran the HALT instruction's fast-forward on resume. That shifted a few
+cycles of timing, and 5 mooneye tests' final frames changed. Resuming with
+the loop's own saved step size brought it to 114 of 115 bit-identical.
+
+**2. My batching glued the pieces back together.** With every call now
+under 230 us, the load screen still starved. `gameboy_core_step()` ran
+calls in batches of 16 and the queue was checked only between batches, and
+sixteen halted calls of up to 4560 cycles each cover a whole frame. A batch
+now ends as soon as the CPU is halted.
+
+**3. One line per check couldn't keep up with halted calls.** The frame loop
+drew ONE line whenever the queue was under 16. A running instruction is a
+few microseconds, so that kept pace in play; a halted call is about 200 us,
+three lines of display time, so each round trip lost two lines. That left
+the queue at 1-2, near enough empty that the starvation counter still fired
+52 times, though no red line was visible yet. The loop now tops the queue
+up to its target. The load screen's lowest level went from 1 to 13, and a
+3-minute run had zero starvation, a worst frame of 14.4 ms, clean audio and
+no core errors.
+
+**How the patch was checked against the unpatched core:** blargg's
+`cpu_instrs` and `dmg-acid2` still pass; Tetris and `dmg-acid2` through
+`gb_host` are bit-identical over seven frames and 50 s of audio; and all 115
+mooneye test ROMs were compared in result and final frame. A resume counter
+showed Tetris never takes the resume path at all, so the bit-identical
+Tetris result had proved only that running code was untouched, and the
+mooneye run was what tested the halt path (15-66 resumes in the four halt
+tests). 114 of 115 are bit-identical, and the pass count is unchanged at
+36. The exception, `madness/mgb_oam_dma_halt_sprites`, is a deliberately
+extreme stress test that fails on both cores; it matches through frame 14
+and then diverges, for a reason not established.
+
+**Two things worth keeping:**
+
+**A test that passes on a path it never takes proves nothing about that
+path.** Tetris polls for VBLANK instead of halting, so it can't test a halt
+patch, and its bit-identical result looked like strong evidence until a
+one-line counter said zero. Count that the path under test actually runs.
+
+**Each fix left a smaller version of the same symptom, and the heartbeat
+told them apart.** Starvation went from 100/s at queue level 1, to the same
+rate with every call short, to 52 events with no visible red line, to zero
+with a margin of 13. Judged by the screen alone, the third state would have
+passed. The margin, not the absence of red, is the result.

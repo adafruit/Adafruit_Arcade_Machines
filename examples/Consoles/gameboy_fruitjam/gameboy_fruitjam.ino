@@ -33,6 +33,7 @@
 #include <hal/arcade_hal_input.h>
 #include <machines/gb/gameboy_machine.h>
 #include <machines/gb/gameboy_audio.h>
+#include <machines/gb/gameboy_core.h>
 #include <boards/fruitjam/board_config_fruitjam.h>
 
 static gameboy_system  g_system;
@@ -191,7 +192,19 @@ void loop() {
         Serial.print(", pad 0x");
         Serial.print(g_system.pad, HEX);
         Serial.print(", core_err ");
-        Serial.println(gameboy_core_errors());
+        Serial.print(gameboy_core_errors());
+        {
+            // The longest single core call and how many took over 1 ms --
+            // zeros unless the library is built with -DGAMEBOY_CORE_PROFILE
+            // (arduino-cli: --build-property "compiler.c.extra_flags=
+            // -DGAMEBOY_CORE_PROFILE"). DEVNOTES #128.
+            uint32_t smax, slong;
+            gameboy_core_take_step_profile(&smax, &slong);
+            Serial.print(", step_max ");
+            Serial.print(smax);
+            Serial.print("us step_over_1ms ");
+            Serial.println(slong);
+        }
         work_sum = blk_sum = work_n = 0; work_max = 0;
         // Every tenth heartbeat, say which cartridge this is -- the boot
         // message saying so never reaches the host (see loop()'s error path).

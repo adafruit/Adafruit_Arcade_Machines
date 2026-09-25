@@ -638,6 +638,15 @@ project's hardware-verified standard.
 | **4. Feather ESP32** | Game Boy and NES on the second board, which is the part of our case PicoPlus doesn't cover | Both run on hardware, including a save over the shared SPI bus (see Risks) |
 | **5. Genesis** *(spike only)* | Swap Gwenesis's 68000 for MIT Musashi, then measure it at 252 MHz. If it doesn't fit, estimate the cost of an HSTX Fruit Jam backend at a higher clock. | A go/no-go number and a clock requirement, not a port |
 
+## Game Boy compatibility list
+
+Tested on the Fruit Jam, in `examples/Consoles/gameboy_fruitjam`.
+
+| Cartridge | Type (header 0x147) | ROM | Status |
+|-----------|---------------------|-----|--------|
+| Tetris | 0x00, ROM only | 32 KB | Plays, with sound, in all four rotations (DEVNOTES #127) |
+| Kirby's Dream Land | 0x01, MBC1 | 256 KB | Plays; its level-load screen needed the halt-yield fix (DEVNOTES #128) |
+
 ## What changes in how the project works
 
 Every arcade port is one program, confirmed on hardware title by title. A
