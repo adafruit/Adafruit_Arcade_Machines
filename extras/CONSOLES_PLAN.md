@@ -162,7 +162,7 @@ flowchart TB
         V["video (unchanged)"]
         A["audio (unchanged)"]
         I["input (more indices)"]
-        S["storage (+ write, seek, rename)"]:::changed
+        S["storage (+ write, non-blocking sectors)"]:::changed
         MEM["memory (fast/bulk alloc)"]:::new
     end
     B["src/boards/ fruitjam · feather_esp32<br/>(input unchanged at first)"]:::changed
@@ -204,7 +204,7 @@ The HAL has 21 functions today; this proposal adds about 4.
 | **Video** | None | The scanline-pull model suits consoles: NES and Game Boy render scanline by scanline natively, and mid-frame scroll splits (status bars) require it. NES at 256×240 fills the 320×240 canvas vertically, and Genesis at 320×224 fits almost exactly. `arcade_video_geom` needs a **console mode** for landscape-native rasters: all four rotations (ROTATE stays, for sideways-mounted cabinet monitors; see [Controls](#controls)), plus optional NES 8:7 pixel aspect. The Game Boy's 160×144 is the awkward size: 1× centered is small, and 2× doesn't fit. |
 | **Audio** | None | The fill callback fits. The console's audio chip runs in the emulation loop and fills a ring buffer that the ISR only copies from (see Risks: the NES DMC channel reads cartridge ROM). |
 | **Input** | **Contract unchanged; two new Fruit Jam button indices** | `HAL_BTN_ACTION2` (A2, GPIO 42) and `HAL_BTN_ACTION3` (A1, GPIO 41), with the Feather reading both as `false` for now. Mapping stays in the sketch (see [Controls](#controls)). A logical-pad layer arrives only with a second input source. |
-| **Storage** | **Add create/write, seek and rename** | Battery-backed saves (Zelda, Pokémon, Link's Awakening) need writes; rename lets a save be written to a temporary file and swapped in whole (see the cartridge model). Large ROMs want partial reads. |
+| **Storage** | **Added create/write/remove/rename, and contiguous files rewritten sector by sector without blocking** | Battery saves. The ordinary file calls block for 6-30 ms, which is why a save uses the non-blocking `hal_storage_extent_*` calls (DEVNOTES #130). Seek was never needed. |
 | **Memory** *(new)* | **A small allocation contract with a fast/bulk hint** | Cartridge ROMs outgrow SRAM (see Feasibility). Today PSRAM placement is `#ifdef`'d inside individual machines (btime, galaga, lrescue, invaders). This moves that decision into the board layer, where it belongs. |
 
 ## Controls
@@ -392,14 +392,22 @@ is also the natural shape for the pad bitmask.
      PicoPlus's NES dirty flag (`SRAMwritten`) is the same idea, but they
      flush only on exit or menu-open; we have no menu, so quiet is the
      trigger.
-   - **Never leave a half-written save.** Write to a temporary file, then
-     rename it over the old one, so a power cut mid-write leaves the
-     previous save intact rather than a corrupt one.
-   - **The one difference from real hardware:** a battery-backed cart
-     keeps a save the instant the game writes it. Here, pulling power
-     within about a second of an in-game save could lose that save,
-     leaving the previous one. That's the cost of not writing SD on every
-     byte, and it's worth stating in the README.
+   - ~~**Never leave a half-written save.** Write to a temporary file,
+     then rename it over the old one.~~ **Replaced, as built (DEVNOTES
+     #130).** Measured on the Fruit Jam, file operations block for 6-13 ms
+     each and single 512-byte writes for up to 30 ms, against ~2.2 ms of
+     queued picture, so temp-plus-rename would put red lines on screen at
+     every save. Instead (decided 2026-09-25) the `.sav` is made full-size
+     and contiguous at boot and **rewritten in place**, sector by sector,
+     polling the card's busy state so nothing ever blocks. It stays a
+     standard `.sav`, interchangeable with PC emulators.
+   - **The difference from real hardware:** a battery-backed cart keeps a
+     save the instant the game writes it. Here the save reaches the card
+     about a second after the game's last write, and takes ~0.5 s to write,
+     so pulling power in that window can lose the new save, or leave it
+     half old and half new. Games guard against that themselves (Link's
+     Awakening checksums each of its three files). Worth stating in the
+     README.
    - **Out of scope:** real-time clocks in carts (e.g. Game Boy MBC3, used
      by Pokémon Gold/Silver). Those are a separate feature, not save RAM.
 7. **The ROM goes to PSRAM at boot.** Both target boards have PSRAM, so we
@@ -633,7 +641,7 @@ project's hardware-verified standard.
 |-------|-------|-----------|
 | **0. Groundwork** | ~~`dot_a_linkage=true` and the I2S file rename it requires~~ (**done**, PR #22). `HAL_BTN_ACTION2` / `HAL_BTN_ACTION3` on the Fruit Jam (GPIO 42 / 41), and as `false` on the Feather, needed before Phase 1a. Storage write/seek/rename and the memory contract, needed only from Phase 1b. The `nm` release check in the `extras/dist/` build, needed once the first GPL core lands. | The two new Fruit Jam buttons read correctly over serial, and the arcade games are unaffected. Later: SelfTest sketches for SD write/readback and PSRAM allocate/fill/verify; the `nm` check passes on every arcade binary. |
 | **1a. Game Boy, Tetris** | Upstream Peanut-GB + minigb_apu (MIT). Host harness first (`extras/tools/gb_host`). `src/cart/` loader, 1× centered video, audio, input, rotation 0 default. Tetris is 32 KB with no memory-bank chip and no battery, so no PSRAM and no SD writes. | blargg's `cpu_instrs` pass on the host (`dmg-acid2` recorded). Tetris plays at 60 fps with sound on the Fruit Jam, in all four rotations, with no queue starvation. All 14 arcade builds still link identical symbols. |
-| **1b. Game Boy, bank-switched carts** | MBC1/3/5, ROMs in PSRAM, battery saves through the new storage write path. mooneye results recorded but not required (see [Why Peanut-GB, not SameBoy](#why-peanut-gb-not-sameboy)). | A save survives a power cycle on hardware. A compatibility list exists. |
+| **1b. Game Boy, bank-switched carts** (**done** 2026-09-25: DEVNOTES #129, #130) | MBC1/3/5, ROMs in PSRAM, battery saves through the new storage write path. mooneye results recorded but not required (see [Why Peanut-GB, not SameBoy](#why-peanut-gb-not-sameboy)). | A save survives a power cycle on hardware. A compatibility list exists. |
 | **2. NES** | Port InfoNES onto the HAL (the first GPL core): PicoDVI video at 252 MHz, our audio and input, console geometry. InfoNES brings its mappers with it, so there's no mapper-by-mapper build-up. | blargg's NES CPU tests pass on the host harness. Super Mario Bros. (NROM) and an MMC3 game run at 60 fps on the Fruit Jam with sound, **in all four rotations**. The `nm` check passes on every arcade binary. |
 | **3. SMS / Game Gear** | Port SMS Plus **with its Z80 replaced by our `src/cpu/z80/`** | The license table shows no non-commercial files left. One title per system runs at 60 fps. |
 | **4. Feather ESP32** | Game Boy and NES on the second board, which is the part of our case PicoPlus doesn't cover | Both run on hardware, including a save over the shared SPI bus (see Risks) |
@@ -647,7 +655,20 @@ Tested on the Fruit Jam, in `examples/Consoles/gameboy_fruitjam`.
 |-----------|---------------------|-----|--------|
 | Tetris | 0x00, ROM only | 32 KB | Plays, with sound, in all four rotations (DEVNOTES #127) |
 | Kirby's Dream Land | 0x01, MBC1 | 256 KB | Plays; its level-load screen needed the halt-yield fix (DEVNOTES #128) |
-| The Legend of Zelda: Link's Awakening (DMG, v1.2) | 0x03, MBC1 + RAM + battery | 512 KB | Plays from PSRAM (DEVNOTES #129). Battery saves not yet persisted (Phase 1b, second half) |
+| The Legend of Zelda: Link's Awakening (DMG, v1.2) | 0x03, MBC1 + RAM + battery | 512 KB | Plays from PSRAM (DEVNOTES #129). Saves persist across a power cycle, with no effect on the picture (DEVNOTES #130) |
+
+### Later: Game Boy colour palettes
+
+To explore (requested 2026-09-25): the colour palettes many Game Boy
+emulators offer in place of the four greys, such as the original DMG's
+green, the Game Boy Pocket's neutral greys, and the Super Game Boy and Game
+Boy Color built-in palettes that recolour DMG games. The renderer already
+maps each pixel's shade (0-3) through a four-entry RGB565 table
+(`gameboy_video.cpp`), so a palette is at heart a different table. The
+design questions are which palettes to offer, how to choose one (a button,
+a build option, or per cartridge), and whether to go as far as the Game
+Boy Color's per-palette recolouring, which uses the bits above the shade
+that Peanut-GB reports with each pixel.
 
 ## What changes in how the project works
 

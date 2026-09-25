@@ -10,6 +10,7 @@
 #include "gameboy_core.h"
 #include "gameboy_video.h"
 #include "gameboy_audio.h"
+#include "gameboy_save.h"
 #include "cart/cart_loader.h"
 #include "hal/arcade_hal_video.h"
 #include "hal/arcade_hal_storage.h"
@@ -77,15 +78,21 @@ bool gameboy_load_cart(gameboy_system *sys, uint16_t *out_error_color) {
                                              : GAMEBOY_BOOT_READ_ERROR,
                     out_error_color);
     }
-    hal_storage_unmount(); // the card is never touched again after boot
-
     sys->cart_size = info.size;
     sys->cart_type = info.size > 0x147u ? g_rom[0x147] : 0;
     // The same header check the real boot ROM makes before it will run a
     // cartridge, plus whether the core supports its memory-bank chip.
     const gameboy_core_status_t cs = gameboy_core_init(g_rom, info.size);
-    if (cs == GAMEBOY_CORE_BAD_CHECKSUM) return fail(sys, GAMEBOY_BOOT_BAD_CHECKSUM, out_error_color);
-    if (cs != GAMEBOY_CORE_OK)           return fail(sys, GAMEBOY_BOOT_UNSUPPORTED, out_error_color);
+    if (cs != GAMEBOY_CORE_OK) {
+        hal_storage_unmount();
+        return fail(sys, cs == GAMEBOY_CORE_BAD_CHECKSUM ? GAMEBOY_BOOT_BAD_CHECKSUM
+                                                          : GAMEBOY_BOOT_UNSUPPORTED,
+                    out_error_color);
+    }
+
+    // A battery cartridge loads its .sav and keeps storage mounted for later
+    // saves (gameboy_save.h); anything else never touches the card again.
+    if (!gameboy_save_init(sys->cart_name)) hal_storage_unmount();
     memcpy(sys->cart_title, gameboy_core_title(), sizeof sys->cart_title);
 
     gameboy_audio_init();
@@ -174,6 +181,11 @@ void gameboy_run_frame(gameboy_system *sys) {
     }
     while (hal_video_valid_level() < AUDIO_HEADROOM) emit_line(sys);
     gameboy_audio_frame();
+    // One save step at most (a 512-byte sector, ~0.35 ms on the Fruit Jam),
+    // after its own top-up: stacked on the audio burst it would otherwise
+    // leave the queue only a few lines deep.
+    while (hal_video_valid_level() < AUDIO_HEADROOM) emit_line(sys);
+    gameboy_save_frame();
     g_swap_pending = true;
     while (g_swap_pending) emit_line(sys);
 }
