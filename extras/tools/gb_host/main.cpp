@@ -83,6 +83,7 @@ int main(int argc, char **argv) {
     unsigned frames = 600;
     int rotation = 0;
     bool mirror = false;
+    int palette = GAMEBOY_PALETTE_DEFAULT;
     std::vector<press_t> presses;
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
@@ -93,6 +94,14 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--wav") && i + 1 < argc) wav_path = argv[++i];
         else if (!strcmp(a, "--rotation") && i + 1 < argc) rotation = atoi(argv[++i]);
         else if (!strcmp(a, "--mirror")) mirror = true;
+        else if (!strcmp(a, "--palette") && i + 1 < argc) {
+            const char *n = argv[++i];
+            palette = !strcmp(n, "green")  ? GAMEBOY_PALETTE_DMG_GREEN
+                    : !strcmp(n, "greys")  ? GAMEBOY_PALETTE_GREYS
+                    : !strcmp(n, "pocket") ? GAMEBOY_PALETTE_POCKET
+                    : !strcmp(n, "gbc")    ? GAMEBOY_PALETTE_GBC : -1;
+            if (palette < 0) { fprintf(stderr, "bad --palette %s (green greys pocket gbc)\n", n); return 2; }
+        }
         else if (!strcmp(a, "--press") && i + 1 < argc) {
             // BUTTON@FROM-TO, frames inclusive; buttons are the Game Boy's
             // own names: up down left right a b start select
@@ -104,7 +113,8 @@ int main(int argc, char **argv) {
             presses.push_back({ name, from, to });
         } else {
             fprintf(stderr, "usage: %s --rom DIR [--frames N] [--ppm-at F1,F2] [--out DIR]\n"
-                            "       [--press BUTTON@FROM-TO]... [--rotation 0-3] [--mirror] [--wav FILE]\n",
+                            "       [--press BUTTON@FROM-TO]... [--rotation 0-3] [--mirror] [--wav FILE]\n"
+                            "       [--palette green|greys|pocket|gbc]\n",
                     argv[0]);
             return 2;
         }
@@ -124,6 +134,10 @@ int main(int argc, char **argv) {
         return 1;
     }
     g_sys.rotation = (uint8_t)(rotation & 3);
+    g_sys.mirror_x = mirror; // the board has no mirror button on the Game Boy
+    gameboy_set_palette(&g_sys, (uint8_t)palette);
+    printf("palette: %s (Game Boy Color combination %u)\n",
+           gameboy_palette_name((gameboy_palette_t)g_sys.palette), g_sys.gbc_combo);
 
     FILE *wav = nullptr;
     uint32_t wav_bytes = 0;
@@ -135,16 +149,13 @@ int main(int argc, char **argv) {
 
     uint32_t underruns = 0, overruns = 0, min_depth = 0xFFFFFFFFu, max_depth = 0;
     double owed = 0.0; // samples the "ISR" owes, at 22050/s of emulated time
-    bool prev_mirror = false;
     for (unsigned f = 1; f <= frames; f++) {
-        const bool m = mirror && f == 1; // toggle once, on the first frame
         gameboy_input_update(&g_sys,
                              held(presses, "up", f), held(presses, "down", f),
                              held(presses, "left", f), held(presses, "right", f),
                              held(presses, "a", f), held(presses, "b", f),
                              held(presses, "start", f), held(presses, "select", f),
-                             false, m && !prev_mirror);
-        prev_mirror = m;
+                             false, false);
         gameboy_run_frame(&g_sys);
 
         owed += (double)GAMEBOY_AUDIO_SAMPLE_RATE / 60.0;

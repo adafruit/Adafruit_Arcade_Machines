@@ -20,7 +20,10 @@
 //   D-pad   UP A3, DOWN A4, LEFT D8, RIGHT D9
 //   A       D10 (SHOOT)        B       A2 (ACTION2)
 //   Start   D6  (START1)       Select  A5 (COIN)
-//   Button 2 ROTATE cycles the picture's rotation; Button 3 MIRROR flips it.
+//   Button 2 ROTATE cycles the picture's rotation.
+//   Button 3 MIRROR cycles the palette: DMG green (the default), Greys,
+//   Pocket, Game Boy Color (chosen by title, as a Game Boy Color would).
+//   There is no mirror toggle on the Game Boy for now.
 //   D7 (START2) and A1 (ACTION3) are unused on the Game Boy.
 //
 // Boot error screens: RED no card, YELLOW no .gb in /cart, MAGENTA the ROM
@@ -35,6 +38,7 @@
 #include <machines/gb/gameboy_audio.h>
 #include <machines/gb/gameboy_core.h>
 #include <machines/gb/gameboy_save.h>
+#include <machines/gb/gameboy_palette.h>
 #include <boards/fruitjam/board_config_fruitjam.h>
 
 static gameboy_system  g_system;
@@ -58,6 +62,11 @@ static void print_cart(void) {
     Serial.print(", ROM buffer ");
     Serial.print(g_system.rom_buffer_size / 1024u);
     Serial.println(" KB in PSRAM)");
+    Serial.print("[gameboy] palette ");
+    Serial.print(gameboy_palette_name((gameboy_palette_t)g_system.palette));
+    Serial.print("; Game Boy Color combination ");
+    Serial.print(g_system.gbc_combo);
+    Serial.println(g_system.gbc_combo ? " (by title)" : " (the default)");
 }
 
 void setup() {
@@ -109,7 +118,7 @@ void loop() {
     bool start  = hal_input_read(HAL_BTN_START1);
     bool select = hal_input_read(HAL_BTN_COIN);
     bool rotate = hal_input_read(HAL_BTN_ROTATE);
-    bool mirror = hal_input_read(HAL_BTN_MIRROR);
+    bool palette_next = hal_input_read(HAL_BTN_MIRROR);
 
 #ifdef TEST_AUTOSTART
     // Unattended bring-up: press Start on the title screen, then Start
@@ -124,7 +133,13 @@ void loop() {
 #endif
 
     gameboy_input_update(&g_system, up, down, left, right, a, b, start, select,
-                         rotate, mirror);
+                         rotate, palette_next);
+    static uint8_t palette_shown = 0xFF;
+    if (g_system.palette != palette_shown) {
+        palette_shown = g_system.palette;
+        Serial.print("[gameboy] palette ");
+        Serial.println(gameboy_palette_name((gameboy_palette_t)palette_shown));
+    }
 
     // Frame-budget instrument, in the same format as the arcade sketches.
     // `work` is the real cost: frame minus the time spent blocked waiting
@@ -159,8 +174,8 @@ void loop() {
         Serial.print(work_n ? blk_sum / work_n : 0);
         Serial.print("us, rot ");
         Serial.print((int)g_system.rotation);
-        Serial.print(", mirror ");
-        Serial.print((int)g_system.mirror_x);
+        Serial.print(", palette ");
+        Serial.print((int)g_system.palette);
         Serial.print(", starve ");
         Serial.print(hal_video_take_starve_count());
         Serial.print(", minq ");

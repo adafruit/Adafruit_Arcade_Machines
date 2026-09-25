@@ -21,6 +21,7 @@ btime_host/      src/machines/btime    (2x 6502, one of them encrypted)
 m6502_test/      ArcadeCPU_M6502 conformance runner -- NOT a machine harness
 gb_test/         Game Boy core (Peanut-GB + minigb_apu) conformance runner -- NOT a machine harness
 gb_host/         src/machines/gb      (the Game Boy console: SD card as cartridge)
+gb_palettes/     generates src/machines/gb/gameboy_palette_gbc.h from SameBoy's boot ROM source
 geom_test/       arcade_video_geom conformance runner -- NOT a machine harness
 ```
 
@@ -92,6 +93,11 @@ can get past a title screen:
 It exits nonzero on any core error or audio underrun or overrun, and an
 empty folder or a ROM with a bad header shows the same yellow or magenta
 boot error the board would.
+
+`--palette green|greys|pocket|gbc` picks the palette; the default is DMG
+green, as on the board. **Compare regression images with `--palette
+greys`**: the greys are the renderer's original four levels, the same ones
+dmg-acid2's reference image uses.
 
 Each harness searches upward for its own `*_assets/` directory, or takes an
 explicit path (`--rom DIR` for the two Namco games, `--assets DIR` for
