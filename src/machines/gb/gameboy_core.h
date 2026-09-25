@@ -59,8 +59,9 @@ typedef enum {
 } gameboy_core_status_t;
 
 // Binds the core to a ROM already in memory (the pointer is kept, not
-// copied) and resets it. `rom` must stay valid and must be in RAM: the core
-// reads it byte by byte through a callback on every opcode fetch.
+// copied) and resets it. `rom` must stay valid. It may be in PSRAM: the
+// first 16 KB (bank 0, which every game uses constantly) is copied into an
+// SRAM mirror here, and only switchable-bank reads go to `rom` itself.
 gameboy_core_status_t gameboy_core_init(const uint8_t *rom, uint32_t rom_size);
 
 // The cartridge's 16-character title from its header, NUL-terminated.

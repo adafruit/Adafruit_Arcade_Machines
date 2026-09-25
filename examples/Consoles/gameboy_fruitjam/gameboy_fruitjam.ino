@@ -41,15 +41,6 @@ static volatile bool   g_video_ready = false;
 static bool            g_cart_ok     = false;
 static uint16_t        g_error_color = 0;
 
-static const char *error_name(uint16_t c) {
-    switch (c) {
-    case GAMEBOY_COLOR_ERROR_NO_CARD:  return "RED: no SD card, or it won't mount";
-    case GAMEBOY_COLOR_ERROR_NO_ROM:   return "YELLOW: no .gb file in /cart";
-    case GAMEBOY_COLOR_ERROR_BAD_CART: return "MAGENTA: bad header, unsupported cartridge type, or too big";
-    default:                           return "unknown";
-    }
-}
-
 static void print_cart(void) {
     Serial.print("[gameboy] cart /cart/");
     Serial.print(g_system.cart_name);
@@ -63,15 +54,19 @@ static void print_cart(void) {
     Serial.print(g_system.cart_matches);
     Serial.print(" candidate file(s) in /cart, mounted on attempt ");
     Serial.print(g_system.mount_attempts);
-    Serial.println(")");
+    Serial.print(", ROM buffer ");
+    Serial.print(g_system.rom_buffer_size / 1024u);
+    Serial.println(" KB in PSRAM)");
 }
 
 void setup() {
     Serial.begin(115200);
 
     // PicoDVI's 640x480 mode requires the system clock to equal the TMDS bit
-    // clock (252 MHz) -- before any other peripheral init.
-    set_sys_clock_khz(252000, true);
+    // clock (252 MHz) -- before any other peripheral init. The board's own
+    // version retimes the PSRAM that holds the cartridge ROM to match; a
+    // bare set_sys_clock_khz() leaves it running too fast (DEVNOTES #129).
+    fruitjam_set_sys_clock_khz(252000);
 
     gameboy_init(&g_system);
 #ifdef TEST_ROTATION
@@ -95,7 +90,7 @@ void loop() {
         static uint32_t n = 0;
         if ((n++ % 120u) == 0) {
             Serial.print("[gameboy] boot error, ");
-            Serial.print(error_name(g_error_color));
+            Serial.print(gameboy_boot_error_text(g_system.boot_error));
             Serial.print(" (mount attempts: ");
             Serial.print(g_system.mount_attempts);
             Serial.println(")");

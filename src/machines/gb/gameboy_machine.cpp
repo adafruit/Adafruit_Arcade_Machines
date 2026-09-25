@@ -14,10 +14,33 @@
 #include "hal/arcade_hal_video.h"
 #include "hal/arcade_hal_storage.h"
 #include "hal/arcade_hal_input.h"
+#include "hal/arcade_hal_memory.h"
 
-// The cartridge ROM, in SRAM: the core reads it through a callback on every
-// opcode fetch, and a flash or PSRAM stall there would cost every frame.
-static uint8_t g_rom[GAMEBOY_ROM_MAX];
+// The cartridge ROM, in bulk memory (see GAMEBOY_ROM_MAX). Allocated once,
+// at boot.
+static uint8_t *g_rom = nullptr;
+
+const char *gameboy_boot_error_text(gameboy_boot_error_t e) {
+    switch (e) {
+    case GAMEBOY_BOOT_OK:              return "no error";
+    case GAMEBOY_BOOT_NO_CARD:         return "RED: no SD card, or it won't mount";
+    case GAMEBOY_BOOT_NO_ROM:          return "YELLOW: no .gb file in /cart";
+    case GAMEBOY_BOOT_TOO_BIG:         return "MAGENTA: the ROM is bigger than the ROM buffer";
+    case GAMEBOY_BOOT_READ_ERROR:      return "MAGENTA: the ROM file could not be read";
+    case GAMEBOY_BOOT_BAD_CHECKSUM:    return "MAGENTA: the ROM failed its header checksum";
+    case GAMEBOY_BOOT_UNSUPPORTED:     return "MAGENTA: unsupported cartridge type";
+    case GAMEBOY_BOOT_NO_BULK_MEMORY:  return "MAGENTA: no PSRAM available for the ROM";
+    }
+    return "unknown";
+}
+
+static bool fail(gameboy_system *sys, gameboy_boot_error_t e, uint16_t *out_error_color) {
+    sys->boot_error = e;
+    *out_error_color = e == GAMEBOY_BOOT_NO_CARD ? GAMEBOY_COLOR_ERROR_NO_CARD
+                     : e == GAMEBOY_BOOT_NO_ROM  ? GAMEBOY_COLOR_ERROR_NO_ROM
+                                                 : GAMEBOY_COLOR_ERROR_BAD_CART;
+    return false;
+}
 
 void gameboy_init(gameboy_system *sys) {
     memset(sys, 0, sizeof *sys);
@@ -27,21 +50,32 @@ void gameboy_init(gameboy_system *sys) {
 
 bool gameboy_load_cart(gameboy_system *sys, uint16_t *out_error_color) {
     static const char *const kExts[] = { ".gb", nullptr };
+
+    // The buffer comes out of bulk memory; hal_storage has no size query,
+    // so it is sized for the largest cartridge rather than this one.
+    if (!g_rom) {
+        size_t cap = GAMEBOY_ROM_MAX;
+        const size_t free_bulk = hal_mem_bulk_free();
+        const size_t margin = 64u * 1024u;
+        if (free_bulk < cap + margin) cap = free_bulk > margin ? free_bulk - margin : 0;
+        g_rom = cap ? (uint8_t *)hal_mem_bulk_alloc(cap) : nullptr;
+        if (!g_rom) return fail(sys, GAMEBOY_BOOT_NO_BULK_MEMORY, out_error_color);
+        sys->rom_buffer_size = (uint32_t)cap;
+    }
+
     cart_info_t info;
-    const cart_status_t st = cart_load(kExts, g_rom, sizeof g_rom, &info);
+    const cart_status_t st = cart_load(kExts, g_rom, sys->rom_buffer_size, &info);
     memcpy(sys->cart_name, info.name, sizeof sys->cart_name);
     sys->cart_matches = info.matches;
     sys->mount_attempts = info.mount_attempts;
 
-    if (st == CART_NO_STORAGE) {
-        *out_error_color = GAMEBOY_COLOR_ERROR_NO_CARD;
-        return false;
-    }
+    if (st == CART_NO_STORAGE) return fail(sys, GAMEBOY_BOOT_NO_CARD, out_error_color);
     if (st != CART_OK) {
         hal_storage_unmount();
-        *out_error_color = (st == CART_NO_ROM) ? GAMEBOY_COLOR_ERROR_NO_ROM
-                                               : GAMEBOY_COLOR_ERROR_BAD_CART;
-        return false;
+        return fail(sys, st == CART_NO_ROM   ? GAMEBOY_BOOT_NO_ROM
+                       : st == CART_TOO_BIG  ? GAMEBOY_BOOT_TOO_BIG
+                                             : GAMEBOY_BOOT_READ_ERROR,
+                    out_error_color);
     }
     hal_storage_unmount(); // the card is never touched again after boot
 
@@ -49,10 +83,9 @@ bool gameboy_load_cart(gameboy_system *sys, uint16_t *out_error_color) {
     sys->cart_type = info.size > 0x147u ? g_rom[0x147] : 0;
     // The same header check the real boot ROM makes before it will run a
     // cartridge, plus whether the core supports its memory-bank chip.
-    if (gameboy_core_init(g_rom, info.size) != GAMEBOY_CORE_OK) {
-        *out_error_color = GAMEBOY_COLOR_ERROR_BAD_CART;
-        return false;
-    }
+    const gameboy_core_status_t cs = gameboy_core_init(g_rom, info.size);
+    if (cs == GAMEBOY_CORE_BAD_CHECKSUM) return fail(sys, GAMEBOY_BOOT_BAD_CHECKSUM, out_error_color);
+    if (cs != GAMEBOY_CORE_OK)           return fail(sys, GAMEBOY_BOOT_UNSUPPORTED, out_error_color);
     memcpy(sys->cart_title, gameboy_core_title(), sizeof sys->cart_title);
 
     gameboy_audio_init();
@@ -154,3 +187,4 @@ void gameboy_draw_error_frame(uint16_t color) {
 }
 
 uint32_t gameboy_core_errors(void) { return gameboy_core_error_count(); }
+

@@ -583,8 +583,9 @@ Jam first, which is a board-layer project in its own right.
 
 **To verify before relying on it:**
 
-- [ ] The Fruit Jam's PSRAM size. PicoPlus detects it at runtime, so their
-      code doesn't settle this.
+- [x] ~~The Fruit Jam's PSRAM size.~~ **8 MB** (`psram_length=0x800000` in
+      arduino-pico's boards.txt). It must be retimed after the 252 MHz clock
+      change, or it returns corrupt data (DEVNOTES #129).
 - [x] ~~Whether the RP2350 reaches PSRAM through the same QMI/XIP cache path
       as flash.~~ **Yes.** PicoPlus maps it at `0x11000000` on XIP chip
       select 1, and their Genesis report documents flash and PSRAM
@@ -646,6 +647,7 @@ Tested on the Fruit Jam, in `examples/Consoles/gameboy_fruitjam`.
 |-----------|---------------------|-----|--------|
 | Tetris | 0x00, ROM only | 32 KB | Plays, with sound, in all four rotations (DEVNOTES #127) |
 | Kirby's Dream Land | 0x01, MBC1 | 256 KB | Plays; its level-load screen needed the halt-yield fix (DEVNOTES #128) |
+| The Legend of Zelda: Link's Awakening (DMG, v1.2) | 0x03, MBC1 + RAM + battery | 512 KB | Plays from PSRAM (DEVNOTES #129). Battery saves not yet persisted (Phase 1b, second half) |
 
 ## What changes in how the project works
 

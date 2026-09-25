@@ -108,6 +108,14 @@ extern "C" void host_audio_fill(int32_t *out, int count) {
     if (g_audio_cb) g_audio_cb(out, count);
 }
 
+// --- memory --------------------------------------------------------------
+// Bulk memory is plain heap on the host; it has no PSRAM and no XIP cache,
+// so whatever a machine keeps there costs nothing extra here. What that
+// costs on a board is a device question.
+#include "arcade_hal_memory.h"
+void *hal_mem_bulk_alloc(size_t size) { return malloc(size); }
+size_t hal_mem_bulk_free(void) { return (size_t)64u * 1024u * 1024u; }
+
 // --- storage -------------------------------------------------------------
 
 struct hal_file { FILE *fp; };
