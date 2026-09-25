@@ -92,6 +92,10 @@ uint32_t gameboy_core_audio_frame(int16_t *out);
 // after each one; the count is for a heartbeat.
 uint32_t gameboy_core_error_count(void);
 
+// With GAMEBOY_CORE_PROFILE defined: the longest single core call and how
+// many took over 1 ms, since the previous call. Zeros otherwise.
+void gameboy_core_take_step_profile(uint32_t *max_us, uint32_t *over_1ms);
+
 #ifdef __cplusplus
 }
 #endif

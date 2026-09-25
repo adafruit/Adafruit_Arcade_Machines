@@ -132,7 +132,12 @@ void gameboy_run_frame(gameboy_system *sys) {
     gameboy_core_set_pad(sys->pad);
     gameboy_core_frame_begin();
     while (!gameboy_core_step(STEP_BATCH)) {
-        if (hal_video_valid_level() < QUEUE_LOW) emit_line(sys);
+        // TOP UP, don't add one. A batch of running instructions is a few
+        // microseconds, so one line per check used to keep pace -- but a
+        // halted call can be ~200 us, three lines of display time, and
+        // adding one line per check then lost two lines per round trip and
+        // drained the queue to 1 on Kirby's load screen (DEVNOTES #128).
+        while (hal_video_valid_level() < QUEUE_LOW) emit_line(sys);
     }
     while (hal_video_valid_level() < AUDIO_HEADROOM) emit_line(sys);
     gameboy_audio_frame();

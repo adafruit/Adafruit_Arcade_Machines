@@ -40,6 +40,10 @@ void audio_write(uint16_t addr, uint8_t val) { minigb_apu_audio_write(&g_apu, ad
 #define ENABLE_LCD 1
 #include "core/peanut_gb.h"
 
+// After the vendored code, not before: arch.h pulls in the Pico SDK, whose
+// MAX/MIN would otherwise be redefined by minigb_apu.c.inc's own.
+#include "arch/arch.h"
+
 _Static_assert(GAMEBOY_PAD_A == JOYPAD_A && GAMEBOY_PAD_B == JOYPAD_B &&
                GAMEBOY_PAD_SELECT == JOYPAD_SELECT && GAMEBOY_PAD_START == JOYPAD_START &&
                GAMEBOY_PAD_RIGHT == JOYPAD_RIGHT && GAMEBOY_PAD_LEFT == JOYPAD_LEFT &&
@@ -120,12 +124,36 @@ const char *gameboy_core_title(void) { return g_title; }
 
 void gameboy_core_frame_begin(void) { g_gb.gb_frame = false; }
 
+// GAMEBOY_CORE_PROFILE: time every single core call. Off by default, since
+// it reads the clock twice per instruction.
+static uint32_t g_step_us_max, g_step_long;
+
+// A halted CPU ends the batch early. One running instruction is a few
+// microseconds, so a batch of them is short; one HALTED call is up to
+// PEANUT_GB_HALT_YIELD_CYCLES of emulated time (core/VENDORED.md), and
+// sixteen of those in a row covered a whole frame without the caller ever
+// checking the video queue -- which is how Kirby's load screen still
+// starved after the core patch had cut every single call to under 230 us.
 bool gameboy_core_step(uint32_t max_instructions) {
     while (max_instructions--) {
         if (g_gb.gb_frame) return true;
+#ifdef GAMEBOY_CORE_PROFILE
+        const uint64_t t0 = ARCADE_TIME_US64();
         __gb_step_cpu(&g_gb);
+        const uint32_t us = (uint32_t)(ARCADE_TIME_US64() - t0);
+        if (us > g_step_us_max) g_step_us_max = us;
+        if (us > 1000u) g_step_long++;
+#else
+        __gb_step_cpu(&g_gb);
+#endif
+        if (g_gb.gb_halt) break;
     }
     return g_gb.gb_frame;
+}
+
+void gameboy_core_take_step_profile(uint32_t *max_us, uint32_t *over_1ms) {
+    *max_us = g_step_us_max; *over_1ms = g_step_long;
+    g_step_us_max = 0; g_step_long = 0;
 }
 
 const gameboy_row_t *gameboy_core_front(void) { return g_fb[g_back ^ 1u]; }

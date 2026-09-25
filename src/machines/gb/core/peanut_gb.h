@@ -105,6 +105,13 @@
 # define PEANUT_GB_USE_INTRINSICS 1
 #endif
 
+/* ADAFRUIT PATCH (halt yield): the longest a halted CPU runs inside one
+ * __gb_step_cpu() call before returning, in CPU cycles. 4560 is ten LCD
+ * lines. See the halt loop at the end of __gb_step_cpu() and VENDORED.md. */
+#ifndef PEANUT_GB_HALT_YIELD_CYCLES
+# define PEANUT_GB_HALT_YIELD_CYCLES 4560
+#endif
+
 /* Only include function prototypes. At least one file must *not* have this
  * defined. */
 // #define PEANUT_GB_HEADER_ONLY
@@ -657,6 +664,9 @@ struct gb_s
 	struct cpu_registers_s cpu_reg;
 	//struct gb_registers_s gb_reg;
 	struct count_s counter;
+	/* ADAFRUIT PATCH (halt yield): the step size a yielded halt resumes
+	 * with. See the halt loop at the end of __gb_step_cpu(). */
+	uint_fast16_t halt_next_cycles;
 
 	/* TODO: Allow implementation to allocate WRAM, VRAM and Frame Buffer. */
 	uint8_t wram[WRAM_SIZE];
@@ -1792,6 +1802,8 @@ void __gb_step_cpu(struct gb_s *gb)
 {
 	uint8_t opcode;
 	uint_fast16_t inst_cycles;
+	/* ADAFRUIT PATCH (halt yield): cycles spent halted in this call. */
+	uint_fast32_t halt_spent = 0;
 	static const uint8_t op_cycles[0x100] =
 	{
 		/* *INDENT-OFF* */
@@ -1815,6 +1827,18 @@ void __gb_step_cpu(struct gb_s *gb)
 		/* *INDENT-ON* */
 	};
 	static const uint_fast16_t TAC_CYCLES[4] = {1024, 16, 64, 256};
+
+	/* ADAFRUIT PATCH (halt yield), part 2 of 3: resume a halt that
+	 * yielded (part 3) by re-entering the timing loop with the step size it
+	 * was about to use, so a yield only splits upstream's loop across two
+	 * calls. Not treated as a wake-up: the comment below assumes a halt
+	 * only ever returns once an interrupt has occurred. See VENDORED.md. */
+	if(gb->gb_halt &&
+			!(gb->hram_io[IO_IF] & gb->hram_io[IO_IE] & ANY_INTR))
+	{
+		inst_cycles = gb->halt_next_cycles;
+		goto halt_resume;
+	}
 
 	/* Handle interrupts */
 	/* If gb_halt is positive, then an interrupt must have occurred by the
@@ -3273,8 +3297,12 @@ void __gb_step_cpu(struct gb_s *gb)
 		PGB_UNREACHABLE();
 	}
 
+	/* ADAFRUIT PATCH (halt yield), part 1 of 3: target for part 2. */
+halt_resume:
 	do
 	{
+		halt_spent += inst_cycles; /* ADAFRUIT PATCH (halt yield) */
+
 		/* DIV register timing */
 		gb->counter.div_count += inst_cycles;
 		while(gb->counter.div_count >= DIV_CYCLES)
@@ -3525,7 +3553,16 @@ void __gb_step_cpu(struct gb_s *gb)
 			if (gb->counter.lcd_count < LCD_MODE3_LCD_DRAW_MIN_DURATION)
 				inst_cycles = LCD_MODE3_LCD_DRAW_MIN_DURATION - gb->counter.lcd_count;
 		}
-	} while(gb->gb_halt && (gb->hram_io[IO_IF] & gb->hram_io[IO_IE]) == 0);
+	/* ADAFRUIT PATCH (halt yield), part 3 of 3: also stop at a frame
+	 * boundary, and after PEANUT_GB_HALT_YIELD_CYCLES of halted time.
+	 * Upstream keeps looping while halted with nothing pending, and with
+	 * the LCD off no VBLANK interrupt ever ends it, so one call could hold
+	 * the CPU for over a millisecond. Part 2 resumes the wait. */
+	} while(gb->gb_halt && !gb->gb_frame &&
+			halt_spent < PEANUT_GB_HALT_YIELD_CYCLES &&
+			(gb->hram_io[IO_IF] & gb->hram_io[IO_IE]) == 0);
+	/* ADAFRUIT PATCH (halt yield): the step the next iteration would use. */
+	gb->halt_next_cycles = inst_cycles;
 	/* If halted, loop until an interrupt occurs. */
 }
 
