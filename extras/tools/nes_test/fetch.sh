@@ -29,9 +29,11 @@ if [ ! -d "$HERE/cores/nofrendo" ]; then
     git -C "$tmp" checkout -q FETCH_HEAD -- retro-core/components/nofrendo
     mv "$tmp/retro-core/components/nofrendo" "$HERE/cores/nofrendo"
     rm -rf "$tmp"
-    # Our fixes, each found by a test ROM (see the patch headers).
-    for p in "$HERE"/patches/nofrendo-*.patch; do
-        patch -s -p1 -d "$HERE/cores/nofrendo" < "$p"
+    # Our fixes, each found by a test ROM, kept with the vendored copy
+    # (src/machines/nes/core/VENDORED.md). The includes patch goes too, so
+    # the spike and the library compile the same code.
+    for p in zp-wrap mmc1-surom includes; do
+        patch -s -p1 -d "$HERE/cores/nofrendo" < "$HERE/../../../src/machines/nes/core/nofrendo-$p.patch"
     done
 fi
 

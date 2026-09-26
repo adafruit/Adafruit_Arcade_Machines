@@ -43,10 +43,13 @@ path = "extras/tools/usb_gamepad_test/captures/*.log"
 SPDX-FileCopyrightText = "2026 John Park for Adafruit Industries"
 SPDX-License-Identifier = "MIT"
 
-# The NES spike's patches to nofrendo (extras/tools/nes_test/patches/): our
-# change plus a few lines of nofrendo's own code as diff context, so they
-# carry nofrendo's licence, version 2 of the GNU Library GPL.
+# Vendored NES core (src/machines/nes/core/VENDORED.md): nofrendo as
+# maintained in retro-go, with our three patches. nofrendo's own files say
+# LGPL-2 (Library GPL, version 2); retro-go's additions carry no header and
+# retro-go ships the component under the GPL version 2 (COPYING); LGPL-2.0
+# section 3 lets a copy be taken under the GPL version 2, so the directory
+# is declared GPL-2.0-only. Authors from its CREDITS file.
 [[annotations]]
-path = "extras/tools/nes_test/patches/*.patch"
-SPDX-FileCopyrightText = ["1998-2000 Matthew Conte", "2026 John Park for Adafruit Industries"]
-SPDX-License-Identifier = "LGPL-2.0-only"
+path = ["src/machines/nes/core/**/*.c", "src/machines/nes/core/**/*.h", "src/machines/nes/core/*.c", "src/machines/nes/core/*.h", "src/machines/nes/core/*.patch", "src/machines/nes/core/COPYING", "src/machines/nes/core/CREDITS"]
+SPDX-FileCopyrightText = ["1998-2000 Matthew Conte", "2000 Neil Stevens", "Firebug", "Benjamin C. W. Sittler", "The Mighty Mike Master", "Jeroen Domburg", "Alex Duchesne", "2026 John Park for Adafruit Industries"]
+SPDX-License-Identifier = "GPL-2.0-only"

@@ -1,0 +1,647 @@
+diff -ruN a/mappers/map000.c b/mappers/map000.c
+--- a/mappers/map000.c	2026-09-26 09:43:45
++++ b/mappers/map000.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ 
+ mapintf_t map0_intf =
+diff -ruN a/mappers/map001.c b/mappers/map001.c
+--- a/mappers/map001.c	2026-09-26 09:43:45
++++ b/mappers/map001.c	2026-09-26 09:43:46
+@@ -22,7 +22,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static uint8 regs[4];
+ static uint8 latch = 0;
+diff -ruN a/mappers/map002.c b/mappers/map002.c
+--- a/mappers/map002.c	2026-09-26 09:43:45
++++ b/mappers/map002.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ 
+ static void map_write(uint32 address, uint8 value)
+diff -ruN a/mappers/map003.c b/mappers/map003.c
+--- a/mappers/map003.c	2026-09-26 09:43:45
++++ b/mappers/map003.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ 
+ static void map_write(uint32 address, uint8 value)
+diff -ruN a/mappers/map004.c b/mappers/map004.c
+--- a/mappers/map004.c	2026-09-26 09:43:45
++++ b/mappers/map004.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static struct
+ {
+diff -ruN a/mappers/map005.c b/mappers/map005.c
+--- a/mappers/map005.c	2026-09-26 09:43:45
++++ b/mappers/map005.c	2026-09-26 09:43:46
+@@ -22,7 +22,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static uint8 prg_mode;
+ static uint8 chr_mode;
+diff -ruN a/mappers/map007.c b/mappers/map007.c
+--- a/mappers/map007.c	2026-09-26 09:43:45
++++ b/mappers/map007.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ 
+ static void map_write(uint32 address, uint8 value)
+diff -ruN a/mappers/map009.c b/mappers/map009.c
+--- a/mappers/map009.c	2026-09-26 09:43:45
++++ b/mappers/map009.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static uint8 latch[2];
+ static uint8 regs[4];
+diff -ruN a/mappers/map010.c b/mappers/map010.c
+--- a/mappers/map010.c	2026-09-26 09:43:45
++++ b/mappers/map010.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static uint8 latch[2];
+ static uint8 regs[4];
+diff -ruN a/mappers/map011.c b/mappers/map011.c
+--- a/mappers/map011.c	2026-09-26 09:43:45
++++ b/mappers/map011.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ 
+ static void map_write(uint32 address, uint8 value)
+diff -ruN a/mappers/map015.c b/mappers/map015.c
+--- a/mappers/map015.c	2026-09-26 09:43:45
++++ b/mappers/map015.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ 
+ static void map_write(uint32 address, uint8 value)
+diff -ruN a/mappers/map016.c b/mappers/map016.c
+--- a/mappers/map016.c	2026-09-26 09:43:45
++++ b/mappers/map016.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static struct
+ {
+diff -ruN a/mappers/map018.c b/mappers/map018.c
+--- a/mappers/map018.c	2026-09-26 09:43:45
++++ b/mappers/map018.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ #define  VRC_PBANK(bank, value, high) \
+ do { \
+diff -ruN a/mappers/map019.c b/mappers/map019.c
+--- a/mappers/map019.c	2026-09-26 09:43:45
++++ b/mappers/map019.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ #define RAM_AUTO_INCREMENT 0x80
+ #define RAM_ADDR_MASK 0x7F
+diff -ruN a/mappers/map020.c b/mappers/map020.c
+--- a/mappers/map020.c	2026-09-26 09:43:45
++++ b/mappers/map020.c	2026-09-26 09:43:46
+@@ -25,7 +25,7 @@
+ ** convenient place to hook into the memory map, sound, and save state systems.
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ #define FDS_CLOCK (NES_CPU_CLOCK_NTSC / 2)
+ #define SEEK_TIME 100 // 150
+diff -ruN a/mappers/map021.c b/mappers/map021.c
+--- a/mappers/map021.c	2026-09-26 09:43:45
++++ b/mappers/map021.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ #define VRC_VBANK(bank, value, high) \
+ { \
+diff -ruN a/mappers/map022.c b/mappers/map022.c
+--- a/mappers/map022.c	2026-09-26 09:43:45
++++ b/mappers/map022.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ 
+ static void map_write(uint32 address, uint8 value)
+diff -ruN a/mappers/map023.c b/mappers/map023.c
+--- a/mappers/map023.c	2026-09-26 09:43:45
++++ b/mappers/map023.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ #define VRC_VBANK(bank, value, high) \
+ { \
+diff -ruN a/mappers/map024.c b/mappers/map024.c
+--- a/mappers/map024.c	2026-09-26 09:43:45
++++ b/mappers/map024.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static struct
+ {
+diff -ruN a/mappers/map030.c b/mappers/map030.c
+--- a/mappers/map030.c	2026-09-26 09:43:45
++++ b/mappers/map030.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static bool switchable_screen = false;
+ 
+diff -ruN a/mappers/map031.c b/mappers/map031.c
+--- a/mappers/map031.c	2026-09-26 09:43:45
++++ b/mappers/map031.c	2026-09-26 09:43:46
+@@ -22,7 +22,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static const nsfheader_t *header;
+ static rom_t *cart;
+diff -ruN a/mappers/map032.c b/mappers/map032.c
+--- a/mappers/map032.c	2026-09-26 09:43:45
++++ b/mappers/map032.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static int select_c000 = 0;
+ 
+diff -ruN a/mappers/map033.c b/mappers/map033.c
+--- a/mappers/map033.c	2026-09-26 09:43:45
++++ b/mappers/map033.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ 
+ static void map_write(uint32 address, uint8 value)
+diff -ruN a/mappers/map034.c b/mappers/map034.c
+--- a/mappers/map034.c	2026-09-26 09:43:45
++++ b/mappers/map034.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ 
+ static void map_write(uint32 address, uint8 value)
+diff -ruN a/mappers/map040.c b/mappers/map040.c
+--- a/mappers/map040.c	2026-09-26 09:43:45
++++ b/mappers/map040.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static struct
+ {
+diff -ruN a/mappers/map041.c b/mappers/map041.c
+--- a/mappers/map041.c	2026-09-26 09:43:45
++++ b/mappers/map041.c	2026-09-26 09:43:46
+@@ -22,7 +22,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static uint8 register_low;
+ static uint8 register_high;
+diff -ruN a/mappers/map042.c b/mappers/map042.c
+--- a/mappers/map042.c	2026-09-26 09:43:45
++++ b/mappers/map042.c	2026-09-26 09:43:46
+@@ -22,7 +22,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static struct
+ {
+diff -ruN a/mappers/map046.c b/mappers/map046.c
+--- a/mappers/map046.c	2026-09-26 09:43:45
++++ b/mappers/map046.c	2026-09-26 09:43:46
+@@ -22,7 +22,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static uint32 prg_bank;
+ static uint32 chr_bank;
+diff -ruN a/mappers/map050.c b/mappers/map050.c
+--- a/mappers/map050.c	2026-09-26 09:43:45
++++ b/mappers/map050.c	2026-09-26 09:43:46
+@@ -22,7 +22,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static struct
+ {
+diff -ruN a/mappers/map064.c b/mappers/map064.c
+--- a/mappers/map064.c	2026-09-26 09:43:45
++++ b/mappers/map064.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static struct
+ {
+diff -ruN a/mappers/map065.c b/mappers/map065.c
+--- a/mappers/map065.c	2026-09-26 09:43:45
++++ b/mappers/map065.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static struct
+ {
+diff -ruN a/mappers/map066.c b/mappers/map066.c
+--- a/mappers/map066.c	2026-09-26 09:43:45
++++ b/mappers/map066.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ 
+ static void map_write(uint32 address, uint8 value)
+diff -ruN a/mappers/map070.c b/mappers/map070.c
+--- a/mappers/map070.c	2026-09-26 09:43:45
++++ b/mappers/map070.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static bool fourscreen = false;
+ 
+diff -ruN a/mappers/map071.c b/mappers/map071.c
+--- a/mappers/map071.c	2026-09-26 09:43:45
++++ b/mappers/map071.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ 
+ static void map_write(uint32 address, uint8 value)
+diff -ruN a/mappers/map073.c b/mappers/map073.c
+--- a/mappers/map073.c	2026-09-26 09:43:45
++++ b/mappers/map073.c	2026-09-26 09:43:46
+@@ -22,7 +22,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static struct
+ {
+diff -ruN a/mappers/map075.c b/mappers/map075.c
+--- a/mappers/map075.c	2026-09-26 09:43:45
++++ b/mappers/map075.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static uint8 latch[2];
+ static uint8 hibits;
+diff -ruN a/mappers/map076.c b/mappers/map076.c
+--- a/mappers/map076.c	2026-09-26 09:43:45
++++ b/mappers/map076.c	2026-09-26 09:43:46
+@@ -22,7 +22,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static uint8 reg8000;
+ 
+diff -ruN a/mappers/map078.c b/mappers/map078.c
+--- a/mappers/map078.c	2026-09-26 09:43:45
++++ b/mappers/map078.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static bool fourscreen;
+ 
+diff -ruN a/mappers/map079.c b/mappers/map079.c
+--- a/mappers/map079.c	2026-09-26 09:43:45
++++ b/mappers/map079.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ 
+ static void map_write(uint32 address, uint8 value)
+diff -ruN a/mappers/map085.c b/mappers/map085.c
+--- a/mappers/map085.c	2026-09-26 09:43:45
++++ b/mappers/map085.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static struct
+ {
+diff -ruN a/mappers/map087.c b/mappers/map087.c
+--- a/mappers/map087.c	2026-09-26 09:43:45
++++ b/mappers/map087.c	2026-09-26 09:43:46
+@@ -22,7 +22,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ 
+ static void map_write(uint32 address, uint8 value)
+diff -ruN a/mappers/map093.c b/mappers/map093.c
+--- a/mappers/map093.c	2026-09-26 09:43:45
++++ b/mappers/map093.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ 
+ static void map_write(uint32 address, uint8 value)
+diff -ruN a/mappers/map094.c b/mappers/map094.c
+--- a/mappers/map094.c	2026-09-26 09:43:45
++++ b/mappers/map094.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ 
+ static void map_write(uint32 address, uint8 value)
+diff -ruN a/mappers/map160.c b/mappers/map160.c
+--- a/mappers/map160.c	2026-09-26 09:43:45
++++ b/mappers/map160.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static struct
+ {
+diff -ruN a/mappers/map162.c b/mappers/map162.c
+--- a/mappers/map162.c	2026-09-26 09:43:45
++++ b/mappers/map162.c	2026-09-26 09:43:46
+@@ -22,7 +22,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static uint8 reg5000;
+ static uint8 reg5100;
+diff -ruN a/mappers/map185.c b/mappers/map185.c
+--- a/mappers/map185.c	2026-09-26 09:43:45
++++ b/mappers/map185.c	2026-09-26 09:43:46
+@@ -22,7 +22,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static uint8 reg = 0;
+ 
+diff -ruN a/mappers/map193.c b/mappers/map193.c
+--- a/mappers/map193.c	2026-09-26 09:43:45
++++ b/mappers/map193.c	2026-09-26 09:43:46
+@@ -22,7 +22,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ 
+ static void map_write(uint32 address, uint8 value)
+diff -ruN a/mappers/map206.c b/mappers/map206.c
+--- a/mappers/map206.c	2026-09-26 09:43:45
++++ b/mappers/map206.c	2026-09-26 09:43:46
+@@ -22,7 +22,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static uint8 reg8000;
+ 
+diff -ruN a/mappers/map228.c b/mappers/map228.c
+--- a/mappers/map228.c	2026-09-26 09:43:45
++++ b/mappers/map228.c	2026-09-26 09:43:46
+@@ -22,7 +22,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ static uint8 mram[4];
+ 
+diff -ruN a/mappers/map229.c b/mappers/map229.c
+--- a/mappers/map229.c	2026-09-26 09:43:45
++++ b/mappers/map229.c	2026-09-26 09:43:46
+@@ -22,7 +22,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ 
+ static void map_write(uint32 address, uint8 value)
+diff -ruN a/mappers/map231.c b/mappers/map231.c
+--- a/mappers/map231.c	2026-09-26 09:43:45
++++ b/mappers/map231.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "nes/nes.h"
++#include "../nes/nes.h"
+ 
+ 
+ static void map_write(uint32 address, uint8 value)
+diff -ruN a/mappers/mappers.h b/mappers/mappers.h
+--- a/mappers/mappers.h	2026-09-26 09:43:45
++++ b/mappers/mappers.h	2026-09-26 09:43:46
+@@ -1,6 +1,6 @@
+ #pragma once
+ 
+-#include "nes/mmc.h"
++#include "../nes/mmc.h"
+ 
+ /* mapper interfaces */
+ extern mapintf_t map0_intf;
+diff -ruN a/nes/mmc.c b/nes/mmc.c
+--- a/nes/mmc.c	2026-09-26 09:43:45
++++ b/nes/mmc.c	2026-09-26 09:43:46
+@@ -21,7 +21,7 @@
+ **
+ */
+ 
+-#include "mappers/mappers.h"
++#include "../mappers/mappers.h"
+ #include "nes.h"
+ 
+ static mapper_t mapper;
+diff -ruN a/nes/nes.h b/nes/nes.h
+--- a/nes/nes.h	2026-09-26 09:43:45
++++ b/nes/nes.h	2026-09-26 09:43:46
+@@ -40,7 +40,7 @@
+ 
+ typedef struct nes_s nes_t;
+ 
+-#include "config.h"
++#include "../config.h"
+ #include "apu.h"
+ #include "cpu.h"
+ #include "ppu.h"
