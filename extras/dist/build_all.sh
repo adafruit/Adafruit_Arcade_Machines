@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: MIT
 
 # Build the release binaries into dist/: seven Fruit Jam game .uf2 files,
-# the Game Boy console .uf2, and the Feather ESP32 V2 images.
+# the Game Boy and NES console .uf2s, and the Feather ESP32 V2 images.
 #
 # TWO THINGS THIS DOES DELIBERATELY:
 #
@@ -52,7 +52,7 @@ done
 
 # --- Consoles (Fruit Jam) ---------------------------------------------------
 # Same as the games; the sketch lives under examples/Consoles/.
-for c in gameboy; do
+for c in gameboy nes; do
     sk="${c}_fruitjam"
     printf '%-20s ' "$sk"
     if ! arduino-cli compile --library "$ROOT" \

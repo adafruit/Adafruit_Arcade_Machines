@@ -9,8 +9,9 @@
 // wrapped by nes_core.c and stepped a scanline at a time. The ROM is loaded
 // into bulk memory (PSRAM) and, if small, copied into SRAM (NES_ROM_SRAM_MAX).
 //
-// Not yet: battery saves (the core exposes the cart RAM; the Game Boy's save
-// path will be generalised for it).
+// Battery saves: a battery cartridge's RAM is kept in /cart/<rom name>.sav,
+// the raw format PC emulators use, saved when the game leaves it alone for a
+// second after writing it (console/console_save.h).
 #ifndef NES_MACHINE_H
 #define NES_MACHINE_H
 

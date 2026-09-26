@@ -24,6 +24,7 @@
 #include "machines/nes/nes_core.h"
 #include "machines/nes/nes_video.h"
 #include "console/console_audio.h"
+#include "console/console_save.h"
 #include "host_ppm.h"
 #include "../nes_test/nes_frame_crc.h"
 
@@ -183,6 +184,15 @@ int main(int argc, char **argv) {
         fclose(wav);
         printf("audio -> %s (%.1f s at %d Hz, drained like the board's ISR)\n", wav_path,
                wav_bytes / 2.0 / NES_AUDIO_SAMPLE_RATE, NES_AUDIO_SAMPLE_RATE);
+    }
+    {
+        console_save_stats_t ss;
+        console_save_take_stats(&ss);
+        static const char *const names[] = { "none", "UNAVAILABLE", "ready", "writing" };
+        if (ss.state != CONSOLE_SAVE_NONE)
+            printf("save: %s %s (%u bytes, loaded %s), saves %u, last took %u frames, errors %u\n",
+                   names[ss.state], ss.path, ss.size, ss.loaded ? "yes" : "no", ss.saves,
+                   ss.last_save_frames, ss.errors);
     }
     printf("ran %u frames; audio underruns %u overruns %u, ring depth after the first second %u..%u\n",
            frames, underruns, overruns, min_depth == 0xFFFFFFFFu ? 0 : min_depth, max_depth);

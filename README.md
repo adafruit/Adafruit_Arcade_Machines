@@ -68,9 +68,10 @@ any known quirks. They all share the building steps below.
 
 | Console | Sketch | Notes |
 |---|---|---|
+| NES | [`nes_fruitjam/`](examples/Consoles/nes_fruitjam/README.md) | The microSD card is the cartridge (one `.nes` in `/cart`), with nofrendo's 59 mappers, battery saves to a standard `.sav`, 8:7 aspect correction on Button 1, six palettes on Button 3, and full APU sound. Core: nofrendo from retro-go, **GPL-2.0-only** (linked only into this sketch). Fruit Jam only for now. |
 | Game Boy (DMG) | [`gameboy_fruitjam/`](examples/Consoles/gameboy_fruitjam/README.md) | The project's first **console**: the microSD card is the cartridge (one `.gb` in `/cart`), loaded into PSRAM, with MBC1/2/3/5 bank switching, battery saves to a standard `.sav`, four colour palettes on Button 3, and full APU sound. Core: Peanut-GB (MIT). Fruit Jam only for now; more consoles are planned in `extras/CONSOLES_PLAN.md`. |
 
-**USB gamepads** work in every Fruit Jam game and the Game Boy, plugged
+**USB gamepads** work in every Fruit Jam game and both consoles, plugged
 into either Type-A port, when the sketch is built with the Adafruit TinyUSB
 USB stack (see the build steps).
 

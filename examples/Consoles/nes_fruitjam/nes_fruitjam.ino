@@ -42,6 +42,7 @@
 #include <machines/nes/nes_machine.h>
 #include <machines/nes/nes_core.h>
 #include <console/console_audio.h>
+#include <console/console_save.h>
 #include <boards/fruitjam/board_config_fruitjam.h>
 #if defined(USE_TINYUSB)
 // USB gamepads on the Type-A ports (Tools > USB Stack > Adafruit TinyUSB,
@@ -224,6 +225,35 @@ void loop() {
         Serial.print(", pad 0x");
         Serial.println(g_system.pad, HEX);
         work_max = work_sum = work_n = blk_sum = 0;
+        // Battery saves: every heartbeat while one is being written, else
+        // every tenth (console_save.h).
+        {
+            console_save_stats_t ss;
+            console_save_take_stats(&ss);
+            if (ss.state != CONSOLE_SAVE_NONE &&
+                (ss.state == CONSOLE_SAVE_WRITING || (frame_count % 600u) == 0u)) {
+                static const char *const names[] = { "none", "UNAVAILABLE", "ready", "writing" };
+                Serial.print("[nes] save ");
+                Serial.print(names[ss.state]);
+                Serial.print(" ");
+                Serial.print(ss.path);
+                Serial.print(" (");
+                Serial.print(ss.size);
+                Serial.print(" bytes, loaded ");
+                Serial.print(ss.loaded ? "yes" : "no");
+                Serial.print("), saves ");
+                Serial.print(ss.saves);
+                Serial.print(", last took ");
+                Serial.print(ss.last_save_frames);
+                Serial.print(" frames, busy waits ");
+                Serial.print(ss.busy_waits);
+                Serial.print(", errors ");
+                Serial.print(ss.errors);
+                Serial.print(", step_max ");
+                Serial.print(ss.step_us_max);
+                Serial.println("us");
+            }
+        }
         if ((frame_count % 600u) == 60u) print_cart();
     }
 }
