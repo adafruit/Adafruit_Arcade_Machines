@@ -7285,3 +7285,67 @@ drawing and sound (the Game Boy does 8.7 ms mean, everything included).
 **Decision: nofrendo.** The port must step it a scanline at a time: one
 `nes_emulate()` is ~7 ms of uninterrupted work, against ~2.2 ms of queued
 picture.
+
+### 136. The NES plays on the Fruit Jam: Super Mario Bros. at 9.5 ms a frame
+
+Phase 2's port, on the core the spike chose (#135).
+
+**Layout:**
+
+- `src/machines/nes/core/` is nofrendo from retro-go, with three patches
+  (`VENDORED.md`), declared GPL-2.0-only.
+- `nes_core.c` is the one file that includes it.
+- `nes_video` and `nes_machine` are MIT, like the rest of the machines.
+- `src/console/console_audio` is the Game Boy's ring, shared.
+- The sketch is `examples/Consoles/nes_fruitjam`; the host harness is
+  `extras/tools/nes_host`.
+
+**The core never runs a whole frame at once.** nofrendo's `nes_emulate()`
+is ~7 ms of uninterrupted work. `nes_core_step_line()` runs its loop body
+once, one scanline (~27 us), through nofrendo's public functions, and the
+machine tops up the display queue between lines, exactly as the Game Boy
+does between instruction batches. **The split is exact:** on the host,
+the machine's frames equal `nes_emulate()`'s CRC for CRC. That was checked
+at four frames of the same scripted input in six games: SMB, SMB3, Kirby,
+Zelda, Metroid and Final Fantasy.
+
+**Include paths decided the one mechanical patch.** retro-go compiles the
+component with its root on the include path; a library has only `src/`,
+so nofrendo's `"nes/nes.h"`-style includes were made relative. The
+pristine upstream plus the three patches reproduces the vendored directory
+exactly, and the spike harness applies the same patches, so both compile
+identical code.
+
+**GPL isolation, checked.** With the core in `src/`, every sketch compiles
+it, but the archive (`dot_a_linkage`) links it only where used. Galaga
+(Fruit Jam) and Donkey Kong (Feather) build byte-identical, and
+`arm-none-eabi-nm` finds 53 Galaga symbols and no nofrendo ones in
+Galaga's ELF. That is the plan's "nm check".
+
+**On the Fruit Jam,** Super Mario Bros. from `/cart`, with a USB Mantapad,
+over about 20 minutes of play:
+
+| Measure | Result |
+|---|---|
+| Work, mean | 9.5 ms |
+| Work, worst | 10.2 ms |
+| Worst single scanline | 205 us (line 241, the vblank NMI) |
+| Starvation | 0 |
+| Queue low point | 13 of 32 |
+| Audio underruns / overruns | 0 / 0 |
+| Rotations tried | 0, 1, 2 |
+| Palettes tried | five of the six |
+
+The user: "looks great, plays fine, sounds good, no red lines".
+
+The audio ring repeats ~31 samples a second: nofrendo makes 367 samples a
+frame at 22050 Hz, 22020/s, against the board's 22050. That is the level
+correction doing its job, not a fault (compare the Game Boy's drops in
+#127).
+
+**Not yet:**
+
+- an MMC3 game on hardware (from PSRAM);
+- rotation 3 on the TV;
+- battery saves (Zelda, Final Fantasy);
+- aspect correction on STRETCH.
