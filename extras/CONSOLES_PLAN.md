@@ -455,9 +455,26 @@ machines unchanged, and the button mapping in the sketch.
    second player.
 4. Integration into the Game Boy and arcade sketches, measured.
 
+**Progress (2026-09-25):** steps 1-3 done (DEVNOTES #133). Step 4 is done
+for the Game Boy and Galaga (DEVNOTES #134); the other arcade sketches are
+next. How it is wired:
+
+- USB buttons merge into the board's `hal_input_read()`.
+- The host task runs while core 0 waits for a free scanline buffer.
+- The mapping tables are in `src/boards/fruitjam/usb_input_fruitjam.cpp`:
+
+| Pad | Arcade games | Game Boy |
+|-----|--------------|----------|
+| Nintendo-style (default) | A (east) SHOOT, B (south) ACTION2, Start START1, Select COIN, Y (west) START2 | A (east) A, B (south) B, Start, Select |
+| Retro-bit Genesis | A SHOOT, B ACTION2, X COIN, Start START1, Y START2 (C, Z, Mode unmapped) | B -> A, A -> B, Start, Mode -> Select |
+| DualShock 4 (default, by position) | Circle SHOOT, Cross ACTION2, Options START1, Share COIN, Square START2 | Circle A, Cross B, Options Start, Share Select |
+
+Every connected pad's buttons are combined, so a second pad also works
+but drives the same player.
+
 **Still open:**
 
-- Which USB controllers to test first.
+- More controllers (clones, an 8BitDo, an Xbox pad for XInput).
 - Mapping by position (SDL's "south/east") or by printed label. Xbox
   pads put A where Nintendo puts B.
 - A second player in the arcade games now, or later.

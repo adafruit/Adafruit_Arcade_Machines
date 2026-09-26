@@ -25,6 +25,7 @@
 #include "hardware/timer.h"
 #include "hal/arcade_hal_input.h"
 #include "board_config_fruitjam.h"
+#include "usb_input_fruitjam.h"
 
 // Indexed by the HAL_BTN_* enum from board_config_fruitjam.h, keeping the
 // pin table and the enum from silently drifting apart.
@@ -104,9 +105,7 @@ bool hal_input_read_raw(uint8_t index) {
     return !gpio_get(pins[index]); // active-low
 }
 
-bool hal_input_read(uint8_t index) {
-    if (index >= HAL_INPUT_BUTTON_COUNT) return false;
-
+static bool gpio_read_debounced(uint8_t index) {
     bool raw = !gpio_get(pins[index]); // active-low
     debounce_t *f = &filt[index];
 
@@ -137,6 +136,19 @@ bool hal_input_read(uint8_t index) {
         f->pending = false;
     }
     return f->stable;
+}
+
+// A button is pressed if its GPIO line is, or if a connected USB gamepad
+// holds it (usb_input_fruitjam.h; only with the TinyUSB USB stack). USB
+// needs no debounce: a pad reports clean states.
+bool hal_input_read(uint8_t index) {
+    if (index >= HAL_INPUT_BUTTON_COUNT) return false;
+    const bool gpio = gpio_read_debounced(index);
+#if defined(USE_TINYUSB)
+    return gpio || fruitjam_usb_input_held(index);
+#else
+    return gpio;
+#endif
 }
 
 #endif // ARDUINO_ADAFRUIT_FRUITJAM_RP2350

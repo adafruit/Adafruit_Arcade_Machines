@@ -39,6 +39,14 @@
 #include <machines/galaga/galaga_input.h>
 #include <machines/galaga/galaga_audio.h>
 #include <boards/fruitjam/board_config_fruitjam.h>
+#if defined(USE_TINYUSB)
+// USB gamepads on the Type-A ports (Tools > USB Stack > Adafruit TinyUSB,
+// which sketch.yaml selects; with the default stack the game still builds
+// and runs on the GPIO buttons alone). <pio_usb.h> is here so the builder
+// finds the Pico PIO USB library.
+#include <pio_usb.h>
+#include <boards/fruitjam/usb_input_fruitjam.h>
+#endif
 
 static galaga_system    g_system;
 static volatile bool    g_video_ready = false;
@@ -98,6 +106,11 @@ void setup() {
     // From this point on, loop() will continuously feed scanlines (either
     // error frames or game frames) on every call -- safe for Core 1 to
     // start the DVI pump now.
+#if defined(USE_TINYUSB)
+    // After the display is initialised (it claims PIO 0) and the clock is
+    // at 252 MHz, before core 1 starts the display.
+    fruitjam_usb_input_begin(FRUITJAM_USB_MAP_ARCADE);
+#endif
     g_video_ready = true;
     Serial.println("[galaga] setup() done, g_video_ready = true");
 }
@@ -115,6 +128,9 @@ void loop() {
     // (left/right only) joystick + 1 fire button + coin/start -- the same
     // physical buttons Space Invaders' cabinet uses, no new board buttons
     // needed (unlike Pac-Man, which added UP/DOWN for its 4-way stick).
+#if defined(USE_TINYUSB)
+    fruitjam_usb_input_poll(); // USB pads merge into hal_input_read() below
+#endif
     bool coin   = hal_input_read(HAL_BTN_COIN);
     bool start1 = hal_input_read(HAL_BTN_START1);
     bool start2 = hal_input_read(HAL_BTN_START2);
@@ -298,6 +314,10 @@ void loop() {
         Serial.print(hal_video_take_min_valid_level());
         Serial.print("/");
         Serial.print(hal_video_scanbuf_count());
+#if defined(USE_TINYUSB)
+        Serial.print(" usb pads ");
+        Serial.print(fruitjam_usb_input_pads());
+#endif
         Serial.print("/60), ");
         work_sum = blocked_sum = work_n = 0; blocked_max = 0; // work_max/sprites_max reset below
         Serial.print(frame_count * 1000UL / (millis() - loop_start_ms + 1));

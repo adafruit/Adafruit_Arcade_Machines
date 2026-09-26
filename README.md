@@ -219,7 +219,16 @@ way of setting the optimisation level, so they are split here.
    this board is *also* the missing-SD-card colour, which made it an
    expensive mistake to diagnose. `arduino-cli` reads `sketch.yaml`
    automatically; the IDE does not always.
-5. Prepare an SD card (FAT32, **MBR** partition scheme — not GPT/exFAT,
+5. **Optional, for USB gamepads on the Type-A ports:** set **Tools → USB
+   Stack** to **Adafruit TinyUSB** (the examples that support it set this in
+   their `sketch.yaml`, which `arduino-cli` reads and the IDE may not). With
+   the default stack the game builds and runs on the GPIO buttons alone.
+   The two libraries it needs, `Adafruit TinyUSB Library` and `Pico PIO
+   USB`, are listed in `library.properties`. Supported so far: the Game Boy
+   and Galaga; controllers tested are a Mantapad (SNES-style), a Retro-bit
+   Genesis 8-button pad and a DualShock 4 (`extras/CONSOLES_PLAN.md`,
+   "USB gamepads on the Fruit Jam").
+6. Prepare an SD card (FAT32, **MBR** partition scheme — not GPT/exFAT,
    which macOS Disk Utility defaults to on "Erase") with that game's own
    ROM/sample layout — see its README.
 

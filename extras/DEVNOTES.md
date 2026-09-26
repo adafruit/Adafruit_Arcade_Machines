@@ -7091,3 +7091,54 @@ What they taught the driver:
 
 Not yet done: step 4, `hal_input_poll()` and the button mapping in the
 sketches, measured in Galaga and on the Game Boy.
+
+### 134. USB gamepads in the games: run the host while waiting for the display
+
+Step 4 of the USB gamepad plan, for the Game Boy and Galaga.
+
+**Wiring:**
+
+- USB buttons merge into the Fruit Jam's `hal_input_read()`. A button is
+  pressed if its GPIO line is or any connected pad holds it, so no machine
+  code changed.
+- The pad-to-`HAL_BTN_*` tables are in
+  `src/boards/fruitjam/usb_input_fruitjam.cpp`, one set for arcade games and
+  one for the Game Boy. Each set has a default and a Retro-bit Genesis
+  override. The mappings are in CONSOLES_PLAN.md.
+- The sketches call `fruitjam_usb_input_begin()` after the display is set
+  up and `fruitjam_usb_input_poll()` once per frame. Both are inside
+  `#if defined(USE_TINYUSB)`, so a build on the default USB stack (the
+  Arduino IDE unless Tools → USB Stack is changed) still runs, on GPIO
+  alone.
+- `library.properties` now depends on Adafruit TinyUSB Library and Pico
+  PIO USB.
+
+**Where the host task runs.** DEVNOTES #133 showed the task must run often:
+about every millisecond, or plugging in takes seconds. Calling it from the
+machines' frame loops would put board code into board-agnostic machines.
+Instead it runs in the one place core 0 has time to spare: inside
+`hal_video_acquire_scanline()`, while waiting for a free buffer. That wait
+only happens when the display queue is full. It is a hook
+(`fruitjam_video_set_idle_hook()`), rate-limited to once per millisecond,
+and counted as blocked time. The sketch's once-per-frame poll also runs
+the task, so a frame with no wait still gets serviced.
+
+**Measured, Galaga** (`-DTEST_AUTOSTART=1` scripted play, the same frames
+1500-9000 in both builds):
+
+| Build | Mean work | Worst work | Starvation | Queue low point |
+|---|---|---|---|---|
+| Default stack, no USB | 13.53 ms | 15.20 ms | 0 | 18 |
+| USB, DualShock 4 streaming 200 reports/s | 13.79 ms | 15.39 ms | 0 | 17 |
+
+That is about 0.25 ms of a 16.7 ms frame for the worst-case controller.
+The user then played two games with the Genesis pad: controls worked, no
+lag, no red lines, zero starvation over 239 heartbeats.
+
+**Measured, the Game Boy** with the Genesis pad, playing: every Game Boy
+button seen (the pad-state bits for A, B, Select, Start and all four
+directions), zero starvation (queue low point 11), no audio underruns, no
+core errors, worst work 12.9 ms.
+
+**Sizes:** RAM +22 KB for the USB stack in a TinyUSB build. A default-stack
+build is +128 bytes of flash, from the video hook and the input refactor.
