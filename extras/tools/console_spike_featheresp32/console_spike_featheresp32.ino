@@ -38,6 +38,11 @@ static size_t g_internal_used = 0; // internal DRAM the core's init took
 #ifndef SPIKE_ROM_INTERNAL
 #define SPIKE_ROM_INTERNAL 0
 #endif
+// -DSPIKE_DRAW_EVERY=2: draw only every second frame, as the Feather will
+// (it paints ~30 frames a second of 60 emulated). 1 draws every frame.
+#ifndef SPIKE_DRAW_EVERY
+#define SPIKE_DRAW_EVERY 1
+#endif
 
 static bool ends_with(const char *s, const char *ext) {
     const size_t n = strlen(s), m = strlen(ext);
@@ -102,8 +107,10 @@ void loop() {
         return;
     }
     frame++;
+    const bool draw = (frame % SPIKE_DRAW_EVERY) == 0;
     uint32_t t0 = micros(), emu, aud;
     if (g_nes) {
+        nes_core_set_draw(draw);
         nes_core_set_pad(nes_pad(frame));
         nes_core_frame_begin();
         while (!nes_core_step_line()) {}
@@ -112,11 +119,12 @@ void loop() {
         const uint32_t t1 = micros();
         nes_core_audio_render(samples, nes_core_audio_samples_per_frame());
         aud = micros() - t1;
-        nes_core_swap();
+        if (draw) nes_core_swap();
         if (frame == 150 || frame == 650 || frame == 1200 || frame == 1500)
             Serial.printf("[spike] frame %u crc %08X\n", (unsigned)frame,
                           (unsigned)nes_frame_crc(nes_core_front_base()));
     } else {
+        gameboy_core_set_draw(draw);
         gameboy_core_set_pad(gb_pad(frame));
         gameboy_core_frame_begin();
         while (!gameboy_core_step(1000)) {}
@@ -125,17 +133,17 @@ void loop() {
         const uint32_t t1 = micros();
         (void)gameboy_core_audio_frame(samples);
         aud = micros() - t1;
-        gameboy_core_swap();
+        if (draw) gameboy_core_swap();
     }
     sum += emu; n++;
     if (emu > worst) worst = emu;
     if (aud > aud_worst) aud_worst = aud;
     if (frame > 60 && emu + aud > worst_all) worst_all = emu + aud;
     if (n == 60) {
-        Serial.printf("[spike] %s (%u KB in %s; core init took %u B of internal DRAM, %u B left), "
+        Serial.printf("[spike] draw 1 in %d; %s (%u KB in %s; core init took %u B of internal DRAM, %u B left), "
                       "frame %u: emulation mean %uus worst %uus, "
                       "audio worst %uus, emulation+audio worst since start-up %uus (budget 16667us)\n",
-                      g_info.name, (unsigned)(g_info.size / 1024u), g_rom_where,
+                      SPIKE_DRAW_EVERY, g_info.name, (unsigned)(g_info.size / 1024u), g_rom_where,
                       (unsigned)g_internal_used, (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
                       (unsigned)frame,
                       (unsigned)(sum / n), (unsigned)worst, (unsigned)aud_worst, (unsigned)worst_all);

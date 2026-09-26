@@ -50,6 +50,9 @@ const char *nes_core_mapper_name(void) { return g_nes && g_nes->mapper ? g_nes->
 
 void nes_core_set_pad(uint8_t bits) { input_update(0, bits); }
 
+static bool g_draw = true;
+void nes_core_set_draw(bool draw) { g_draw = draw; }
+
 void nes_core_frame_begin(void) {
     // nes_reset() clears the buffer pointer (it is set every frame, as
     // retro-go does), and the frame is drawn into the back buffer.
@@ -66,7 +69,9 @@ bool nes_core_step_line(void) {
     // "Running a little bit ahead seems to fix both Battletoads games" --
     // nofrendo's own comment on the 86 - 12 split.
     int elapsed = nes6502_execute(86 - 12);
-    ppu_renderline(n->vidbuf, n->scanline, n->vidbuf != NULL);
+    // draw_flag false still runs the PPU's line (scroll, sprite 0 hit,
+    // sprite overflow); it only skips writing pixels, as nes_emulate(false).
+    ppu_renderline(n->vidbuf, n->scanline, g_draw && n->vidbuf != NULL);
 
     if (n->scanline == 241) {
         elapsed += nes6502_execute(6);

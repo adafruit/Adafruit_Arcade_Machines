@@ -143,7 +143,17 @@ gameboy_core_status_t gameboy_core_init(const uint8_t *rom, uint32_t rom_size) {
 
 const char *gameboy_core_title(void) { return g_title; }
 
-void gameboy_core_frame_begin(void) { g_gb.gb_frame = false; }
+// Peanut-GB's own frame skip draws a frame's lines only while
+// display.frame_skip_count is set, and flips that count at each vblank; set
+// here before the frame's first line, it decides exactly this frame.
+static bool g_draw = true;
+void gameboy_core_set_draw(bool draw) { g_draw = draw; }
+
+void gameboy_core_frame_begin(void) {
+    g_gb.gb_frame = false;
+    g_gb.direct.frame_skip = !g_draw;
+    g_gb.display.frame_skip_count = false;
+}
 
 // GAMEBOY_CORE_PROFILE: time every single core call. Off by default, since
 // it reads the clock twice per instruction.

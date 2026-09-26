@@ -7580,3 +7580,40 @@ printed last.**
 **Board note:** this Feather's USB bridge is a CH9102. esptool loses the
 chip at 921,600 baud on `/dev/cu.usbserial-*` but uploads cleanly on
 `/dev/cu.wchusbserial*`.
+
+**Drawing only the frames that are shown.** The Feather paints ~30 frames
+a second, so only every second emulated frame is ever seen, yet both cores
+drew all of them. Both can skip it, and retro-go uses the same trick on
+the ESP32. Two new calls decide it per frame, defaulting to drawing, so
+the Fruit Jam is unchanged; call it before each frame and swap only after
+a drawn one:
+
+- **`gameboy_core_set_draw()`** sets Peanut-GB's own frame skip for
+  exactly that frame (`direct.frame_skip`, with `display.frame_skip_count`
+  cleared at the frame's start; Peanut-GB flips the count at each vblank).
+- **`nes_core_set_draw()`** passes nofrendo's `draw_flag`, which still
+  runs each PPU line (scroll, sprite 0 hit, overflow) and only skips the
+  pixel writes, as `nes_emulate(false)` does.
+
+**Checked on the host:**
+
+- Drawing every frame stays byte-identical: the Game Boy regression and
+  the NES CRCs and WAVs.
+- With `--draw-every 2`, every drawn frame is identical to full drawing:
+  Tetris's seven regression frames and its WAV, and the NES CRCs at
+  frames 150/650/1200/1500 of SMB, SMB3, Kirby and Zelda. So skipping
+  changes no emulation.
+
+**On the Feather**, Tetris, the same 42 windows:
+
+| Drawing | Mean | Worst |
+|---|---|---|
+| Every frame | 15.3 ms | 18.8 ms |
+| Every 2nd | 13.6 ms | 18.8 ms |
+
+With every 2nd drawn, a drawn frame is ~15.2 ms and a skipped one
+~11.8 ms: ~27 ms per 33 ms paint, down from 30.6. The one 18.8 ms frame
+is the scripted Start press changing screens (frame 960), a single
+frame. Also tried on Tetris, the ROM in internal DRAM made no difference
+(15.31 against 15.31 ms, same windows): all its core buffers were already
+internal, 99 KB.

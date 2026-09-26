@@ -75,6 +75,13 @@ const char *gameboy_core_title(void);
 // 70224 cycles even while the game has the LCD switched off, so a frame
 // always ends.
 void gameboy_core_frame_begin(void);
+
+// Whether the frames that follow draw their picture (default true). A board
+// that shows only some emulated frames -- the Feather paints every second
+// one -- skips drawing the rest, which Peanut-GB then does not render at
+// all; everything else (CPU, timers, sound, interrupts) runs as usual.
+// Swap only after a drawn frame.
+void gameboy_core_set_draw(bool draw);
 bool gameboy_core_step(uint32_t max_instructions);
 
 // Double-buffered framebuffer. The core draws each frame into the back

@@ -83,6 +83,7 @@ int main(int argc, char **argv) {
     unsigned frames = 600;
     int rotation = 0;
     bool mirror = false;
+    unsigned draw_every = 1; // draw only frames f % N == 0 (the Feather draws every 2nd)
     int palette = GAMEBOY_PALETTE_DEFAULT;
     std::vector<press_t> presses;
     for (int i = 1; i < argc; i++) {
@@ -94,6 +95,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--wav") && i + 1 < argc) wav_path = argv[++i];
         else if (!strcmp(a, "--rotation") && i + 1 < argc) rotation = atoi(argv[++i]);
         else if (!strcmp(a, "--mirror")) mirror = true;
+        else if (!strcmp(a, "--draw-every") && i + 1 < argc) draw_every = (unsigned)atoi(argv[++i]);
         else if (!strcmp(a, "--palette") && i + 1 < argc) {
             const char *n = argv[++i];
             palette = !strcmp(n, "green")  ? GAMEBOY_PALETTE_DMG_GREEN
@@ -156,6 +158,7 @@ int main(int argc, char **argv) {
                              held(presses, "a", f), held(presses, "b", f),
                              held(presses, "start", f), held(presses, "select", f),
                              false, false);
+        gameboy_core_set_draw(draw_every <= 1 || f % draw_every == 0);
         gameboy_run_frame(&g_sys);
 
         owed += (double)GAMEBOY_AUDIO_SAMPLE_RATE / 60.0;
