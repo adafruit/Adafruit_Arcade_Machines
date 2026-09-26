@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
+#
+# SPDX-License-Identifier: MIT
+
+# usbstack=tinyusb: Adafruit TinyUSB, which runs the PIO-USB host on the
+# Type-A ports when the Pico PIO USB library is installed, and keeps the
+# native USB-C port as a device for Serial.
+default_fqbn: rp2040:rp2040:adafruit_fruitjam:opt=Optimize2,usbstack=tinyusb
