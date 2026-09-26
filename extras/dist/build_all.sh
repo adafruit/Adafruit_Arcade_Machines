@@ -3,8 +3,8 @@
 #
 # SPDX-License-Identifier: MIT
 
-# Build the release binaries into dist/: seven Fruit Jam .uf2 files, and the
-# Feather ESP32 V2 images.
+# Build the release binaries into dist/: seven Fruit Jam game .uf2 files,
+# the Game Boy console .uf2, and the Feather ESP32 V2 images.
 #
 # TWO THINGS THIS DOES DELIBERATELY:
 #
@@ -17,9 +17,9 @@
 # 2. --library "$ROOT", and NO config override. This repo IS the Arduino
 #    library, so the examples cannot find it the way an installed one would
 #    be; --library points the builder at the checkout. Everything else --
-#    notably the one dependency, PicoDVI - Adafruit Fork -- comes from your
-#    normal sketchbook, so install it the usual way:
-#        arduino-cli lib install "PicoDVI - Adafruit Fork"
+#    the dependencies listed in library.properties -- comes from your
+#    normal sketchbook, so install them the usual way, e.g.:
+#        arduino-cli lib install "PicoDVI - Adafruit Fork" "Pico PIO USB"
 #
 #    This script used to write a throwaway config pinning directories.user
 #    to $ROOT, which made sense only while the repo was itself a sketchbook
@@ -47,6 +47,22 @@ for g in $GAMES; do
     # Everything else arduino-cli emits is intermediate. Removing it keeps
     # `gh release upload dist/*.uf2` picking up exactly the right set.
     rm -f "$HERE/$sk.ino."* "$HERE/.$g.log"
+    printf 'ok   %s\n' "$(du -h "$HERE/$sk.uf2" | cut -f1 | tr -d ' ')"
+done
+
+# --- Consoles (Fruit Jam) ---------------------------------------------------
+# Same as the games; the sketch lives under examples/Consoles/.
+for c in gameboy; do
+    sk="${c}_fruitjam"
+    printf '%-20s ' "$sk"
+    if ! arduino-cli compile --library "$ROOT" \
+            --output-dir "$HERE" "examples/Consoles/$sk" \
+            > "$HERE/.$c.log" 2>&1; then
+        echo "FAILED -- see $HERE/.$c.log"
+        exit 1
+    fi
+    mv "$HERE/$sk.ino.uf2" "$HERE/$sk.uf2"
+    rm -f "$HERE/$sk.ino."* "$HERE/.$c.log"
     printf 'ok   %s\n' "$(du -h "$HERE/$sk.uf2" | cut -f1 | tr -d ' ')"
 done
 
