@@ -10,7 +10,7 @@
 // into bulk memory (PSRAM) and, if small, copied into SRAM (NES_ROM_SRAM_MAX).
 //
 // Not yet: battery saves (the core exposes the cart RAM; the Game Boy's save
-// path will be generalised for it), aspect correction on STRETCH.
+// path will be generalised for it).
 #ifndef NES_MACHINE_H
 #define NES_MACHINE_H
 
@@ -53,8 +53,9 @@ typedef struct {
     uint8_t rotation;   // 0 = landscape (the console default), 1 = 90 CCW, 2, 3
     bool    mirror_x;   // no button for now: MIRROR cycles the palette
     uint8_t palette;    // nes_core_palette565() index
+    bool    stretch;    // 8:7 aspect correction (nes_video.h); starts off
     uint8_t pad;        // NES_BTN_* held
-    bool    rotate_prev, palette_prev;
+    bool    rotate_prev, palette_prev, stretch_prev;
 
     // Filled in by nes_load_cart(), for the sketch to report.
     char     cart_name[64];
@@ -71,10 +72,11 @@ void nes_init_system(nes_system *sys);
 bool nes_load_cart(nes_system *sys, uint16_t *out_error_color);
 
 // Once per frame, before nes_run_frame(), with buttons already mapped to
-// NES meanings. `rotate` and `palette_next` act on their press edge.
+// NES meanings. `rotate`, `palette_next` and `stretch` act on their press
+// edge (a held button does not cycle).
 void nes_input_update(nes_system *sys, bool up, bool down, bool left, bool right,
                       bool a, bool b, bool start, bool select,
-                      bool rotate, bool palette_next);
+                      bool rotate, bool palette_next, bool stretch);
 
 void nes_run_frame(nes_system *sys);
 void nes_draw_error_frame(uint16_t color);

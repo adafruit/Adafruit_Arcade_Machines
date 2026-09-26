@@ -102,7 +102,7 @@ bool nes_load_cart(nes_system *sys, uint16_t *out_error_color) {
 
 void nes_input_update(nes_system *sys, bool up, bool down, bool left, bool right,
                       bool a, bool b, bool start, bool select,
-                      bool rotate, bool palette_next) {
+                      bool rotate, bool palette_next, bool stretch) {
     uint8_t p = 0;
     if (a)      p |= NES_BTN_A;
     if (b)      p |= NES_BTN_B;
@@ -117,8 +117,10 @@ void nes_input_update(nes_system *sys, bool up, bool down, bool left, bool right
     if (rotate && !sys->rotate_prev) sys->rotation = (uint8_t)((sys->rotation + 1u) & 3u);
     if (palette_next && !sys->palette_prev)
         sys->palette = (uint8_t)((sys->palette + 1u) % nes_core_palette_count());
+    if (stretch && !sys->stretch_prev) sys->stretch = !sys->stretch;
     sys->rotate_prev = rotate;
     sys->palette_prev = palette_next;
+    sys->stretch_prev = stretch;
 }
 
 // --- Frame loop: emulation interleaved with scanline output ---------------
@@ -150,7 +152,8 @@ static void emit_line(const nes_system *sys) {
     }
     uint16_t *buf = hal_video_acquire_scanline();
     nes_video_render_scanline(g_line, buf, nes_core_front_base(),
-                              nes_core_palette565(sys->palette), sys->rotation, sys->mirror_x);
+                              nes_core_palette565(sys->palette), sys->rotation, sys->mirror_x,
+                              sys->stretch);
     hal_video_submit_scanline(buf);
     if (++g_line == HAL_VIDEO_HEIGHT) g_line = 0;
 }

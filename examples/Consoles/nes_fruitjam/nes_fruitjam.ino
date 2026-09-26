@@ -24,6 +24,8 @@
 //   D-pad   UP A3, DOWN A4, LEFT D8, RIGHT D9
 //   A       D10 (SHOOT)        B       A2 (ACTION2)
 //   Start   D6  (START1)       Select  A5 (COIN)
+//   Button 1 STRETCH toggles aspect correction (the NES's 8:7 pixels; starts
+//   off, 1:1), as it does in the arcade games.
 //   Button 2 ROTATE cycles the picture's rotation.
 //   Button 3 MIRROR cycles nofrendo's six palettes.
 //   USB gamepads on the Type-A ports: A, B, Start, Select (the Game Boy's
@@ -132,6 +134,7 @@ void loop() {
     bool select = hal_input_read(HAL_BTN_COIN);
     bool rotate = hal_input_read(HAL_BTN_ROTATE);
     bool palette_next = hal_input_read(HAL_BTN_MIRROR);
+    bool stretch = hal_input_read(HAL_BTN_STRETCH);
 
 #ifdef TEST_AUTOSTART
     // Unattended bring-up, the same script as the host harnesses: Start at
@@ -146,7 +149,8 @@ void loop() {
     }
 #endif
 
-    nes_input_update(&g_system, up, down, left, right, a, b, start, select, rotate, palette_next);
+    nes_input_update(&g_system, up, down, left, right, a, b, start, select, rotate, palette_next,
+                     stretch);
 
     // Frame-budget instrument, in the same format as the other sketches.
     // `work` is the real cost: frame minus the time spent blocked waiting
@@ -191,6 +195,8 @@ void loop() {
         Serial.print((int)g_system.rotation);
         Serial.print(", palette ");
         Serial.print((int)g_system.palette);
+        Serial.print(", stretch ");
+        Serial.print((int)g_system.stretch);
 #if defined(USE_TINYUSB)
         Serial.print(", usb pads ");
         Serial.print(fruitjam_usb_input_pads());
