@@ -72,6 +72,14 @@ extras/tools/gb_host/out/
 extras/tools/usb_gamepad_test/usb_gamepad_test
 extras/tools/usb_gamepad_test/*.dSYM/
 
+# NES machine host harness (extras/tools/nes_host/) -- its binary, build
+# output, per-cartridge /cart folders (commercial ROMs) and dumps.
+extras/tools/nes_host/nes_host
+extras/tools/nes_host/*.dSYM/
+extras/tools/nes_host/build/
+extras/tools/nes_host/carts/
+extras/tools/nes_host/out/
+
 # NES core spike harness (extras/tools/nes_test/) -- its binaries, build
 # output and frame dumps, and what fetch.sh downloads: the candidate cores
 # (not vendored until one is chosen) and the test ROMs (plus any game ROMs
