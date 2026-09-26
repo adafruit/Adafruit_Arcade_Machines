@@ -72,6 +72,18 @@ extras/tools/gb_host/out/
 extras/tools/usb_gamepad_test/usb_gamepad_test
 extras/tools/usb_gamepad_test/*.dSYM/
 
+# NES core spike harness (extras/tools/nes_test/) -- its binaries, build
+# output and frame dumps, and what fetch.sh downloads: the candidate cores
+# (not vendored until one is chosen) and the test ROMs (plus any game ROMs
+# you add, which are commercial).
+extras/tools/nes_test/nes_nofrendo
+extras/tools/nes_test/nes_fixnes
+extras/tools/nes_test/*.dSYM/
+extras/tools/nes_test/build/
+extras/tools/nes_test/out/
+extras/tools/nes_test/cores/
+extras/tools/nes_test/roms/
+
 # Claude Code worktrees -- transient checkouts with their own build output.
 # Narrow on purpose: a future tracked .claude/settings.json stays visible.
 .claude/worktrees/

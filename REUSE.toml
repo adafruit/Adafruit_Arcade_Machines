@@ -42,3 +42,11 @@ SPDX-License-Identifier = "MIT"
 path = "extras/tools/usb_gamepad_test/captures/*.log"
 SPDX-FileCopyrightText = "2026 John Park for Adafruit Industries"
 SPDX-License-Identifier = "MIT"
+
+# The NES spike's patches to nofrendo (extras/tools/nes_test/patches/): our
+# change plus a few lines of nofrendo's own code as diff context, so they
+# carry nofrendo's licence, version 2 of the GNU Library GPL.
+[[annotations]]
+path = "extras/tools/nes_test/patches/*.patch"
+SPDX-FileCopyrightText = ["1998-2000 Matthew Conte", "2026 John Park for Adafruit Industries"]
+SPDX-License-Identifier = "LGPL-2.0-only"
