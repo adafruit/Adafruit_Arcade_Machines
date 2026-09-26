@@ -128,10 +128,17 @@ void nes_input_update(nes_system *sys, bool up, bool down, bool left, bool right
 // on the Fruit Jam), and whenever fewer than QUEUE_LOW lines are waiting,
 // top the display queue up. The last COMPLETE frame is drawn (double
 // buffer), and the swap waits for canvas line 0, which also paces emulation
-// to one NES frame per display frame. The audio burst (one frame of samples
-// from nofrendo's APU) gets its own top-up first.
+// to one NES frame per display frame.
+//
+// AUDIO IN PIECES. nofrendo makes a frame of samples in one call, and
+// nothing is drawn meanwhile. With the queue topped up to 28 first, SMB3's
+// busier music still took it down to 7 of 32 on the Fruit Jam (SMB's: 13),
+// so that call was ~1.3 ms, ~20 lines. The frame is now made AUDIO_CHUNK
+// samples at a time with a top-up before each piece; the APU's output is
+// identical (nes_core.h), which the host harness's WAVs confirm.
 #define QUEUE_LOW      16u
 #define AUDIO_HEADROOM 28u
+#define AUDIO_CHUNK    96u
 
 static uint32_t g_line = 0;
 static bool g_swap_pending = false;
@@ -159,10 +166,15 @@ void nes_run_frame(nes_system *sys) {
         while (hal_video_valid_level() < QUEUE_LOW) emit_line(sys);
         if (done) break;
     }
-    while (hal_video_valid_level() < AUDIO_HEADROOM) emit_line(sys);
     static int16_t samples[NES_APU_MAX_SAMPLES];
-    const uint32_t n = nes_core_audio_frame(samples);
-    console_audio_push(samples, n);
+    const uint32_t total = nes_core_audio_samples_per_frame();
+    for (uint32_t done = 0; done < total;) {
+        const uint32_t n = (total - done < AUDIO_CHUNK) ? total - done : AUDIO_CHUNK;
+        while (hal_video_valid_level() < AUDIO_HEADROOM) emit_line(sys);
+        nes_core_audio_render(samples + done, n);
+        done += n;
+    }
+    console_audio_push(samples, total);
     g_swap_pending = true;
     while (g_swap_pending) emit_line(sys);
 }

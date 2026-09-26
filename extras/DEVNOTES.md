@@ -7349,3 +7349,31 @@ correction doing its job, not a fault (compare the Game Boy's drops in
 - rotation 3 on the TV;
 - battery saves (Zelda, Final Fantasy);
 - aspect correction on STRETCH.
+
+**Super Mario Bros. 3 (MMC3, 384 KB, from PSRAM), and audio in pieces.**
+SMB3 played correctly on the first try: the status bar held still through
+scrolling, which is MMC3's mid-frame scanline IRQ, the timing nofrendo
+fails in blargg's `4-scanline_timing`. All four rotations were checked on
+the TV, including 3. No starvation. But the queue's low point fell to
+**7 of 32**, against SMB's 13, in every rotation, so the cause was the
+game, not the renderer. The likely cause was the one uninterrupted call
+left in the frame, nofrendo's audio: a frame of samples in one call,
+after a top-up to 28, so ~20 lines, ~1.3 ms, with SMB3's busier music.
+
+`apu_process()` carries its whole state from sample to sample and saves
+its filter memory across calls, so a frame can be made in pieces with
+identical output. The machine now makes it 96 samples at a time, topping
+the queue up before each piece. On the host, the WAVs of SMB, SMB3 and
+Kirby over 1500 frames are **byte-identical** before and after, and so
+are the frame CRCs.
+
+| SMB3 on the Fruit Jam | One audio call | Four pieces |
+|---|---|---|
+| Queue low point | 7 | 13 (never lower over ~6 minutes) |
+| Work, worst | 12.5 ms | 13.0 ms |
+| Starvation | 0 | 0 |
+
+The second session was about 6 minutes of play, and the user saw no red
+lines. The rule, as for the Game Boy (#127): no single uninterrupted
+call longer than the queue's slack, and a total frame time does not show
+the problem.

@@ -67,9 +67,14 @@ const uint8_t *nes_core_front_base(void);
 const uint8_t *nes_core_front_row(uint32_t y);
 void nes_core_swap(void);
 
-// One frame of mono samples (after a frame completes); returns the count.
+// A frame's audio, after the frame's last line: samples_per_frame() mono
+// samples, made by any number of render() calls that add up to it. The APU
+// carries its whole state (and its filter's memory) from one sample to the
+// next, so splitting a frame into pieces gives identical output; the
+// machine does, to feed the display between pieces.
 #define NES_APU_MAX_SAMPLES 512
-uint32_t nes_core_audio_frame(int16_t *out);
+uint32_t nes_core_audio_samples_per_frame(void);
+void nes_core_audio_render(int16_t *out, uint32_t n);
 
 // RGB565 for each of the 256 index values nofrendo draws with (it repeats
 // the 64 NES colours for sprite priority), for palette `n` of

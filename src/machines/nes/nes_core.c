@@ -84,13 +84,14 @@ const uint8_t *nes_core_front_row(uint32_t y) {
 
 void nes_core_swap(void) { g_back ^= 1u; }
 
-uint32_t nes_core_audio_frame(int16_t *out) {
-    apu_emulate();
-    uint32_t n = (uint32_t)g_nes->apu->samples_per_frame;
-    if (n > NES_APU_MAX_SAMPLES) n = NES_APU_MAX_SAMPLES;
-    memcpy(out, g_nes->apu->buffer, n * sizeof(int16_t));
-    return n;
+// apu_emulate() is apu_process(apu.buffer, samples_per_frame, stereo);
+// this is the same call, into the caller's buffer, in pieces.
+uint32_t nes_core_audio_samples_per_frame(void) {
+    const uint32_t n = (uint32_t)g_nes->apu->samples_per_frame;
+    return n > NES_APU_MAX_SAMPLES ? NES_APU_MAX_SAMPLES : n;
 }
+
+void nes_core_audio_render(int16_t *out, uint32_t n) { apu_process(out, n, false); }
 
 uint32_t nes_core_palette_count(void) { return NES_PALETTE_COUNT; }
 
