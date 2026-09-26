@@ -7151,3 +7151,39 @@ shown START before SELECT, and it wasn't noticed. Fixed: Select is HID
 button 9, Start is 10. The replay test's expected order was corrected to
 match the capture. The lesson: a button test run by a person needs one
 unambiguous check at the end (a game) as well as the log.
+
+**All seven arcade games, played on hardware with the Mantapad**
+(2026-09-25). One game each, controls confirmed by the user, no red lines:
+
+| Game | Worst work (ms) | Starvation | Queue low point |
+|---|---|---|---|
+| Ms. Pac-Man | 9.6 | 0 | 28 |
+| Donkey Kong | 15.3 | 0 | 21 |
+| Burger Time | 16.3 | 0 during play (5 at boot, as without USB) | 11 |
+| Pac-Man | 9.3 | 0 | 28 |
+| Space Invaders | 6.7 | 0 | 27 |
+| Lunar Rescue | 6.6 | 0 | 13 |
+| Galaga (earlier, Genesis pad) | 15.3 | 0 | 16 |
+
+Notes on the table:
+
+- Ms. Pac-Man was played on a build from before the Start/Select fix; that
+  play is what found the swap. Donkey Kong onwards ran the fixed build.
+- Burger Time prints a starvation total since boot. Its 5 events all
+  happen in the first seconds, and happen identically without USB.
+
+**Burger Time pays the most for USB.** Two alternating runs of each build
+on the attract screens, frames 600-3600, with the Mantapad plugged in:
+
+| Build | Mean work | Worst work | Queue low point |
+|---|---|---|---|
+| No USB | 14.75 ms | 15.50 ms | 22 |
+| USB | 15.11 ms | 15.94 ms | 17 |
+
+That is +0.35 ms mean and +0.44 ms worst: more than Galaga's +0.25 ms,
+with a pad that reports only on change. A likely cause, not yet measured,
+is XIP cache contention: TinyUSB's code runs from flash, and Burger Time
+has been cache-sensitive before (#117-#121). It still fits (16.3 ms worst
+in play, no starvation), but it is now the game with the least margin. If
+it ever needs room back, the first thing to try is moving TinyUSB's hot
+paths into RAM.
