@@ -13,6 +13,7 @@
 #include "arch/arch.h"
 #include "cart/cart_loader.h"
 #include "console/console_audio.h"
+#include "console/console_save.h"
 #include "hal/arcade_hal_video.h"
 #include "hal/arcade_hal_storage.h"
 #include "hal/arcade_hal_input.h"
@@ -67,8 +68,8 @@ bool nes_load_cart(nes_system *sys, uint16_t *out_error_color) {
     sys->cart_matches = info.matches;
     sys->mount_attempts = info.mount_attempts;
     if (st == CART_NO_STORAGE) return fail(sys, NES_BOOT_NO_CARD, out_error_color);
-    hal_storage_unmount(); // no saves yet: the card is never touched again
     if (st != CART_OK) {
+        hal_storage_unmount();
         return fail(sys, st == CART_NO_ROM  ? NES_BOOT_NO_ROM
                        : st == CART_TOO_BIG ? NES_BOOT_TOO_BIG
                                             : NES_BOOT_READ_ERROR,
@@ -87,6 +88,7 @@ bool nes_load_cart(nes_system *sys, uint16_t *out_error_color) {
 
     const nes_core_status_t cs = nes_core_init(g_rom, info.size, NES_AUDIO_SAMPLE_RATE);
     if (cs != NES_CORE_OK) {
+        hal_storage_unmount();
         return fail(sys, cs == NES_CORE_BAD_ROM     ? NES_BOOT_BAD_ROM
                        : cs == NES_CORE_UNSUPPORTED ? NES_BOOT_UNSUPPORTED
                                                     : NES_BOOT_NO_MEMORY,
@@ -94,6 +96,12 @@ bool nes_load_cart(nes_system *sys, uint16_t *out_error_color) {
     }
     sys->mapper = nes_core_mapper_number();
     sys->mapper_name = nes_core_mapper_name();
+
+    // A battery cartridge loads its .sav (after the core's reset, which
+    // clears the RAM) and keeps storage mounted for later saves
+    // (console_save.h); anything else never touches the card again.
+    if (!console_save_init(sys->cart_name, nes_core_save_ram(), nes_core_save_size()))
+        hal_storage_unmount();
 
     console_audio_init(NES_AUDIO_SAMPLE_RATE);
     hal_input_init();
@@ -178,6 +186,10 @@ void nes_run_frame(nes_system *sys) {
         done += n;
     }
     console_audio_push(samples, total);
+    // One save step at most (a 512-byte sector, ~0.35 ms on the Fruit Jam),
+    // after its own top-up, as on the Game Boy.
+    while (hal_video_valid_level() < AUDIO_HEADROOM) emit_line(sys);
+    console_save_frame();
     g_swap_pending = true;
     while (g_swap_pending) emit_line(sys);
 }

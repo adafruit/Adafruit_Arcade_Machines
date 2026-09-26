@@ -7408,3 +7408,54 @@ starvation either way, queue low point 13:
 corrected period was gameplay, and most of the 1:1 period was the title
 screen. It shows the worst case still fits, with 3 ms to spare, but not
 what the table itself costs.
+
+### 138. NES battery saves, and a shared save module
+
+The Game Boy's save design (#130), with its one Game Boy dependency taken
+out: `src/console/console_save`, next to the shared audio ring, used by
+the NES now. The Game Boy keeps its copy until it is moved over and
+re-verified on hardware.
+
+**What had to change: how a save is noticed.** Peanut-GB routes every
+write to cartridge RAM through a callback, so the Game Boy counts
+byte-changing writes. nofrendo maps the PRG-RAM as plain memory the 6502
+writes straight into, with nothing to hook. So `console_save_frame()`
+compares the RAM with a shadow copy once a frame (8 KB for a typical
+battery cart, a few microseconds) and counts the frames that changed it.
+Everything after that is unchanged:
+
+- a second of quiet;
+- a snapshot;
+- one 512-byte sector per frame into the preallocated contiguous
+  `/cart/<rom>.sav`;
+- no write while the card reports busy.
+
+The load happens after `nes_core_init()`, because nofrendo's reset clears
+the PRG-RAM.
+
+**On the host,** Zelda with a scripted registration: type "AB", Select
+three times to reach END (four cycles the heart back round), then Start.
+The game's writes are noticed and saved, and on a fresh run the `.sav`
+loads and the file-select screen shows "AB" with three hearts.
+
+**On the Fruit Jam,** Zelda (MMC1, 8 KB battery RAM):
+
+- The user registered a name, and saves followed: each **34 frames**,
+  0 errors, the longest step **736 us**.
+- Power cycled: the log says `loaded yes`, and the named file was there.
+- No starvation during play or saving; audio clean; worst work 12.2 ms.
+
+**A start-up artefact, not a fault.** Both Zelda boots showed
+`starve 2, minq 0` on their first status line (frame 60) and never again.
+The first NES boot of the day, Super Mario Bros. before saves existed,
+shows the same. It is the display queue filling from empty while the
+first submissions land at level 1: the starve counter counts any submit
+that leaves the queue at 1 or below. It matches Burger Time's 5 boot-time
+events (#134). Judge starvation from the second status line on.
+
+Phase 2, the NES, is done:
+
+- SMB and SMB3 in all four rotations;
+- aspect correction;
+- battery saves;
+- GPL isolation checked.
