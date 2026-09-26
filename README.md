@@ -5,7 +5,7 @@ SPDX-License-Identifier: MIT
 
 # Adafruit Arcade Machines
 
-Classic arcade games for the [Adafruit Fruit Jam](https://www.adafruit.com/product/6200)
+Classic arcade games and consoles for the [Adafruit Fruit Jam](https://www.adafruit.com/product/6200)
 (RP2350B) and the [Feather ESP32 V2](https://www.adafruit.com/product/5438), running under the Arduino framework instead of the raw Pico SDK.
 
 This started as an Arduino port of [adafruit/invaders_pico](https://github.com/adafruit/invaders_pico)
@@ -34,6 +34,8 @@ to one game or one board are reusable for the next port:
   that family.
 - **`examples/Games/`** — one sketch per game, each the one place that knows
   both "this game" and "this board," wiring the two together.
+  **`examples/Consoles/`** does the same for consoles, where the SD card is
+  the cartridge.
 
 This is a single Arduino library: install it, then open an example. The
 three axes above are directories inside `src/`, not separate libraries, so
@@ -61,6 +63,16 @@ just read `src/hal/*.h` for the contracts themselves.
 
 Each game's own README covers its specific ROM/sample layout, controls, and
 any known quirks. They all share the building steps below.
+
+## Consoles
+
+| Console | Sketch | Notes |
+|---|---|---|
+| Game Boy (DMG) | [`gameboy_fruitjam/`](examples/Consoles/gameboy_fruitjam/README.md) | The project's first **console**: the microSD card is the cartridge (one `.gb` in `/cart`), loaded into PSRAM, with MBC1/2/3/5 bank switching, battery saves to a standard `.sav`, four colour palettes on Button 3, and full APU sound. Core: Peanut-GB (MIT). Fruit Jam only for now; more consoles are planned in `extras/CONSOLES_PLAN.md`. |
+
+**USB gamepads** work in every Fruit Jam game and the Game Boy, plugged
+into either Type-A port, when the sketch is built with the Adafruit TinyUSB
+USB stack (see the build steps).
 
 ### A second board: Feather ESP32 V2
 
@@ -152,7 +164,9 @@ frame-budget cost of each option.
 ### Prebuilt firmware
 
 If you'd rather not install the toolchain, every [release](../../releases)
-carries **all seven games for both boards** — fourteen files in total.
+carries **all seven games for both boards** — fourteen files — plus, from
+v2.11.0, `gameboy_fruitjam.uf2` for the Fruit Jam. The Fruit Jam builds
+include USB gamepad support.
 
 **Fruit Jam — `<game>_fruitjam.uf2`.** Hold **BOOT** while connecting USB (or
 hold BOOT and tap **RESET**), then copy the `.uf2` onto the `RP2350` drive
@@ -174,7 +188,7 @@ which is not the same for every game; see below.
 To build the whole set yourself, ready to attach to a release:
 
 ```bash
-./extras/dist/build_all.sh      # seven <game>_fruitjam.uf2 and seven <game>_featheresp32.bin
+./extras/dist/build_all.sh      # seven <game>_fruitjam.uf2, gameboy_fruitjam.uf2, seven <game>_featheresp32.bin
 ```
 
 `extras/dist/` is gitignored apart from that script and its README — the binaries
@@ -476,8 +490,9 @@ flashing it.
 ### `arduino-lint`, and the two ways to run it wrong
 
 `arduino-lint` is what Library Manager submissions are checked against. This
-library **passes**: 0 errors, 1 warning, exit 0, with all 20 examples clean —
-fourteen games (seven per board) and six SelfTest sketches.
+library **passes**: 0 errors, 1 warning, exit 0, with all 24 examples clean —
+fourteen games (seven per board), the Game Boy console, and nine SelfTest
+sketches (checked for v2.11.0).
 
 ```bash
 # lint what the registry would actually clone, NOT the working tree
