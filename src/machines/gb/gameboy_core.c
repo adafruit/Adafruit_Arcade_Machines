@@ -80,15 +80,11 @@ static uint8_t cart_ram_read(struct gb_s *gb, const uint_fast32_t addr) {
     return addr < sizeof g_cart_ram ? g_cart_ram[addr] : 0xFF;
 }
 
-// Counts writes that CHANGE a byte: games rewrite unchanged values often,
-// and those must not trigger a save (gameboy_save.cpp).
-static volatile uint32_t g_ram_changes;
+// Saves notice changes by comparing this RAM with a copy each frame
+// (console/console_save.h), so a write needs no bookkeeping here.
 static void cart_ram_write(struct gb_s *gb, const uint_fast32_t addr, const uint8_t val) {
     (void)gb;
-    if (addr < sizeof g_cart_ram && g_cart_ram[addr] != val) {
-        g_cart_ram[addr] = val;
-        g_ram_changes++;
-    }
+    if (addr < sizeof g_cart_ram) g_cart_ram[addr] = val;
 }
 
 // The core reports an invalid opcode or access and carries on; nothing
@@ -209,4 +205,3 @@ uint32_t gameboy_core_save_size(void) {
 
 uint8_t *gameboy_core_save_ram(void) { return g_cart_ram; }
 
-uint32_t gameboy_core_save_changes(void) { return g_ram_changes; }

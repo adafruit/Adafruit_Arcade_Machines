@@ -7459,3 +7459,44 @@ Phase 2, the NES, is done:
 - aspect correction;
 - battery saves;
 - GPL isolation checked.
+
+### 139. The Game Boy on the shared audio and save modules
+
+The Game Boy's own audio ring and save path were the originals that
+`src/console/console_audio` and `console_save` were made from (#136,
+#138). Now it uses them too, so there is one copy of each.
+
+**The changes:**
+
+- **Audio.** `gameboy_audio.cpp` feeds a frame of minigb samples into
+  `console_audio_push()` and times the generation. Its design notes and
+  measurements moved into `console_audio.cpp`: the ring's shape, the
+  correction history, and the 22080/s-vs-22050 counters, now with the
+  NES's 22020/s beside them.
+- **Saves.** `gameboy_save.{h,cpp}` is gone. The machine, the sketch and
+  `gb_host` call `console_save` directly. The core's byte-changing write
+  counter (`gameboy_core_save_changes`) is gone too: a change is now
+  noticed the NES way, by comparing the RAM with a shadow copy each frame.
+
+**Checked on the host before the hardware:**
+
+- **The Game Boy regression is byte-identical.** Every frame in
+  `before.sha` matches: the eight Tetris frames, the Tetris WAV and
+  dmg-acid2. That is what the shared ring promised, as the Game Boy's
+  code minus one call.
+- **Link's Awakening's saves are identical under the new detection.**
+  From a blank save, one scripted run gave 2 saves of 18 frames each
+  before and after, and a byte-identical `.sav`. Counting writes and
+  comparing the RAM notice the same frames: they can differ only for a
+  write that is undone within the same frame.
+
+**On the Fruit Jam**, Link's Awakening with the user's existing save:
+
+- The save loaded (`loaded yes`). A new save took 34 frames with 0
+  errors, the longest step 745 us, and survived a power cycle.
+- The user: "sounds great and saves work".
+- After the first second, no starvation and no audio underruns or
+  overruns; worst work 13.2 ms.
+- The queue low point was 9, against 11 in #130's session. The only new
+  per-frame work is an 8 KB compare, a few microseconds, so the
+  difference is more likely the game than the change; not isolated.

@@ -98,12 +98,10 @@ uint32_t gameboy_core_error_count(void);
 // Battery-backed save RAM (cartridge RAM). has_battery() is from the header's
 // cartridge type; save_size() is the header's RAM size (0 if none, or if
 // larger than this wrapper holds, 32 KB). save_ram() is the live RAM the game
-// reads and writes. save_changes() counts writes that changed a byte, so a
-// caller can tell "written since" without copying.
+// reads and writes (console/console_save.h persists it).
 bool gameboy_core_has_battery(void);
 uint32_t gameboy_core_save_size(void);
 uint8_t *gameboy_core_save_ram(void);
-uint32_t gameboy_core_save_changes(void);
 
 // With GAMEBOY_CORE_PROFILE defined: the longest single core call and how
 // many took over 1 ms, since the previous call. Zeros otherwise.

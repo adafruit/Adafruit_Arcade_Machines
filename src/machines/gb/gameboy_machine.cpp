@@ -10,7 +10,7 @@
 #include "gameboy_core.h"
 #include "gameboy_video.h"
 #include "gameboy_audio.h"
-#include "gameboy_save.h"
+#include "console/console_save.h"
 #include "gameboy_palette.h"
 #include "cart/cart_loader.h"
 #include "hal/arcade_hal_video.h"
@@ -92,8 +92,12 @@ bool gameboy_load_cart(gameboy_system *sys, uint16_t *out_error_color) {
     }
 
     // A battery cartridge loads its .sav and keeps storage mounted for later
-    // saves (gameboy_save.h); anything else never touches the card again.
-    if (!gameboy_save_init(sys->cart_name)) hal_storage_unmount();
+    // saves (console/console_save.h); anything else never touches the card
+    // again.
+    const bool battery = gameboy_core_has_battery();
+    if (!console_save_init(sys->cart_name, battery ? gameboy_core_save_ram() : nullptr,
+                           battery ? gameboy_core_save_size() : 0))
+        hal_storage_unmount();
     memcpy(sys->cart_title, gameboy_core_title(), sizeof sys->cart_title);
     sys->gbc_combo = gameboy_palette_gbc_combo(g_rom);
     gameboy_set_palette(sys, GAMEBOY_PALETTE_DEFAULT);
@@ -197,7 +201,7 @@ void gameboy_run_frame(gameboy_system *sys) {
     // after its own top-up: stacked on the audio burst it would otherwise
     // leave the queue only a few lines deep.
     while (hal_video_valid_level() < AUDIO_HEADROOM) emit_line(sys);
-    gameboy_save_frame();
+    console_save_frame();
     g_swap_pending = true;
     while (g_swap_pending) emit_line(sys);
 }
