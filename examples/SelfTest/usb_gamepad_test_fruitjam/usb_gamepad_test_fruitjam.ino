@@ -19,65 +19,72 @@
 //     seconds BEFORE the host starts, then continuously after, so the
 //     report says what share of core 0 the host's 1 ms interrupt takes,
 //     idle and with a controller plugged in;
-//   - on plug-in: vendor/product ID, the HID interface's protocol, and
-//     the full HID report descriptor, in hex;
-//   - on every change of a controller's report: the raw bytes, with the
-//     bytes that changed since the last report marked.
+//   - on plug-in: vendor/product ID, the full HID report descriptor in hex,
+//     and how the driver (src/input/usb_gamepad) will read it: which known
+//     controller it is, or what the descriptor parser found;
+//   - on every change of a controller's decoded buttons (or of its raw
+//     bytes, with USB_TEST_RAW 1): the raw bytes, with the bytes that
+//     changed since the last one printed marked, and the standard buttons
+//     the driver decoded them to (by position: SOUTH is the bottom
+//     face button, EAST the right one).
+//
+// A controller the driver can't read yet still has its descriptor and
+// reports printed, which is what adding it to the table needs.
 //
 // Press one button at a time and hold it about a second, so each report
 // change is one button.
 #include <Adafruit_Arcade_Machines.h>
 #include <Adafruit_TinyUSB.h>
-#include <pio_usb.h>
-#include <hardware/dma.h>
+#include <pio_usb.h>   // so the builder finds the Pico PIO USB library
+#include <input/usb_gamepad.h>
+#include <boards/fruitjam/usb_host_fruitjam.h>
 #include <boards/fruitjam/board_config_fruitjam.h>
-
-static Adafruit_USBH_Host USBHost;
-
-#define USB_PIO 2
 
 // --- core 0 capacity -------------------------------------------------------
 // One "chunk" is a fixed amount of arithmetic; how many fit in 100 ms is
 // the capacity. Interrupts that steal time show up as fewer chunks.
+//
+// Once the host is running, its task runs about every millisecond inside
+// the loop, as a game would call it several times a frame. Calling it only
+// between 100 ms windows made plugging in take ~10 s (each enumeration step
+// waited for the next call), and the task's own cost belongs in the
+// measurement anyway.
 static volatile uint32_t g_sink;
+static bool g_host_started = false;
+static uint32_t g_host_started_ms = 0;
 static uint32_t chunks_in_100ms(void) {
     const uint32_t t0 = micros();
-    uint32_t n = 0, x = 1;
+    uint32_t n = 0, x = 1, last_task = t0;
     while (micros() - t0 < 100000u) {
         for (int i = 0; i < 1000; i++) x = x * 1664525u + 1013904223u;
         n++;
+        if (g_host_started && micros() - last_task >= 1000u) {
+            fruitjam_usb_host_task();
+            last_task = micros();
+        }
     }
     g_sink = x;
     return n;
 }
 static uint32_t g_baseline = 0;
 
-// --- USB -------------------------------------------------------------------
-static bool g_host_started = false;
-
-static void start_host(void) {
-    pinMode(PIN_5V_EN, OUTPUT);
-    digitalWrite(PIN_5V_EN, PIN_5V_EN_STATE); // power the Type-A ports
-
-    pio_usb_configuration_t cfg = PIO_USB_DEFAULT_CONFIG;
-    cfg.pin_dp = PIN_USB_HOST_DP;
-    cfg.pio_tx_num = USB_PIO;
-    cfg.pio_rx_num = USB_PIO;
-    // Pico PIO USB claims the channel it is given (dma_claim_mask), and
-    // defaults to channel 0; hand it one that is free.
-    const int ch = dma_claim_unused_channel(true);
-    dma_channel_unclaim(ch);
-    cfg.tx_ch = (uint8_t)ch;
-    USBHost.configure_pio_usb(1, &cfg);
-    USBHost.begin(1);
-    g_host_started = true;
-    Serial.print("[usb] host started on PIO ");
-    Serial.print(USB_PIO);
-    Serial.print(", DMA channel ");
-    Serial.print(ch);
-    Serial.print(", clk_sys ");
-    Serial.print(clock_get_hz(clk_sys) / 1000000u);
-    Serial.println(" MHz");
+extern "C" {
+// Device-level plug-in and unplug, with the time since the host started
+// (the driver uses only the HID-level callbacks, so these are free).
+void tuh_mount_cb(uint8_t dev_addr) {
+    Serial.print("[usb] device ");
+    Serial.print(dev_addr);
+    Serial.print(" connected ");
+    Serial.print(millis() - g_host_started_ms);
+    Serial.println(" ms after the host started");
+}
+void tuh_umount_cb(uint8_t dev_addr) {
+    Serial.print("[usb] device ");
+    Serial.print(dev_addr);
+    Serial.print(" unplugged at ");
+    Serial.print(millis() - g_host_started_ms);
+    Serial.println(" ms");
+}
 }
 
 static void print_hex(const uint8_t *b, uint16_t n) {
@@ -89,33 +96,19 @@ static void print_hex(const uint8_t *b, uint16_t n) {
     Serial.println();
 }
 
-struct last_report_t { uint8_t dev, inst; uint16_t len; uint8_t data[64]; };
-static last_report_t g_last[4];
-
-extern "C" {
-
-void tuh_mount_cb(uint8_t dev_addr) {
-    uint16_t vid = 0, pid = 0;
-    tuh_vid_pid_get(dev_addr, &vid, &pid);
-    Serial.print("[usb] device ");
-    Serial.print(dev_addr);
-    Serial.print(" mounted: VID ");
-    Serial.print(vid, HEX);
-    Serial.print(" PID ");
-    Serial.println(pid, HEX);
+static void print_buttons(uint32_t b) {
+    if (!b) { Serial.print("(none)"); return; }
+    bool first = true;
+    for (unsigned i = 0; i < USB_PAD_BUTTON_COUNT; i++) {
+        if (!(b & (1u << i))) continue;
+        if (!first) Serial.print('+');
+        Serial.print(usb_pad_button_name(i));
+        first = false;
+    }
 }
 
-void tuh_umount_cb(uint8_t dev_addr) {
-    Serial.print("[usb] device ");
-    Serial.print(dev_addr);
-    Serial.println(" unmounted");
-    for (auto &l : g_last) if (l.dev == dev_addr) l = last_report_t{};
-}
-
-void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t inst, const uint8_t *desc, uint16_t len) {
-    uint16_t vid = 0, pid = 0;
-    tuh_vid_pid_get(dev_addr, &vid, &pid);
-    const uint8_t proto = tuh_hid_interface_protocol(dev_addr, inst);
+static void on_mount(uint8_t dev_addr, uint8_t inst, uint16_t vid, uint16_t pid,
+                     const uint8_t *desc, uint16_t len, const usb_pad_layout_t *L, int player) {
     Serial.print("[usb] HID device ");
     Serial.print(dev_addr);
     Serial.print(" interface ");
@@ -124,53 +117,88 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t inst, const uint8_t *desc, uint1
     Serial.print(vid, HEX);
     Serial.print(" PID ");
     Serial.print(pid, HEX);
-    Serial.print(", protocol ");
-    Serial.print(proto == HID_ITF_PROTOCOL_KEYBOARD ? "keyboard"
-                 : proto == HID_ITF_PROTOCOL_MOUSE ? "mouse" : "none (gamepad, joystick, ...)");
     Serial.print(", report descriptor ");
     Serial.print(len);
     Serial.println(" bytes:");
     Serial.print("      ");
     print_hex(desc, len);
-    if (!tuh_hid_receive_report(dev_addr, inst)) Serial.println("[usb] cannot request reports");
-}
-
-void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t inst) {
-    Serial.print("[usb] HID device ");
-    Serial.print(dev_addr);
-    Serial.print(" interface ");
-    Serial.print(inst);
-    Serial.println(" unmounted");
-}
-
-void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t inst, const uint8_t *rep, uint16_t len) {
-    last_report_t *slot = nullptr;
-    for (auto &l : g_last) if (l.len && l.dev == dev_addr && l.inst == inst) slot = &l;
-    if (!slot) for (auto &l : g_last) if (!l.len) { slot = &l; break; }
-    const uint16_t n = len < sizeof slot->data ? len : sizeof slot->data;
-    if (slot && !(slot->len == n && memcmp(slot->data, rep, n) == 0)) {
-        Serial.print("[usb] ");
-        Serial.print(dev_addr);
-        Serial.print('.');
-        Serial.print(inst);
-        Serial.print(" report ");
-        Serial.print(len);
-        Serial.print("B: ");
-        for (uint16_t i = 0; i < n; i++) {
-            const bool changed = slot->len == n && slot->data[i] != rep[i];
-            Serial.print(changed ? '[' : ' ');
-            if (rep[i] < 0x10) Serial.print('0');
-            Serial.print(rep[i], HEX);
-            Serial.print(changed ? ']' : ' ');
-        }
-        Serial.println();
-        slot->dev = dev_addr; slot->inst = inst; slot->len = n;
-        memcpy(slot->data, rep, n);
+    Serial.print("[usb]   -> ");
+    if (player < 0) {
+        Serial.println(L->kind == USB_PAD_UNSUPPORTED
+                       ? "NOT READABLE as a gamepad (no usable descriptor, not in the table)"
+                       : "no free player slot");
+        return;
     }
-    tuh_hid_receive_report(dev_addr, inst);
+    Serial.print("player ");
+    Serial.print(player + 1);
+    Serial.print(", ");
+    Serial.print(L->name);
+    if (L->kind == USB_PAD_GENERIC) {
+        Serial.print(" (descriptor: ");
+        Serial.print(L->n_buttons);
+        Serial.print(" buttons");
+        if (L->has_hat) Serial.print(", hat switch");
+        if (L->has_x && L->has_y) Serial.print(", X/Y axes");
+        if (L->report_id) { Serial.print(", report ID "); Serial.print(L->report_id); }
+        Serial.print(")");
+    } else {
+        Serial.print(" (fixed layout)");
+    }
+    Serial.println();
 }
 
-} // extern "C"
+// USB_TEST_RAW 1 prints every report whose bytes changed -- what adding a
+// new controller needs. The default, 0, prints only when the decoded
+// buttons change: a DualShock 4 changes bytes every report (its motion
+// sensors), and printing ~250 of those lines a second costs core 0 about
+// 12% on its own, which would swamp the measurement of the host.
+#ifndef USB_TEST_RAW
+#define USB_TEST_RAW 0
+#endif
+static volatile uint32_t g_reports;
+
+static void on_report(int player, const uint8_t *rep, uint16_t len, uint32_t buttons) {
+    static uint8_t last[USB_GAMEPAD_MAX][64];
+    static uint16_t last_len[USB_GAMEPAD_MAX];
+    static uint32_t last_buttons[USB_GAMEPAD_MAX];
+    g_reports++;
+    if (player < 0 || player >= USB_GAMEPAD_MAX) return;
+    const uint16_t n = len < 64 ? len : 64;
+    if (last_len[player] == n && memcmp(last[player], rep, n) == 0) return;
+    if (!USB_TEST_RAW && last_len[player] && buttons == last_buttons[player]) {
+        memcpy(last[player], rep, n);
+        return;
+    }
+    last_buttons[player] = buttons;
+    Serial.print("[usb] P");
+    Serial.print(player + 1);
+    Serial.print(" ");
+    for (uint16_t i = 0; i < n; i++) {
+        const bool changed = last_len[player] == n && last[player][i] != rep[i];
+        Serial.print(changed ? '[' : ' ');
+        if (rep[i] < 0x10) Serial.print('0');
+        Serial.print(rep[i], HEX);
+        Serial.print(changed ? ']' : ' ');
+    }
+    Serial.print("  = ");
+    print_buttons(buttons);
+    Serial.println();
+    last_len[player] = n;
+    memcpy(last[player], rep, n);
+}
+
+static void start_host(void) {
+    usb_gamepad_set_hooks(on_mount, on_report);
+    g_host_started = fruitjam_usb_host_begin();
+    g_host_started_ms = millis();
+    Serial.print("[usb] host ");
+    Serial.print(g_host_started ? "started" : "FAILED to start");
+    Serial.print(" on PIO 2, DMA channel ");
+    Serial.print(fruitjam_usb_host_dma_channel());
+    Serial.print(", clk_sys ");
+    Serial.print(clock_get_hz(clk_sys) / 1000000u);
+    Serial.println(" MHz");
+}
 
 void setup() {
     // The games' clock; PIO-USB needs a multiple of 12 MHz, and 252 is one.
@@ -195,9 +223,7 @@ void loop() {
         return;
     }
 
-    USBHost.task();
     const uint32_t c = chunks_in_100ms();
-    USBHost.task();
     cap_sum += c; cap_n++;
     if (c < cap_min) cap_min = c;
 
@@ -214,7 +240,20 @@ void loop() {
         Serial.print(g_baseline ? 100.0f * (float)(g_baseline - (mean < g_baseline ? mean : g_baseline)) / g_baseline : 0.0f, 1);
         Serial.print("% mean, ");
         Serial.print(g_baseline ? 100.0f * (float)(g_baseline - (cap_min < g_baseline ? cap_min : g_baseline)) / g_baseline : 0.0f, 1);
-        Serial.println("% worst 100 ms");
+        Serial.print("% worst 100 ms; players");
+        for (uint8_t p = 0; p < USB_GAMEPAD_MAX; p++) {
+            usb_gamepad_info_t info;
+            if (!usb_gamepad_info(p, &info)) break;
+            Serial.print(' ');
+            Serial.print(p + 1);
+            Serial.print('=');
+            Serial.print(info.name);
+        }
+        Serial.print(", reports/s ");
+        Serial.print(g_reports / 2u);
+        g_reports = 0;
+        Serial.print(", unreadable HID devices ");
+        Serial.println(usb_gamepad_unsupported_count());
         cap_sum = cap_n = 0; cap_min = 0xFFFFFFFFu;
     }
 }

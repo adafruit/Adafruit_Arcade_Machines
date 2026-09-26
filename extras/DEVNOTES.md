@@ -7009,3 +7009,85 @@ The Wii Classic's slower collect suggests it stretches the clock.
 - **Why pico-infonesPlus lists the Fruit Jam as supported:** it presumably
   worked with displays whose EDID answers only at 0x50, which many do. The
   collision depends on the display.
+
+### 133. USB gamepads on the Fruit Jam: three controllers, three ways to report a button
+
+Steps 1-3 of the USB gamepad plan (extras/CONSOLES_PLAN.md, "USB gamepads
+on the Fruit Jam"):
+
+- the Adafruit TinyUSB host, with Pico PIO USB driving the Type-A ports;
+- a self-test, `examples/SelfTest/usb_gamepad_test_fruitjam`;
+- the driver, `src/input/usb_gamepad*`, with
+  `src/boards/fruitjam/usb_host_fruitjam.*` starting the host;
+- a host test, `extras/tools/usb_gamepad_test`, that replays captured
+  reports.
+
+**The host on core 0 is cheap.** The host was run the way the games will
+run it: core 0 (core 1 is video), 252 MHz (a multiple of 12 MHz, which
+PIO-USB needs), PIO 2, and an unclaimed DMA channel. Pico PIO USB claims
+the channel it is given and defaults to 0. Its core-0 cost was measured by
+timing a fixed chunk of work before and after the host started:
+
+- 1.2% with nothing plugged in (its 1 ms frame timer);
+- 1.3% with a pad that reports only on change;
+- 3.0% with a DualShock 4 streaming 200 reports a second. That is about
+  0.5 ms a frame, still to be measured inside Galaga.
+
+**Three controllers, recorded pressing one button at a time:**
+
+| Controller | VID:PID | Descriptor | D-pad | Face buttons |
+|---|---|---|---|---|
+| Mantapad SNES-style | 081F:E401 | 98 bytes, 10 buttons | X/Y axes | X=1 A=2 B=3 Y=4, L=5 R=6, Start=9 Select=10 |
+| Retro-bit Genesis 8-button | 0F0D:00C1 | 80 bytes, 14 buttons | X/Y axes; the declared hat never moves | Y=1 B=2 A=3 X=4, Z=7 C=8, Mode=9 Start=10 |
+| DualShock 4 | 054C:05C4 | **never delivered** | hat switch | fixed layout (report 0x01) |
+
+What they taught the driver:
+
+- **A descriptor says where the buttons are, never which is which.**
+  "Button 1" was X on one pad and Y on the other. So every known pad has a
+  table from HID button number to a standard POSITION (SDL's south, east,
+  west, north), and unknown pads get the common PlayStation-style
+  numbering. The game-level meaning of each position is the sketch's
+  mapping.
+- **The D-pad can be the axes, the hat, or both.** The Genesis pad declares
+  a hat switch and never moves it, so the parser reads both and combines
+  them.
+- **Big descriptors don't arrive.** The DualShock 4's descriptor is about
+  500 bytes. Adafruit TinyUSB's enumeration buffer is 256
+  (`CFG_TUH_ENUMERATION_BUFSIZE`, fixed in the library's rp2040 config and
+  not overridable from a sketch), so the mount callback got 0 bytes. Such
+  pads must be recognised by vendor/product ID and decoded from a known
+  layout, as pico-infonesPlus does.
+
+**Two self-test mistakes, each of which looked like a driver bug:**
+
+- **Presses before a controller connected looked like lost presses.** The
+  first self-test ran the host task only twice per 100 ms timing window.
+  Connecting a device is dozens of small steps, each of which waited for
+  the next task call, so plugging in took **about 10 seconds**. The
+  presses made in that window "went missing". The decoder was cleared by
+  the raw log: the first report after the connect already showed a later
+  button. Running the task about every millisecond, as a game calls it
+  several times a frame, brought connection down to within the first
+  status line (under 2 s). It also showed that a controller already
+  plugged in at reset connects on its own.
+- **Printing every report costs more than the host.** With the task
+  running every millisecond, the DualShock 4's constantly changing reports
+  (motion sensors) were all printed. That made the "host cost" 13.4%;
+  printing only when the decoded buttons change brought it to 3.0%. The
+  self-test now prints raw reports only with `-DUSB_TEST_RAW=1`.
+
+**Verified:**
+
+- On hardware: every button on all three controllers decoded to the
+  expected standard button; two controllers at once came up as players 1
+  and 2; a controller plugged in at reset reconnected on its own.
+- On the host: `usb_gamepad_test` replays the three captures and checks
+  the decoded order. It fails when a table entry is deliberately swapped,
+  so it is a real check.
+- The default-stack sketches (Game Boy, Galaga, a Feather game) build to
+  byte-identical sizes; the USB files compile to nothing without
+  `USE_TINYUSB`.
+
+Not yet done: step 4, `hal_input_poll()` and the button mapping in the
+sketches, measured in Galaga and on the Game Boy.
