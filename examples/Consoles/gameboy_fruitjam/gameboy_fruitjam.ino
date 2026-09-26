@@ -40,6 +40,14 @@
 #include <machines/gb/gameboy_save.h>
 #include <machines/gb/gameboy_palette.h>
 #include <boards/fruitjam/board_config_fruitjam.h>
+#if defined(USE_TINYUSB)
+// USB gamepads on the Type-A ports (Tools > USB Stack > Adafruit TinyUSB,
+// which sketch.yaml selects; with the default stack the game still builds
+// and runs on the GPIO buttons alone). <pio_usb.h> is here so the builder
+// finds the Pico PIO USB library.
+#include <pio_usb.h>
+#include <boards/fruitjam/usb_input_fruitjam.h>
+#endif
 
 static gameboy_system  g_system;
 static volatile bool   g_video_ready = false;
@@ -87,6 +95,11 @@ void setup() {
     // before Core 1 is allowed to start the display (see g_video_ready).
     g_cart_ok = gameboy_load_cart(&g_system, &g_error_color);
 
+#if defined(USE_TINYUSB)
+    // After the display is initialised (it claims PIO 0) and the clock is
+    // at 252 MHz, before core 1 starts the display.
+    fruitjam_usb_input_begin(FRUITJAM_USB_MAP_GAMEBOY);
+#endif
     g_video_ready = true;
 }
 
@@ -109,6 +122,9 @@ void loop() {
         return;
     }
 
+#if defined(USE_TINYUSB)
+    fruitjam_usb_input_poll(); // USB pads merge into hal_input_read() below
+#endif
     bool up     = hal_input_read(HAL_BTN_UP);
     bool down   = hal_input_read(HAL_BTN_DOWN);
     bool left   = hal_input_read(HAL_BTN_LEFT);
@@ -176,6 +192,10 @@ void loop() {
         Serial.print((int)g_system.rotation);
         Serial.print(", palette ");
         Serial.print((int)g_system.palette);
+#if defined(USE_TINYUSB)
+        Serial.print(", usb pads ");
+        Serial.print(fruitjam_usb_input_pads());
+#endif
         Serial.print(", starve ");
         Serial.print(hal_video_take_starve_count());
         Serial.print(", minq ");

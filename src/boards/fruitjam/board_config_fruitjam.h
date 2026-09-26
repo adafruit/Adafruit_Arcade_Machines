@@ -63,6 +63,11 @@ enum {
 // runs past its rated clock and returns corrupt data.
 void fruitjam_set_sys_clock_khz(uint32_t khz);
 
+// Something to run while core 0 waits for a free scanline buffer, i.e.
+// when the display queue is full (hal_video_fruitjam.cpp). Used for the USB
+// host task (usb_input_fruitjam.cpp); null for none.
+void fruitjam_video_set_idle_hook(void (*hook)(void));
+
 // Undebounced button level, bypassing hal_input_read()'s filter (see
 // hal_input_fruitjam.cpp). Board-specific and diagnostic-only -- games use
 // the ArcadeHAL contract's hal_input_read() instead.

@@ -34,6 +34,14 @@
 #include <machines/lrescue/lrescue_input.h>
 #include <machines/lrescue/lrescue_audio.h>
 #include <boards/fruitjam/board_config_fruitjam.h>
+#if defined(USE_TINYUSB)
+// USB gamepads on the Type-A ports (Tools > USB Stack > Adafruit TinyUSB,
+// which sketch.yaml selects; with the default stack the game still builds
+// and runs on the GPIO buttons alone). <pio_usb.h> is here so the builder
+// finds the Pico PIO USB library.
+#include <pio_usb.h>
+#include <boards/fruitjam/usb_input_fruitjam.h>
+#endif
 
 static arcade_system   g_system;
 static volatile bool   g_video_ready = false;
@@ -247,6 +255,11 @@ void setup() {
     // From this point on, loop() will continuously feed scanlines (either
     // error frames or game frames) on every call -- safe for Core 1 to
     // start the DVI pump now.
+#if defined(USE_TINYUSB)
+    // After the display is initialised (it claims PIO 0) and the clock is
+    // at 252 MHz, before core 1 starts the display.
+    fruitjam_usb_input_begin(FRUITJAM_USB_MAP_ARCADE);
+#endif
     g_video_ready = true;
 }
 
@@ -270,6 +283,9 @@ void loop() {
     // same physical buttons invaders_fruitjam.ino uses for the same
     // purpose. ROTATE/MIRROR remain the display meta-controls, unrelated
     // to gameplay, same as in invaders_fruitjam.ino.
+#if defined(USE_TINYUSB)
+    fruitjam_usb_input_poll(); // USB pads merge into hal_input_read() below
+#endif
     bool coin   = hal_input_read(HAL_BTN_COIN);
     bool start1 = hal_input_read(HAL_BTN_START1);
     bool start2 = hal_input_read(HAL_BTN_START2);

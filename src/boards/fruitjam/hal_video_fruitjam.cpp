@@ -34,6 +34,7 @@
 #include <PicoDVI.h>        // libdvi (dvi_init, dvi_inst, queue_*_blocking_u32) + adafruit_fruitjam_cfg
 #include "pico/time.h"    // time_us_32() -- profiling counter below
 #include "hal/arcade_hal_video.h"
+#include "boards/fruitjam/board_config_fruitjam.h" // fruitjam_video_set_idle_hook()
 
 #define DVI_WIDTH  640u
 #define DVI_HEIGHT 480u
@@ -169,10 +170,22 @@ static volatile uint32_t s_starve_events = 0;
 // the run counter reads high with no starvation at all. See DEVNOTES #85.
 static volatile uint32_t s_min_valid = 0xFFFFFFFFu;
 
+// Work to do while core 0 waits for a free buffer -- the USB host task
+// (usb_input_fruitjam.cpp) -- or null. The wait only happens when the queue
+// is full, i.e. with the most picture queued, so this is time the game has
+// to spare; the hook is still counted as blocked time, which is what it is.
+static void (*volatile s_idle_hook)(void) = nullptr;
+
+void fruitjam_video_set_idle_hook(void (*hook)(void)) { s_idle_hook = hook; }
+
 uint16_t *hal_video_acquire_scanline(void) {
     uint16_t *buf;
     uint32_t t0 = time_us_32();
-    queue_remove_blocking_u32(&dvi.q_colour_free, &buf);
+    if (void (*hook)(void) = s_idle_hook) {
+        while (!queue_try_remove_u32(&dvi.q_colour_free, &buf)) hook();
+    } else {
+        queue_remove_blocking_u32(&dvi.q_colour_free, &buf);
+    }
     s_blocked_us += time_us_32() - t0;
     return buf;
 }
