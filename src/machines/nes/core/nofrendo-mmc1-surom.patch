@@ -1,0 +1,16 @@
+--- a/mappers/map001.c	2026-09-26 09:06:51
++++ b/mappers/map001.c	2026-09-26 09:06:52
+@@ -56,7 +56,12 @@
+ 
+ static void update_prg()
+ {
+-    int offset = prg_banks >= 0x10 ? (regs[1] & 0x10) : 0;
++    // ADAFRUIT PATCH (mmc1-surom): only a board with MORE than 16 16 KB banks
++    // (512 KB, SUROM) takes PRG A18 from CHR bit 4. At >= 16, every 256 KB
++    // MMC1 cart was treated as SUROM, so a CHR write could switch the program
++    // into a bank past the end of the ROM. Found by blargg's
++    // instr_test-v5/official_only.nes (256 KB), which hung in it.
++    int offset = prg_banks > 0x10 ? (regs[1] & 0x10) : 0;
+     int bank = regs[3] & 0xF;
+     int mode = (regs[0] >> 2) & 3;
+ 

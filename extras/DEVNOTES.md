@@ -7188,3 +7188,192 @@ on-device timings many times the host harness's). It still fits (16.3 ms worst
 in play, no starvation), but it is now the game with the least margin. If
 it ever needs room back, the first thing to try is moving TinyUSB's hot
 paths into RAM.
+
+### 135. The NES core spike: nofrendo, fixNES, two bugs, and 7 ms a frame on the Fruit Jam
+
+Phase 2 started by choosing the core with measurements, not by argument
+(extras/CONSOLES_PLAN.md, "NES core candidates").
+
+**The harness.** `extras/tools/nes_test/fetch.sh` pins both candidates and
+blargg's test ROMs into gitignored folders; nothing is vendored yet. It
+pins nofrendo as maintained in retro-go, LGPL-2 per file, and fixNES,
+MIT. One front end, `harness.c`, provides:
+
+- blargg's `$6000` result protocol;
+- PPM frames;
+- per-frame timing;
+- scripted pads;
+- a per-frame PC trace;
+- frame CRCs.
+
+It sits over one small adapter per core.
+
+**Accuracy (blargg):**
+
+- **fixNES passes 21 of 23:** every CPU single, `official_only`,
+  `instr_timing`, `ppu_vbl_nmi`, `apu_test` and MMC3 clocking.
+- **nofrendo passes 14 of 23**, after two fixes, each found by a test ROM
+  and kept as a patch that `fetch.sh` applies:
+  - **zp-wrap.** `ZP_READWORD` read a 16-bit word straight out of memory,
+    so a `(zp,X)` or `(zp),Y` pointer at `$FF` took its high byte from
+    `$100` (the stack) instead of `$00`. That broke 30 opcodes in
+    `08-ind_x` and `09-ind_y`.
+  - **mmc1-surom.** The MMC1 mapper took PRG A18 from CHR bit 4 at
+    `>= 16` 16 KB banks, which is every 256 KB cart, not only 512 KB
+    SUROM, so a CHR write could move the program past the end of the ROM.
+    Final Fantasy is a 256 KB MMC1 cart.
+- **What nofrendo still fails is timing:** interrupt latency, APU length
+  counters, MMC3 IRQ timing, VBL period. The combined `official_only`
+  hangs even though every one of its tests passes alone. A per-frame PC
+  trace showed an interrupt handler returning into garbage, the same
+  interrupt/APU timing. These are the normal gaps of a scanline-based
+  emulator; games are the test that matters.
+
+**Six real games,** the same scripted input on both cores:
+
+| Game | Mapper | nofrendo (host) | fixNES (host) |
+|---|---|---|---|
+| Super Mario Bros. | NROM | 48.9 us | 716 us |
+| Super Mario Bros. 3 | MMC3 | 51.0 us | 833 us |
+| Kirby's Adventure | MMC3 | 58.5 us | 872 us |
+| The Legend of Zelda | MMC1 | 47.0 us | 687 us |
+| Metroid | MMC1 | 49.3 us | 832 us |
+| Final Fantasy | MMC1 | 45.0 us | 667 us |
+
+nofrendo draws every game correctly and reaches the same screens as fixNES
+at the same frames; the differences are its lighter palette and a few
+frames' difference in two fades. fixNES is ~14x slower, too slow for the
+RP2350.
+
+**A harness bug that nearly misled the timing.** The first nofrendo frames
+were blank grey (palette index 0), and its first timings, 26-36 us, were
+half the real figure. `nes_reset()`, which loading the cart runs, sets
+`nes.vidbuf = NULL`; retro-go sets the buffer every frame, and the adapter
+had set it once, before the reset. With no buffer, nofrendo simply skips
+drawing. **Check the pictures before trusting a timing.**
+
+**On the Fruit Jam** (`extras/tools/nes_test/fruitjam_spike`, built by
+`build_spike.sh` with nofrendo copied into the sketch, not the library):
+Super Mario Bros. from `/cart` on the SD card, the same scripted input as
+the host, core 0 at 252 MHz, no display or audio output. `nes_emulate()`
+covers the CPU, all 240 lines drawn into an 8-bit buffer, and one frame
+of APU samples:
+
+| ROM in | Mean | Worst |
+|---|---|---|
+| SRAM | 6.9 ms | 7.3 ms |
+| PSRAM | 7.2 ms | 7.6 ms |
+
+Its frame CRCs equal the host harness's at frames 150, 650, 1200 and 1500
+(`9DAA5ADE 1686F52F 4F5AE768 B50454BA`): **the RP2350 emulates exactly
+what the host does**, so the host harness can stand in for correctness
+from here.
+
+My estimate beforehand was 2-3.5 ms. The real figure is about 140x the
+host's, not 40-60x. That still leaves ~9 ms of the 16.7 ms frame for
+drawing and sound (the Game Boy does 8.7 ms mean, everything included).
+
+**Two build lessons:**
+
+- **arduino-cli compiles a copy of the sketch.** It copies the sketch
+  under `<build path>/sketch/`, so an extra `-I` must point at that copy.
+  With both the original and the copy reachable, `#pragma once` sees two
+  files, and every header is defined twice.
+- **zsh does not word-split `$VAR`.** A loop passing `$P` as several
+  arguments must run under `sh -c`. This project has hit it before.
+
+**Decision: nofrendo.** The port must step it a scanline at a time: one
+`nes_emulate()` is ~7 ms of uninterrupted work, against ~2.2 ms of queued
+picture.
+
+### 136. The NES plays on the Fruit Jam: Super Mario Bros. at 9.5 ms a frame
+
+Phase 2's port, on the core the spike chose (#135).
+
+**Layout:**
+
+- `src/machines/nes/core/` is nofrendo from retro-go, with three patches
+  (`VENDORED.md`), declared GPL-2.0-only.
+- `nes_core.c` is the one file that includes it.
+- `nes_video` and `nes_machine` are MIT, like the rest of the machines.
+- `src/console/console_audio` is the Game Boy's ring, shared.
+- The sketch is `examples/Consoles/nes_fruitjam`; the host harness is
+  `extras/tools/nes_host`.
+
+**The core never runs a whole frame at once.** nofrendo's `nes_emulate()`
+is ~7 ms of uninterrupted work. `nes_core_step_line()` runs its loop body
+once, one scanline (~27 us), through nofrendo's public functions, and the
+machine tops up the display queue between lines, exactly as the Game Boy
+does between instruction batches. **The split is exact:** on the host,
+the machine's frames equal `nes_emulate()`'s CRC for CRC. That was checked
+at four frames of the same scripted input in six games: SMB, SMB3, Kirby,
+Zelda, Metroid and Final Fantasy.
+
+**Include paths decided the one mechanical patch.** retro-go compiles the
+component with its root on the include path; a library has only `src/`,
+so nofrendo's `"nes/nes.h"`-style includes were made relative. The
+pristine upstream plus the three patches reproduces the vendored directory
+exactly, and the spike harness applies the same patches, so both compile
+identical code.
+
+**GPL isolation, checked.** With the core in `src/`, every sketch compiles
+it, but the archive (`dot_a_linkage`) links it only where used. Galaga
+(Fruit Jam) and Donkey Kong (Feather) build byte-identical, and
+`arm-none-eabi-nm` finds 53 Galaga symbols and no nofrendo ones in
+Galaga's ELF. That is the plan's "nm check".
+
+**On the Fruit Jam,** Super Mario Bros. from `/cart`, with a USB Mantapad,
+over about 20 minutes of play:
+
+| Measure | Result |
+|---|---|
+| Work, mean | 9.5 ms |
+| Work, worst | 10.2 ms |
+| Worst single scanline | 205 us (line 241, the vblank NMI) |
+| Starvation | 0 |
+| Queue low point | 13 of 32 |
+| Audio underruns / overruns | 0 / 0 |
+| Rotations tried | 0, 1, 2 |
+| Palettes tried | five of the six |
+
+The user: "looks great, plays fine, sounds good, no red lines".
+
+The audio ring repeats ~31 samples a second: nofrendo makes 367 samples a
+frame at 22050 Hz, 22020/s, against the board's 22050. That is the level
+correction doing its job, not a fault (compare the Game Boy's drops in
+#127).
+
+**Not yet:**
+
+- an MMC3 game on hardware (from PSRAM);
+- rotation 3 on the TV;
+- battery saves (Zelda, Final Fantasy);
+- aspect correction on STRETCH.
+
+**Super Mario Bros. 3 (MMC3, 384 KB, from PSRAM), and audio in pieces.**
+SMB3 played correctly on the first try: the status bar held still through
+scrolling, which is MMC3's mid-frame scanline IRQ, the timing nofrendo
+fails in blargg's `4-scanline_timing`. All four rotations were checked on
+the TV, including 3. No starvation. But the queue's low point fell to
+**7 of 32**, against SMB's 13, in every rotation, so the cause was the
+game, not the renderer. The likely cause was the one uninterrupted call
+left in the frame, nofrendo's audio: a frame of samples in one call,
+after a top-up to 28, so ~20 lines, ~1.3 ms, with SMB3's busier music.
+
+`apu_process()` carries its whole state from sample to sample and saves
+its filter memory across calls, so a frame can be made in pieces with
+identical output. The machine now makes it 96 samples at a time, topping
+the queue up before each piece. On the host, the WAVs of SMB, SMB3 and
+Kirby over 1500 frames are **byte-identical** before and after, and so
+are the frame CRCs.
+
+| SMB3 on the Fruit Jam | One audio call | Four pieces |
+|---|---|---|
+| Queue low point | 7 | 13 (never lower over ~6 minutes) |
+| Work, worst | 12.5 ms | 13.0 ms |
+| Starvation | 0 | 0 |
+
+The second session was about 6 minutes of play, and the user saw no red
+lines. The rule, as for the Game Boy (#127): no single uninterrupted
+call longer than the queue's slack, and a total frame time does not show
+the problem.

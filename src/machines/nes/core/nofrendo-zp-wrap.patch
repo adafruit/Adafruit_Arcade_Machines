@@ -1,0 +1,14 @@
+--- a/nes/cpu.c	2026-09-26 09:03:56
++++ b/nes/cpu.c	2026-09-26 09:03:56
+@@ -1038,7 +1038,10 @@
+ 
+ #define ZP_READBYTE(addr)          (cpu.zp[(addr)])
+ #define ZP_WRITEBYTE(addr, value)  (cpu.zp[(addr)] = (uint8) (value))
+-#define ZP_READWORD(addr)          (PAGE_READWORD(cpu.zp, addr))
++/* ADAFRUIT PATCH (zp-wrap): a zero-page pointer at $FF takes its high byte
++** from $00, as the 6502 does; PAGE_READWORD read it from $100 (the stack).
++** Found by blargg's instr_test-v5 08-ind_x / 09-ind_y. */
++#define ZP_READWORD(addr)          (cpu.zp[(uint8) (addr)] | (cpu.zp[(uint8) ((addr) + 1)] << 8))
+ 
+ /*
+ ** Memory-related macros

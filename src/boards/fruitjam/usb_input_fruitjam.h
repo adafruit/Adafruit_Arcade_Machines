@@ -28,6 +28,9 @@ extern "C" {
 typedef enum {
     FRUITJAM_USB_MAP_ARCADE = 0,  // the arcade games
     FRUITJAM_USB_MAP_GAMEBOY,     // the Game Boy console
+    // The NES reads the same four buttons the same way (A, B, Start,
+    // Select, on SHOOT, ACTION2, START1, COIN), so it shares the tables.
+    FRUITJAM_USB_MAP_NES = FRUITJAM_USB_MAP_GAMEBOY,
 } fruitjam_usb_map_t;
 
 // Starts the USB host (usb_host_fruitjam.h) and picks the mapping. Call

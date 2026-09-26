@@ -22,6 +22,8 @@ m6502_test/      ArcadeCPU_M6502 conformance runner -- NOT a machine harness
 gb_test/         Game Boy core (Peanut-GB + minigb_apu) conformance runner -- NOT a machine harness
 gb_host/         src/machines/gb      (the Game Boy console: SD card as cartridge)
 gb_palettes/     generates src/machines/gb/gameboy_palette_gbc.h from SameBoy's boot ROM source
+nes_test/        NES core spike: nofrendo vs fixNES on blargg's tests and games, and the Fruit Jam timing sketch
+nes_host/        src/machines/nes     (the NES console: SD card as cartridge)
 usb_gamepad_test/ src/input/usb_gamepad_decode against reports captured from real USB controllers
 geom_test/       arcade_video_geom conformance runner -- NOT a machine harness
 ```
@@ -420,3 +422,19 @@ To add a controller: record it with the self-test built with
 `-DUSB_TEST_RAW=1`, add its table entry in `src/input/usb_gamepad_decode.cpp`
 if its buttons need one, save the log under `captures/`, and add its press
 order to `main.cpp`.
+
+`nes_host/` runs the whole NES machine the way the sketch does: the
+cartridge loader, the scanline-stepped frame loop and double buffer, the
+canvas renderer in every rotation, and the audio ring. Give each cartridge
+its own folder under `nes_host/carts/` (git-ignored). `--crc-at` prints the
+same frame CRC as `nes_test`, whose harness calls nofrendo's own
+`nes_emulate()`, so the two can be compared under the same input:
+
+```sh
+./nes_host/build.sh
+P="--press start@200-205 --press start@400-405 --press start@600-605 --press right@700-1500"
+./nes_host/nes_host --rom nes_host/carts/smb --frames 1500 $P --crc-at 150,650,1200,1500
+./nes_test/nes_nofrendo --rom nes_test/roms/SMB.nes --frames 1500 $P --crc-at 150,650,1200,1500
+```
+
+(Run those under `sh`: zsh does not split `$P` into words.)
