@@ -87,6 +87,7 @@ bool gameboy_load_cart(gameboy_system *sys, uint16_t *out_error_color) {
     if (cs != GAMEBOY_CORE_OK) {
         hal_storage_unmount();
         return fail(sys, cs == GAMEBOY_CORE_BAD_CHECKSUM ? GAMEBOY_BOOT_BAD_CHECKSUM
+                       : cs == GAMEBOY_CORE_NO_MEMORY    ? GAMEBOY_BOOT_NO_BULK_MEMORY
                                                           : GAMEBOY_BOOT_UNSUPPORTED,
                     out_error_color);
     }

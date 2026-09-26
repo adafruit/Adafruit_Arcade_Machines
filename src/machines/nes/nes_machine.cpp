@@ -77,6 +77,9 @@ bool nes_load_cart(nes_system *sys, uint16_t *out_error_color) {
     }
     sys->cart_size = info.size;
 
+    // Frame buffers before the ROM copy: they are written every pixel, so
+    // on-chip RAM goes to them first.
+    if (!nes_core_reserve_buffers()) return fail(sys, NES_BOOT_NO_MEMORY, out_error_color);
     g_rom = bulk;
     if (info.size <= NES_ROM_SRAM_MAX) {
         if (uint8_t *sram = (uint8_t *)malloc(info.size)) {

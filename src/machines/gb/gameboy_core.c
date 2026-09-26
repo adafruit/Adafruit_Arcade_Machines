@@ -43,6 +43,7 @@ void audio_write(uint16_t addr, uint8_t val) { minigb_apu_audio_write(&g_apu, ad
 // After the vendored code, not before: arch.h pulls in the Pico SDK, whose
 // MAX/MIN would otherwise be redefined by minigb_apu.c.inc's own.
 #include "arch/arch.h"
+#include "hal/arcade_hal_memory.h"
 
 _Static_assert(GAMEBOY_PAD_A == JOYPAD_A && GAMEBOY_PAD_B == JOYPAD_B &&
                GAMEBOY_PAD_SELECT == JOYPAD_SELECT && GAMEBOY_PAD_START == JOYPAD_START &&
@@ -59,32 +60,36 @@ static uint32_t g_rom_size;
 // Bank 0 in SRAM. Games run their interrupt handlers and most core routines
 // from here, so it is read far more than any switchable bank; the rest of
 // the ROM may be in PSRAM, which shares the XIP cache with the program.
-static uint8_t g_bank0[0x4000];
+#define BANK0_SIZE    0x4000u
+#define CART_RAM_SIZE 0x8000u
+static uint8_t *g_bank0;   // BANK0_SIZE, from hal_mem_fast_alloc()
 static char g_title[17];
 
 // Cartridge RAM. Phase 1a (Tetris) needs none; this covers MBC1/MBC3 carts
 // that use it, but is NOT persisted -- battery saves arrive in Phase 1b.
-static uint8_t g_cart_ram[0x8000];
+static uint8_t *g_cart_ram; // CART_RAM_SIZE, from hal_mem_fast_alloc()
 
-static gameboy_row_t g_fb[2][GAMEBOY_LCD_H];
+// Two frames of GAMEBOY_LCD_H rows. Heap, not static: the Feather ESP32
+// has ~124 KB of usable DRAM in all (hal/arcade_hal_memory.h).
+static gameboy_row_t (*g_fb)[GAMEBOY_LCD_H];
 static uint8_t g_back = 0;
 
 static uint8_t rom_read(struct gb_s *gb, const uint_fast32_t addr) {
     (void)gb;
-    if (addr < sizeof g_bank0) return g_bank0[addr];
+    if (addr < BANK0_SIZE) return g_bank0[addr];
     return addr < g_rom_size ? g_rom[addr] : 0xFF;
 }
 
 static uint8_t cart_ram_read(struct gb_s *gb, const uint_fast32_t addr) {
     (void)gb;
-    return addr < sizeof g_cart_ram ? g_cart_ram[addr] : 0xFF;
+    return addr < CART_RAM_SIZE ? g_cart_ram[addr] : 0xFF;
 }
 
 // Saves notice changes by comparing this RAM with a copy each frame
 // (console/console_save.h), so a write needs no bookkeeping here.
 static void cart_ram_write(struct gb_s *gb, const uint_fast32_t addr, const uint8_t val) {
     (void)gb;
-    if (addr < sizeof g_cart_ram) g_cart_ram[addr] = val;
+    if (addr < CART_RAM_SIZE) g_cart_ram[addr] = val;
 }
 
 // The core reports an invalid opcode or access and carries on; nothing
@@ -107,11 +112,17 @@ static void lcd_draw_line(struct gb_s *gb, const uint8_t *pixels, const uint_fas
 gameboy_core_status_t gameboy_core_init(const uint8_t *rom, uint32_t rom_size) {
     g_rom = rom;
     g_rom_size = rom_size;
-    memset(g_bank0, 0xFF, sizeof g_bank0);
-    memcpy(g_bank0, rom, rom_size < sizeof g_bank0 ? rom_size : sizeof g_bank0);
+    // The frame buffers first: they are the hottest, written and read every
+    // pixel, so they get on-chip RAM before the rest when it is scarce.
+    if (!g_fb) g_fb = (gameboy_row_t (*)[GAMEBOY_LCD_H])hal_mem_fast_alloc(2u * sizeof(gameboy_row_t) * GAMEBOY_LCD_H);
+    if (!g_bank0) g_bank0 = (uint8_t *)hal_mem_fast_alloc(BANK0_SIZE);
+    if (!g_cart_ram) g_cart_ram = (uint8_t *)hal_mem_fast_alloc(CART_RAM_SIZE);
+    if (!g_fb || !g_bank0 || !g_cart_ram) return GAMEBOY_CORE_NO_MEMORY;
+    memset(g_bank0, 0xFF, BANK0_SIZE);
+    memcpy(g_bank0, rom, rom_size < BANK0_SIZE ? rom_size : BANK0_SIZE);
     g_errors = 0;
-    memset(g_cart_ram, 0xFF, sizeof g_cart_ram);
-    memset(g_fb, 0x20, sizeof g_fb); // background, lightest shade
+    memset(g_cart_ram, 0xFF, CART_RAM_SIZE);
+    memset(g_fb, 0x20, 2u * sizeof(gameboy_row_t) * GAMEBOY_LCD_H); // background, lightest shade
     g_back = 0;
 
     memset(g_title, 0, sizeof g_title);
@@ -200,7 +211,7 @@ bool gameboy_core_has_battery(void) {
 uint32_t gameboy_core_save_size(void) {
     size_t n = 0;
     if (gb_get_save_size_s(&g_gb, &n) != 0) return 0;
-    return n <= sizeof g_cart_ram ? (uint32_t)n : 0;
+    return n <= CART_RAM_SIZE ? (uint32_t)n : 0;
 }
 
 uint8_t *gameboy_core_save_ram(void) { return g_cart_ram; }

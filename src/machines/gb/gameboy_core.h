@@ -56,6 +56,7 @@ typedef enum {
     GAMEBOY_CORE_OK = 0,
     GAMEBOY_CORE_BAD_CHECKSUM,    // the header check the real boot ROM does
     GAMEBOY_CORE_UNSUPPORTED,     // a cartridge type Peanut-GB doesn't handle
+    GAMEBOY_CORE_NO_MEMORY,       // its buffers could not be allocated
 } gameboy_core_status_t;
 
 // Binds the core to a ROM already in memory (the pointer is kept, not

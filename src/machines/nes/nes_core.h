@@ -44,6 +44,11 @@ typedef enum {
     NES_CORE_NO_MEMORY,
 } nes_core_status_t;
 
+// Allocates the two frame buffers (hal_mem_fast_alloc) if not yet done;
+// false if it can't. nes_core_init() calls it; the machine calls it first,
+// so the buffers get on-chip RAM before a small ROM is copied there.
+bool nes_core_reserve_buffers(void);
+
 // Binds the core to a ROM already in memory (kept, not copied; it may be in
 // PSRAM) and resets it. Call once. `sample_rate` is the audio rate.
 nes_core_status_t nes_core_init(uint8_t *rom, uint32_t size, uint32_t sample_rate);

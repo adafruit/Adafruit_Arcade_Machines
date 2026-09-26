@@ -7500,3 +7500,83 @@ The Game Boy's own audio ring and save path were the originals that
 - The queue low point was 9, against 11 in #130's session. The only new
   per-frame work is an 8 KB compare, a few microseconds, so the
   difference is more likely the game than the change; not isolated.
+
+### 140. Phase 4 spike: the consoles on the Feather ESP32 are tight, and -O2 only looked faster
+
+Before porting the Game Boy and the NES to the Feather ESP32 V2, step 1 of
+Phase 4 timed their cores there: `extras/tools/console_spike_featheresp32`.
+It loads the first `.gb` or `.nes` from `/cart` into PSRAM, runs it
+through the library's own core wrappers headless, with the host
+harnesses' scripted input, and prints emulation and audio time per frame.
+For the NES it also prints frame CRCs. Core 1 is idle in this sketch.
+
+**Both consoles' big buffers had to leave static DRAM first.** The
+Feather's usable DRAM (`dram0_0_seg`) is ~124 KB in all, and the spike
+overflowed it by 152 KB: the NES's two frame buffers are 130 KB, and the
+Game Boy's frame buffers, bank-0 mirror and cartridge RAM 94 KB.
+
+- A new HAL call, `hal_mem_fast_alloc()`, allocates on-chip RAM if there
+  is room, else bulk memory. It is `malloc()` then `pmalloc()` on the
+  Fruit Jam, and `heap_caps_malloc(INTERNAL)` then `ps_malloc()` on the
+  Feather.
+- Both cores now allocate their buffers through it at init, frame buffers
+  first, and the NES reserves them before copying a small ROM into SRAM.
+- On the host, the Game Boy regression and the NES CRCs and WAVs are
+  byte-identical after the change.
+- On the Fruit Jam the builds' static RAM fell as expected (Game Boy 21%,
+  NES 18%). **A hardware timing check there is still to do**; the board
+  was not connected.
+
+**Results on the Feather (ESP32 at 240 MHz), -O3:**
+
+| Cart | Emulation, mean | Worst | Budget |
+|---|---|---|---|
+| Tetris | 15.2 ms | 19.3 ms since start-up | 16.7 ms |
+| Super Mario Bros. | 12.6 ms | 13.4 ms | 16.7 ms |
+
+SMB's frame CRCs match the host's exactly. The Fruit Jam runs the same
+SMB emulation in 6.9 ms (#135), so the ESP32 is roughly half as fast at
+this.
+
+**Where the buffers go matters; the ROM doesn't.**
+
+- **SMB with the ROM in PSRAM** and both frame buffers in internal DRAM
+  (the spike reports 139 KB of internal RAM taken by the core's init):
+  12.6 ms.
+- **SMB with the ROM copied into internal DRAM:** slower, 14.7 ms mean and
+  16.9 ms worst. The 40 KB ROM took the room one frame buffer needed, and
+  writing a frame into PSRAM costs more than reading the ROM from it
+  saves.
+
+**-O2 and IRAM did not help, and a first reading said -O2 did.**
+
+- **The first comparison was confounded.** The ESP32 runs code from flash
+  through a 32 KB cache, so a smaller build can be faster (the Feather's
+  Pac-Man uses -O2). A first -O2 run printed 11.3 ms against -O3's 12.6
+  and looked like a 10% win. But the per-second windows vary with what is
+  on screen: the same -O2 run shows 14.0 ms windows too.
+- **Compared on the same 30 windows** (frames 120 to 1860):
+
+| Build | Mean of window means | Worst |
+|---|---|---|
+| -O3 | 12,550 us | 13,380 us |
+| -O2 | 12,964 us | 14,004 us |
+| -O2 with `nes6502_execute` in IRAM | 13,073 us | 14,034 us |
+
+retro-go marks `nes6502_execute` `IRAM_ATTR`, which nofrendo's
+non-retro-go `utils.h` defines empty. Making it real moved the function's
+20.6 KB into IRAM and bought nothing, so the experiment was reverted.
+**Compare timings on the same frames, never on whichever window each run
+printed last.**
+
+**What it means for the port:**
+
+- **The NES fits with ~20% margin.**
+- **The Game Boy is at ~91%.** The one lever left untried for it is
+  Tetris's second 16 KB bank, read from PSRAM on every access.
+- **The real test is the real sketch.** With core 1 painting, both cores
+  share the flash cache and PSRAM, and emulation will likely slow further.
+
+**Board note:** this Feather's USB bridge is a CH9102. esptool loses the
+chip at 921,600 baud on `/dev/cu.usbserial-*` but uploads cleanly on
+`/dev/cu.wchusbserial*`.

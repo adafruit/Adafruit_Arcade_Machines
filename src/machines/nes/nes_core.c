@@ -11,24 +11,36 @@
 #include <stdlib.h>
 
 #include "core/nofrendo.h"
+#include "hal/arcade_hal_memory.h"
 
 _Static_assert(NES_ROW_PITCH == NES_SCREEN_PITCH && NES_ROW_OFFSET == NES_SCREEN_OVERDRAW,
                "nes_core.h's row layout must match nofrendo's");
 
 // nofrendo's frame buffer layout: 8 + 256 + 8 bytes a row (NES_SCREEN_*).
-static uint8_t g_buf[2][NES_SCREEN_PITCH * NES_SCREEN_HEIGHT];
+// Two of them, 130 KB: heap, not static (more than the Feather ESP32's
+// whole usable DRAM; hal/arcade_hal_memory.h).
+#define FRAME_BYTES (NES_SCREEN_PITCH * NES_SCREEN_HEIGHT)
+static uint8_t *g_buf[2];
 static uint8_t g_back = 0;
 
 static nes_t *g_nes;
 static uint16_t *g_pal[NES_PALETTE_COUNT];
 
+bool nes_core_reserve_buffers(void) {
+    for (int i = 0; i < 2; i++)
+        if (!g_buf[i]) g_buf[i] = (uint8_t *)hal_mem_fast_alloc(FRAME_BYTES);
+    return g_buf[0] && g_buf[1];
+}
+
 nes_core_status_t nes_core_init(uint8_t *rom, uint32_t size, uint32_t sample_rate) {
+    if (!nes_core_reserve_buffers()) return NES_CORE_NO_MEMORY;
     g_nes = nes_init(SYS_NES_NTSC, (int)sample_rate, false, NULL);
     if (!g_nes) return NES_CORE_NO_MEMORY;
     rom_t *cart = rom_loadmem(rom, size);
     if (!cart) return NES_CORE_BAD_ROM;
     if (nes_insertcart(cart) != 0) return NES_CORE_UNSUPPORTED;
-    memset(g_buf, 0, sizeof g_buf);
+    memset(g_buf[0], 0, FRAME_BYTES);
+    memset(g_buf[1], 0, FRAME_BYTES);
     g_back = 0;
     return NES_CORE_OK;
 }
