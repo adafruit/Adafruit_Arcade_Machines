@@ -22,6 +22,7 @@ m6502_test/      ArcadeCPU_M6502 conformance runner -- NOT a machine harness
 gb_test/         Game Boy core (Peanut-GB + minigb_apu) conformance runner -- NOT a machine harness
 gb_host/         src/machines/gb      (the Game Boy console: SD card as cartridge)
 gb_palettes/     generates src/machines/gb/gameboy_palette_gbc.h from SameBoy's boot ROM source
+usb_gamepad_test/ src/input/usb_gamepad_decode against reports captured from real USB controllers
 geom_test/       arcade_video_geom conformance runner -- NOT a machine harness
 ```
 
@@ -403,3 +404,19 @@ the bullet count showed the bug in a single run.
   `--ppm-every 1` this captures a run of consecutive frames deep into a
   session without writing ~1MB per frame for everything before it; it is how
   the starfield's 1px/frame scroll rate was measured.
+
+`usb_gamepad_test/` replays reports captured from real USB controllers on
+the Fruit Jam (`captures/`, recorded with
+`examples/SelfTest/usb_gamepad_test_fruitjam`) through the USB gamepad
+decoder. Each capture was made pressing one button at a time in a known
+order, and the test checks the decoded buttons come out in that order:
+
+```sh
+./usb_gamepad_test/build.sh && ./usb_gamepad_test/usb_gamepad_test
+./usb_gamepad_test/usb_gamepad_test --dump usb_gamepad_test/captures/dualshock4.log
+```
+
+To add a controller: record it with the self-test built with
+`-DUSB_TEST_RAW=1`, add its table entry in `src/input/usb_gamepad_decode.cpp`
+if its buttons need one, save the log under `captures/`, and add its press
+order to `main.cpp`.

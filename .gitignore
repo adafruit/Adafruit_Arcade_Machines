@@ -67,6 +67,11 @@ extras/tools/gb_host/*.dSYM/
 extras/tools/gb_host/carts/
 extras/tools/gb_host/out/
 
+# USB gamepad decoder test (extras/tools/usb_gamepad_test/) -- its binary
+# and macOS debug bundle. Its captures/ ARE tracked: they are the test data.
+extras/tools/usb_gamepad_test/usb_gamepad_test
+extras/tools/usb_gamepad_test/*.dSYM/
+
 # Claude Code worktrees -- transient checkouts with their own build output.
 # Narrow on purpose: a future tracked .claude/settings.json stays visible.
 .claude/worktrees/

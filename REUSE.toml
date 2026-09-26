@@ -33,3 +33,12 @@ SPDX-License-Identifier = "MIT"
 path = ["src/machines/gb/core/minigb_apu.h", "src/machines/gb/core/minigb_apu.c.inc"]
 SPDX-FileCopyrightText = ["2019 Mahyar Koshkouei", "2017 Alex Baines"]
 SPDX-License-Identifier = "MIT"
+
+# USB gamepad captures (extras/tools/usb_gamepad_test/captures/): serial logs
+# recorded from our own self-test (examples/SelfTest/usb_gamepad_test_fruitjam)
+# with real controllers plugged in, used as the decoder test's input. Plain
+# log text, so no header can be added without breaking the replay.
+[[annotations]]
+path = "extras/tools/usb_gamepad_test/captures/*.log"
+SPDX-FileCopyrightText = "2026 John Park for Adafruit Industries"
+SPDX-License-Identifier = "MIT"

@@ -1,0 +1,41 @@
+[usb] HID device 1 interface 0: VID 81F PID E401, protocol none (gamepad, joystick, ...), report descriptor 98 bytes:
+      05 01 09 04 A1 01 A1 02 75 08 95 02 15 00 26 FF 00 35 00 46 FF 00 09 30 09 31 81 02 95 03 81 01
+      75 01 95 04 15 00 25 01 35 00 45 01 81 01 65 00 75 01 95 0A 25 01 45 01 05 09 19 01 29 0A 81 02
+      06 00 FF 75 01 95 0A 25 01 45 01 09 01 81 02 C0 A1 02 75 08 95 07 46 FF 00 26 FF 00 09 02 91 02
+      C0 C0 
+[usb] device 1 mounted: VID 81F PID E401
+[usb] 1.0 report 8B:  7F  7F  00  80  80  0F  00  00 
+[usb] 1.0 report 8B:  7F [00] 00  80  80  0F  00  00 
+[usb] 1.0 report 8B:  7F [7F] 00  80  80  0F  00  00 
+[usb] 1.0 report 8B:  7F [FF] 00  80  80  0F  00  00 
+[usb] 1.0 report 8B:  7F [7F] 00  80  80  0F  00  00 
+[usb] 1.0 report 8B: [00] 7F  00  80  80  0F  00  00 
+[usb] 1.0 report 8B: [7F] 7F  00  80  80  0F  00  00 
+[usb] 1.0 report 8B: [FF] 7F  00  80  80  0F  00  00 
+[usb] 1.0 report 8B: [7F] 7F  00  80  80  0F  00  00 
+[usb] 1.0 report 8B:  7F  7F  00  80  80 [2F] 00  00 
+[usb] 1.0 report 8B:  7F  7F  00  80  80 [0F] 00  00 
+[usb] 1.0 report 8B:  7F  7F  00  80  80 [4F] 00  00 
+[usb] 1.0 report 8B:  7F  7F  00  80  80 [0F] 00  00 
+[usb] 1.0 report 8B:  7F  7F  00  80  80 [1F] 00  00 
+[usb] 1.0 report 8B:  7F  7F  00  80  80 [0F] 00  00 
+[usb] 1.0 report 8B:  7F  7F  00  80  80 [8F] 00  00 
+[usb] 1.0 report 8B:  7F  7F  00  80  80 [0F] 00  00 
+[usb] 1.0 report 8B:  7F  7F  00  80  80  0F [01] 00 
+[usb] 1.0 report 8B:  7F  7F  00  80  80  0F [00] 00 
+[usb] 1.0 report 8B:  7F  7F  00  80  80  0F [02] 00 
+[usb] 1.0 report 8B:  7F  7F  00  80  80  0F [00] 00 
+[usb] 1.0 report 8B:  7F  7F  00  80  80  0F [20] 00 
+[usb] 1.0 report 8B:  7F  7F  00  80  80  0F [00] 00 
+[usb] 1.0 report 8B:  7F  7F  00  80  80  0F [10] 00 
+[usb] 1.0 report 8B:  7F  7F  00  80  80  0F [00] 00 
+[usb] 1.0 report 0B: 
+[usb] device 1 unmounted
+[usb] HID device 1 interface 0 unmounted
+[usb] HID device 1 interface 0: VID 81F PID E401, protocol none (gamepad, joystick, ...), report descriptor 98 bytes:
+      05 01 09 04 A1 01 A1 02 75 08 95 02 15 00 26 FF 00 35 00 46 FF 00 09 30 09 31 81 02 95 03 81 01
+      75 01 95 04 15 00 25 01 35 00 45 01 81 01 65 00 75 01 95 0A 25 01 45 01 05 09 19 01 29 0A 81 02
+      06 00 FF 75 01 95 0A 25 01 45 01 09 01 81 02 C0 A1 02 75 08 95 07 46 FF 00 26 FF 00 09 02 91 02
+      C0 C0 
+[usb] device 1 mounted: VID 81F PID E401
+[usb] 1.0 report 8B:  7F  7F  00  80  80  0F  00  00 
