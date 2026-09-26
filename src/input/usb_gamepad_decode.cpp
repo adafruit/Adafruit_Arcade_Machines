@@ -24,12 +24,14 @@ const uint32_t kDefaultMap[] = {
     USB_PAD_SELECT, USB_PAD_START, USB_PAD_L3, USB_PAD_R3, USB_PAD_HOME,
 };
 
-// Mantapad SNES-style (081F:E401): X=1 A=2 B=3 Y=4 L=5 R=6 Start=9 Select=10.
-// SNES positions: X top, A right, B bottom, Y left.
+// Mantapad SNES-style (081F:E401): X=1 A=2 B=3 Y=4 L=5 R=6 Select=9 Start=10.
+// SNES positions: X top, A right, B bottom, Y left. (Select and Start were
+// first recorded the other way round; playing Ms. Pac-Man showed Start
+// inserting coins, and corrected it.)
 const uint32_t kMantapadMap[] = {
     USB_PAD_NORTH, USB_PAD_EAST, USB_PAD_SOUTH, USB_PAD_WEST,
     USB_PAD_L1, USB_PAD_R1, 0, 0,
-    USB_PAD_START, USB_PAD_SELECT,
+    USB_PAD_SELECT, USB_PAD_START,
 };
 
 // Retro-bit 8-button Genesis pad (0F0D:00C1): Y=1 B=2 A=3 X=4 Z=7 C=8

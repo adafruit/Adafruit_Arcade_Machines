@@ -30,11 +30,13 @@ struct capture_t {
 };
 
 const std::vector<capture_t> kCaptures = {
-    // Pressed: Up Down Left Right, A B X Y, L R, Select Start.
+    // Pressed: Up Down Left Right, A B X Y, L R, then Start and Select --
+    // in that order, as playing a game later showed (the note taken at the
+    // time said Select first; DEVNOTES #134).
     { "mantapad_snes.log", {
         USB_PAD_UP, USB_PAD_DOWN, USB_PAD_LEFT, USB_PAD_RIGHT,
         USB_PAD_EAST, USB_PAD_SOUTH, USB_PAD_NORTH, USB_PAD_WEST,
-        USB_PAD_L1, USB_PAD_R1, USB_PAD_SELECT, USB_PAD_START }, false },
+        USB_PAD_L1, USB_PAD_R1, USB_PAD_START, USB_PAD_SELECT }, false },
     // Pressed: Up Down Left Right, Cross Circle Square Triangle, L1 R1 L2
     // R2, Share Options, PS, touchpad, L3 R3; then both sticks in circles.
     { "dualshock4.log", {

@@ -7037,7 +7037,7 @@ timing a fixed chunk of work before and after the host started:
 
 | Controller | VID:PID | Descriptor | D-pad | Face buttons |
 |---|---|---|---|---|
-| Mantapad SNES-style | 081F:E401 | 98 bytes, 10 buttons | X/Y axes | X=1 A=2 B=3 Y=4, L=5 R=6, Start=9 Select=10 |
+| Mantapad SNES-style | 081F:E401 | 98 bytes, 10 buttons | X/Y axes | X=1 A=2 B=3 Y=4, L=5 R=6, Select=9 Start=10 (first recorded swapped; see #134) |
 | Retro-bit Genesis 8-button | 0F0D:00C1 | 80 bytes, 14 buttons | X/Y axes; the declared hat never moves | Y=1 B=2 A=3 X=4, Z=7 C=8, Mode=9 Start=10 |
 | DualShock 4 | 054C:05C4 | **never delivered** | hat switch | fixed layout (report 0x01) |
 
@@ -7142,3 +7142,12 @@ core errors, worst work 12.9 ms.
 
 **Sizes:** RAM +22 KB for the USB stack in a TinyUSB build. A default-stack
 build is +128 bytes of flash, from the video hook and the input refactor.
+
+**The Mantapad's Start and Select were swapped in its table.** Playing Ms.
+Pac-Man, Start inserted a coin and Select started the game. The capture
+had been labelled from the order the buttons were asked for, not the
+order they were pressed. The driver's own decoded run (#133) had already
+shown START before SELECT, and it wasn't noticed. Fixed: Select is HID
+button 9, Start is 10. The replay test's expected order was corrected to
+match the capture. The lesson: a button test run by a person needs one
+unambiguous check at the end (a game) as well as the log.
