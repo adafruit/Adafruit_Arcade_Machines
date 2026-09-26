@@ -63,6 +63,7 @@ int main(int argc, char **argv) {
     const char *rom_path = NULL, *ppm_at = NULL, *out = ".";
     unsigned frames = 0;
     bool blargg = false, timing = false;
+    unsigned trace = 0; // print the CPU state after each of the first N frames
     struct press presses[32]; int n_press = 0;
 
     for (int i = 1; i < argc; i++) {
@@ -73,6 +74,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--out") && i + 1 < argc) out = argv[++i];
         else if (!strcmp(a, "--blargg")) blargg = true;
         else if (!strcmp(a, "--time")) timing = true;
+        else if (!strcmp(a, "--trace") && i + 1 < argc) trace = (unsigned)atoi(argv[++i]);
         else if (!strcmp(a, "--press") && i + 1 < argc && n_press < 32) {
             struct press *p = &presses[n_press];
             if (sscanf(argv[++i], "%7[a-z]@%u-%u", p->name, &p->from, &p->to) == 3) n_press++;
@@ -107,6 +109,7 @@ int main(int argc, char **argv) {
         g_core.frame();
         const uint64_t dt = now_ns() - t0;
         if (fr > 60) { t_emu += dt; timed++; } // skip start-up
+        if (fr <= trace && g_core.debug) { printf("f%-5u", fr); g_core.debug(); }
         if (in_list(ppm_at, fr)) {
             char p[512];
             snprintf(p, sizeof p, "%s/%s_%s_f%u.ppm", out, g_core.name, base, fr);
