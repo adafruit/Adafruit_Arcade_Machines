@@ -55,7 +55,7 @@ everything to GPL-3.0.
 
 ```
 src/machines/nes/          our glue: cartridge hookup, video, audio, input (MIT)
-src/machines/nes/core/     vendored InfoNES, as adapted by pico-infonesPlus (GPL-2.0-or-later, to verify)
+src/machines/nes/core/     vendored nofrendo, from retro-go (LGPL-2 / GPL-2; chosen by the Phase 2 spike)
 src/machines/gb/           our glue (MIT)
 src/machines/gb/core/      vendored upstream Peanut-GB and minigb_apu (MIT)
 src/machines/sms/          our glue (MIT)
@@ -725,7 +725,9 @@ Adafruit's legal review, not a legal conclusion.**
 
 | Core | Console | License found | Status |
 |------|---------|---------------|--------|
-| InfoNES | NES | GPL-2 (`infones/doc/GPL2`) | **OK**, but verify it's "v2 or later": GPL-2-only can't be combined with GPL-3.0 |
+| InfoNES | NES | "GPL2" (`infones/doc/readme.html`, `doc/GPL2`), with **no "or later"** found in the source (checked 2026-09-26) | **Problem via the Pico ports**: pico-infoNES and pico-infonesPlus are GPL-3.0, and GPL-2-only code can't be combined into GPL-3. Their optimised copies need the original authors' "or later" confirmed, or legal review. Upstream InfoNES alone is usable, but lacks their speed work |
+| nofrendo (retro-go) | NES | Each file: **version 2 of the GNU Library GPL** (Matthew Conte); retro-go's COPYING is GPL-2 | **OK**: LGPL-2 may be used as GPL-2 alongside our MIT code |
+| fixNES | NES | **MIT** (`LICENSE`) | **OK** |
 | Peanut-GB | Game Boy | MIT (header of `peanut_gb.h`) | **OK**; the Game Boy port is MIT end to end |
 | minigb_apu | Game Boy audio | MIT (header of upstream `minigb_apu.c`: "released under the terms of the MIT license"; README says MIT) | **OK**, from upstream. The PicoPlus copy's header only points at a LICENSE file, which in their repo is GPL-3.0 |
 | SMS Plus | SMS / Game Gear | GPL (`system.c`), **but its bundled `z80.c` (Juergen Buchmueller) is "freeware for non-commercial purposes"** | **Swap the Z80** for our own MIT `src/cpu/z80/`, then OK |
@@ -745,7 +747,7 @@ Two consequences for the plan:
 
 | Console | CPU | Typical ROM size | Core to adopt | Prior art | Confidence |
 |---------|-----|------------------|---------------|-----------|------------|
-| **NES** | 6502 (2A03) | 40–512 KB | InfoNES, via `pico-infonesPlus` | pico-infoNES runs full-speed NES with PicoDVI on an RP2040 at 252 MHz, the same clock and video stack as ours. The I2S PIO program in `src/arch/rp2040/` came from that project. `pico-infonesPlus` supports the Fruit Jam. nofrendo runs on ESP32. | High |
+| **NES** | 6502 (2A03) | 40–512 KB | **nofrendo, from retro-go** (decided 2026-09-26, pending the spike); InfoNES as the fallback | nofrendo runs full speed on the ESP32 in retro-go (ODROID-GO), which is the Feather's chip. pico-infoNES runs full-speed NES on an RP2040 at 252 MHz with PicoDVI, but see the InfoNES licence row. | High |
 | **Game Boy** | SM83 | 32 KB – 2 MB | Peanut-GB, via `pico-peanutGB` | RP2040-GB runs Peanut-GB on RP2040. `pico-peanutGB` runs GB/GBC on RP2350. retro-go runs GB/GBC on ESP32. | High |
 | **SMS / Game Gear** | Z80 | 32–512 KB | SMS Plus, via `pico-smsplus`, **with our `z80`** | `pico-smsplus` (RP2040/RP2350), retro-go (ESP32) | High for the core; the Z80 swap is our work |
 | **Genesis** | 68000 + Z80 | up to 4 MB | Gwenesis, via `pico-genesisPlus`, **with an MIT Musashi** | `pico-genesisPlus` holds 60 fps on the Fruit Jam with the ROM in PSRAM, **but at 378 MHz / 1.50 V with HSTX output.** Gwenesis in retro-go runs on ESP32-S3 with frame skipping. | **Medium on Fruit Jam** (clock-dependent, see below); **low on ESP32** |
@@ -847,6 +849,35 @@ Jam first, which is a board-layer project in its own right.
 - [ ] Whether Gwenesis fits a Genesis frame at 252 MHz, or whether Genesis
       requires an HSTX video backend at a higher clock.
 
+### NES core candidates (surveyed 2026-09-26)
+
+Every licence below was checked at the source: each file's header, not
+only the top-level LICENSE.
+
+| Core | Licence | Mappers | Sound | Proven on | Verdict |
+|------|---------|---------|-------|-----------|---------|
+| **nofrendo**, as maintained in [retro-go](https://github.com/ducalex/retro-go) | LGPL v2 per file; retro-go ships it as GPL-2 | 59 | Yes | ESP32 (ODROID-GO), for years | **First choice** |
+| **InfoNES**, as adapted by pico-infoNES / pico-infonesPlus | "GPL2", no "or later" found; the Pico ports are GPL-3 | 137-147 | Yes | RP2040/RP2350 at 252 MHz with PicoDVI | **Fallback**, pending the licence question |
+| **QuickNES** (libretro) | GPL-2 or later | Common set | Yes | PCs only, as far as known | Not now |
+| **fixNES** | MIT | 116+ | Yes, with expansion audio | PCs, the Wii | Measure: its loop calls CPU, PPU, APU and mapper **every CPU cycle**, likely too slow |
+| **agnes**, **smolnes** | MIT | 4-6 | **None** | PCs | No |
+
+**Why nofrendo:**
+
+1. **One core for both boards.** It already runs full speed on the
+   ESP32, which is Phase 4's board. The same core on the Fruit Jam and
+   the Feather is the SAMP point.
+2. **A clean licence.** LGPL-2, used as GPL-2, next to our MIT code.
+3. **Maintained.** retro-go is active.
+4. **Only one small port dependency.** Its `utils.h` already has a
+   non-retro-go path (`printf`, no CRC).
+
+**The spike decides.** A host harness, `extras/tools/nes_test`, runs
+nofrendo and fixNES on blargg's test ROMs and times a frame of each.
+nofrendo then goes onto the Fruit Jam with Super Mario Bros. If it fits
+the frame comfortably, it becomes the core. If not, InfoNES is next, once
+its licence is settled.
+
 ## Roadmap
 
 Each phase ends with a concrete, checkable exit test, in keeping with the
@@ -857,7 +888,7 @@ project's hardware-verified standard.
 | **0. Groundwork** | ~~`dot_a_linkage=true` and the I2S file rename it requires~~ (**done**, PR #22). `HAL_BTN_ACTION2` / `HAL_BTN_ACTION3` on the Fruit Jam (GPIO 42 / 41), and as `false` on the Feather, needed before Phase 1a. Storage write/seek/rename and the memory contract, needed only from Phase 1b. The `nm` release check in the `extras/dist/` build, needed once the first GPL core lands. | The two new Fruit Jam buttons read correctly over serial, and the arcade games are unaffected. Later: SelfTest sketches for SD write/readback and PSRAM allocate/fill/verify; the `nm` check passes on every arcade binary. |
 | **1a. Game Boy, Tetris** | Upstream Peanut-GB + minigb_apu (MIT). Host harness first (`extras/tools/gb_host`). `src/cart/` loader, 1× centered video, audio, input, rotation 0 default. Tetris is 32 KB with no memory-bank chip and no battery, so no PSRAM and no SD writes. | blargg's `cpu_instrs` pass on the host (`dmg-acid2` recorded). Tetris plays at 60 fps with sound on the Fruit Jam, in all four rotations, with no queue starvation. All 14 arcade builds still link identical symbols. |
 | **1b. Game Boy, bank-switched carts** (**done** 2026-09-25: DEVNOTES #129, #130) | MBC1/3/5, ROMs in PSRAM, battery saves through the new storage write path. mooneye results recorded but not required (see [Why Peanut-GB, not SameBoy](#why-peanut-gb-not-sameboy)). | A save survives a power cycle on hardware. A compatibility list exists. |
-| **2. NES** | Port InfoNES onto the HAL (the first GPL core): PicoDVI video at 252 MHz, our audio and input, console geometry. InfoNES brings its mappers with it, so there's no mapper-by-mapper build-up. | blargg's NES CPU tests pass on the host harness. Super Mario Bros. (NROM) and an MMC3 game run at 60 fps on the Fruit Jam with sound, **in all four rotations**. The `nm` check passes on every arcade binary. |
+| **2. NES** | **Spike first:** a host harness running nofrendo and fixNES on blargg's test ROMs, with frame timing (`extras/tools/nes_test`), then nofrendo on the Fruit Jam with Super Mario Bros. against the 16.7 ms budget. Then port the chosen core onto the HAL (the first GPL core): PicoDVI video at 252 MHz, our audio and input, console geometry. The core brings its mappers with it (nofrendo: 59), so there's no mapper-by-mapper build-up. | blargg's NES CPU tests pass on the host harness. Super Mario Bros. (NROM) and an MMC3 game run at 60 fps on the Fruit Jam with sound, **in all four rotations**. The `nm` check passes on every arcade binary. |
 | **3. SMS / Game Gear** | Port SMS Plus **with its Z80 replaced by our `src/cpu/z80/`** | The license table shows no non-commercial files left. One title per system runs at 60 fps. |
 | **4. Feather ESP32** | Game Boy and NES on the second board, which is the part of our case PicoPlus doesn't cover | Both run on hardware, including a save over the shared SPI bus (see Risks) |
 | **5. Genesis** *(spike only)* | Swap Gwenesis's 68000 for MIT Musashi, then measure it at 252 MHz. If it doesn't fit, estimate the cost of an HSTX Fruit Jam backend at a higher clock. | A go/no-go number and a clock requirement, not a port |
