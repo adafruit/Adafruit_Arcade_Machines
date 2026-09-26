@@ -3,11 +3,9 @@
 // SPDX-License-Identifier: MIT
 
 // The consoles' audio ring: a frame of samples in from the emulation loop,
-// copied out by the board's audio ISR. It is the Game Boy's ring
-// (machines/gb/gameboy_audio.cpp, where its design and measurements are
-// recorded) with the one Game Boy call taken out, so the NES and later
-// consoles share it. The Game Boy still has its own copy; moving it onto
-// this one is a separate change, checked against its WAV regression.
+// copied out by the board's audio ISR. Shared by the Game Boy and the NES;
+// it began as the Game Boy's (DEVNOTES #127) and its design notes and
+// measurements are in console_audio.cpp.
 //
 // The emulation loop pushes one frame of mono samples at a time. The ring
 // holds ~2048, aims for 768, and nudges the level by at most 3 samples a

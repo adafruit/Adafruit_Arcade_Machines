@@ -37,7 +37,7 @@
 #include <machines/gb/gameboy_machine.h>
 #include <machines/gb/gameboy_audio.h>
 #include <machines/gb/gameboy_core.h>
-#include <machines/gb/gameboy_save.h>
+#include <console/console_save.h>
 #include <machines/gb/gameboy_palette.h>
 #include <boards/fruitjam/board_config_fruitjam.h>
 #if defined(USE_TINYUSB)
@@ -238,9 +238,9 @@ void loop() {
         }
         work_sum = blk_sum = work_n = 0; work_max = 0;
         {
-            gameboy_save_stats_t ss;
-            gameboy_save_take_stats(&ss);
-            if (ss.state != GAMEBOY_SAVE_NONE) {
+            console_save_stats_t ss;
+            console_save_take_stats(&ss);
+            if (ss.state != CONSOLE_SAVE_NONE) {
                 static const char *const names[] = { "none", "UNAVAILABLE", "ready", "writing" };
                 Serial.print("[gameboy] save ");
                 Serial.print(names[ss.state]);

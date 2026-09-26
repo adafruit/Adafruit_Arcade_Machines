@@ -2,8 +2,35 @@
 //
 // SPDX-License-Identifier: MIT
 
-// See console_audio.h. The ring, the ISR copy and the level correction are
-// the Game Boy's (machines/gb/gameboy_audio.cpp), unchanged in behaviour.
+// See console_audio.h.
+//
+// Generation happens on core 0, once per emulated frame; the ISR only copies
+// out of the ring. That split is the one Burger Time settled on
+// (btime_audio.cpp, DEVNOTES #48/#65): nothing slow may run in an interrupt
+// that shares its timing budget with the DVI scanline queue.
+//
+// The ring is Burger Time's shape: 2048 deep, a target three times the
+// ISR's 256-sample drain, and a deadband so the level isn't nudged every
+// frame.
+//
+// THE LEVEL CORRECTION drops samples from the end of a frame when the ring
+// is above target and repeats the last one when it is below -- at most
+// MAX_CORRECTION a frame, so never a burst: Burger Time's first, burstier
+// correction starved the video queue (DEVNOTES #65).
+//
+// Measured on the Fruit Jam (the heartbeat's prod/cons/drop/rep counters):
+// the ISR consumes exactly 22050/s -- 86 or 87 drains of 256 per second.
+// The Game Boy's minigb makes 368 samples a frame at 22000 Hz, 22080/s, so
+// ~30 a second are dropped; the NES's nofrendo makes 367 at 22050, 22020/s,
+// so ~30 a second are repeated. Either way the level settles just outside
+// the deadband's edge; that is where a threshold controller holds a
+// constant surplus or deficit, not a fault.
+//
+// UP TO THREE PER FRAME, stepped by how far the level is off, is headroom,
+// not a fix. It was added when the Game Boy ring's resting level was
+// misread as the correction being saturated -- inferred as a slow 22020 Hz
+// audio clock, which the counters then disproved. At the resting level it
+// only ever moves one sample at a time; the extra room is for a real drift.
 #include "console/console_audio.h"
 
 #include <string.h>

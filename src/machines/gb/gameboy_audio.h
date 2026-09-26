@@ -2,7 +2,8 @@
 //
 // SPDX-License-Identifier: MIT
 
-// Game Boy audio: minigb_apu output -> sample ring -> the board's audio ISR.
+// Game Boy audio: minigb_apu output -> the shared console sample ring
+// (console/console_audio.h) -> the board's audio ISR.
 //
 // Generation happens on Core 0, once per Game Boy frame; the ISR only
 // copies out of the ring. That split is the one Burger Time settled on

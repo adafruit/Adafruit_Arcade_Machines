@@ -2,9 +2,9 @@
 //
 // SPDX-License-Identifier: MIT
 
-// See console_save.h. The state machine is the Game Boy's
-// (machines/gb/gameboy_save.cpp); what differs is how a change is noticed:
-// by comparing the RAM with a shadow copy each frame.
+// See console_save.h. The state machine is the Game Boy's original save
+// path (DEVNOTES #130); a change is noticed by comparing the RAM with a
+// shadow copy each frame.
 #include "console/console_save.h"
 
 #include <string.h>

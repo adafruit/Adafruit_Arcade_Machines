@@ -4,21 +4,22 @@
 
 // Battery saves for the consoles: a cartridge's battery-backed RAM, kept in
 // a standard .sav next to the ROM (/cart/<rom name>.sav), the raw bytes PC
-// emulators use. The design is the Game Boy's (machines/gb/gameboy_save.h,
-// DEVNOTES #130), taken out of the Game Boy so the NES and later consoles
-// share it; the Game Boy keeps its copy until it is moved over and checked
-// on hardware.
+// emulators use. Shared by the Game Boy and the NES; designed for the Game
+// Boy (DEVNOTES #130) and taken out of it for the NES (#138, #139).
 //
-// AS THE CARTRIDGE DID IT: a save happens when the game writes its save RAM
+// DECIDED 2026-09-24/25 (extras/CONSOLES_PLAN.md, "The cartridge model"):
+// AS THE CARTRIDGE DID IT. A save happens when the game writes its save RAM
 // and then leaves it alone for a second -- no save button, no save states.
-// The .sav is rewritten IN PLACE (so it stays interchangeable with PC
-// emulators); a power cut during the ~0.5 s it takes could leave it half
-// old, half new, as a real cartridge's RAM could be.
+// The .sav is rewritten IN PLACE, so it stays interchangeable with PC
+// emulators; a power cut during the ~0.5 s it takes could leave it half
+// old, half new, as a real cartridge's RAM could be, and games guard
+// against that themselves (Link's Awakening checksums each of its three
+// files).
 //
-// NOTICING A SAVE. The Game Boy's core counts writes to its cartridge RAM.
-// A core that can't (nofrendo maps it as plain memory) uses the compare
-// mode: once a frame the RAM is compared with a shadow copy, 8 KB for a
-// typical NES cart, a few microseconds.
+// NOTICING A SAVE: once a frame the RAM is compared with a shadow copy
+// (8 KB for Link's Awakening or Zelda, a few microseconds). nofrendo maps
+// the NES's cartridge RAM as plain memory, with nothing to count writes;
+// the Game Boy used to count them in its core, and moved to this.
 //
 // NEVER BLOCKING THE DISPLAY. File operations block for 6-30 ms against
 // ~2.2 ms of queued picture (examples/SelfTest/sd_write_test_fruitjam), so
