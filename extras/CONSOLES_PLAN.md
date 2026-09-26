@@ -375,6 +375,96 @@ the tree. If the Fruit Jam comes back to I2C, two fixes were considered:
    controller.
 3. The Fruit Jam: parked (above); USB gamepads come first there.
 
+### USB gamepads on the Fruit Jam (planned 2026-09-25)
+
+The Fruit Jam's two Type-A ports are its controller path; I2C controllers
+are parked there (above).
+
+**DECIDED: depend on Adafruit TinyUSB Library and Pico PIO USB**, both
+from Library Manager and listed in `depends=` like PicoDVI and SdFat,
+with nothing copied into `src/`. This is the pair Adafruit's own Fruit
+Jam USB Host guide uses.
+
+- **Adafruit TinyUSB** is Adafruit's USB stack, bundled with the
+  arduino-pico core. It provides the host, hub and HID support, and it
+  keeps the native USB-C port as a device, so serial still works.
+- **Pico PIO USB** (sekigon-gonnoc, MIT) is the software USB host that
+  drives the Type-A ports: GPIO 1/2 (`PIN_USB_HOST_DP`/`DM`), with GPIO 11
+  (`PIN_5V_EN`) powering the ports.
+
+Adafruit TinyUSB turns the host on by itself when `pio_usb.h` is
+available. A sketch opts in with the TinyUSB USB stack in `sketch.yaml`.
+The USB code is guarded, so arcade sketches and Feather builds compile
+without it.
+
+**No maintained library covers the gamepad layer on this stack**
+(surveyed 2026-09-25):
+
+- Adafruit's Fruit Jam host example handles a keyboard only.
+- The SNES-style USB controller guide hard-codes one controller's bytes.
+- USB Host Shield 2.0 is for the MAX3421E chip only, and is GPL-2.
+- MPG is for the device side.
+- `tusb_xinput` (MIT) is not in Library Manager.
+- Bluepad32 is Bluetooth.
+
+So we write that layer ourselves:
+
+- **A generic HID report parser.** It finds the buttons (usage page 9),
+  the hat switch and the X/Y axes from the report descriptor, as SDL
+  does, so most pads work without a vendor/product list.
+- **Fixed layouts for known pads.** DualShock 4, DualSense, Switch Pro.
+- **XInput** (Xbox, and 8BitDo in X-input mode), from vendored MIT
+  `tusb_xinput`, if wanted.
+
+**Prior art: pico-infonesPlus on the Fruit Jam** (`pico_shared/
+hid_app.cpp`, GPL-3, read for behaviour only):
+
+- PIO-USB runs on core 0 with video on core 1, at 252 MHz (a multiple of
+  12 MHz, which PIO-USB needs), on PIO 2.
+- It starts after video, so video claims its PIO state machines first.
+- `tuh_task()` runs once per frame, which its README's "some input lag"
+  probably reflects.
+- Supported: DualShock 4, DualSense, PlayStation Classic, Switch Pro and
+  SNES-style Switch controllers, Genesis Mini 1/2, Retro-bit Genesis USB,
+  Mantapad, XInput, and a keyboard. The generic path is a fixed guess.
+
+**Constraints for us:**
+
+1. **Core 0 cost.** Adafruit's dual-role example runs the host on core 1
+   at 120 or 240 MHz. Our core 1 is video and we run at 252, so the host
+   goes on core 0, as pico-infonesPlus shows works. Its 1 ms timer
+   interrupt must be measured against the display queue (`starve`,
+   `minq`), in Galaga and on the Game Boy.
+2. **Latency.** Call `tuh_task()` at each queue top-up point, not once
+   per frame.
+3. **Resources.** Video uses PIO 0 and audio PIO 1, so PIO-USB takes PIO
+   2. Its DMA channel is claimed from the unused ones.
+
+**Architecture:** the same shape as the I2C plan. `hal_input_poll()`,
+USB buttons combined with the GPIO buttons in the board's input layer,
+machines unchanged, and the button mapping in the sketch.
+
+**Steps:**
+
+1. Build switch and baseline: the TinyUSB stack plus the host, with
+   nothing plugged in. Serial, flashing, video and audio unaffected; the
+   core-0 cost measured.
+2. Self-test `usb_gamepad_test_fruitjam`: plug/unplug, vendor/product
+   IDs, report descriptor, raw reports, decoded buttons.
+3. Drivers: the generic HID parser, known layouts, XInput, hub and a
+   second player.
+4. Integration into the Game Boy and arcade sketches, measured.
+
+**Still open:**
+
+- Which USB controllers to test first.
+- Mapping by position (SDL's "south/east") or by printed label. Xbox
+  pads put A where Nintendo puts B.
+- A second player in the arcade games now, or later.
+- Keyboard support.
+- Whether the gamepad layer lives in this library or becomes its own
+  Adafruit library that this one depends on. A question for Limor.
+
 ### The on-board buttons: keep STRETCH and ROTATE
 
 The Fruit Jam's three on-board buttons control the display: Button 1
