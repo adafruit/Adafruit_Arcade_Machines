@@ -31,6 +31,9 @@ typedef struct {
     void (*rgb)(uint8_t *out);
     // Prints the CPU's state (PC, whether it has jammed); may be NULL.
     void (*debug)(void);
+    // CRC-32 of the last frame's 256x240 palette indices, the same sum the
+    // Fruit Jam spike sketch prints, so the two can be compared; may be NULL.
+    uint32_t (*frame_crc)(void);
 } core_t;
 
 extern const core_t g_core;

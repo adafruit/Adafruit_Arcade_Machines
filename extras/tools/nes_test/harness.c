@@ -60,7 +60,7 @@ static void write_ppm(const char *path) {
 }
 
 int main(int argc, char **argv) {
-    const char *rom_path = NULL, *ppm_at = NULL, *out = ".";
+    const char *rom_path = NULL, *ppm_at = NULL, *out = ".", *crc_at = NULL;
     unsigned frames = 0;
     bool blargg = false, timing = false;
     unsigned trace = 0; // print the CPU state after each of the first N frames
@@ -71,6 +71,7 @@ int main(int argc, char **argv) {
         if (!strcmp(a, "--rom") && i + 1 < argc) rom_path = argv[++i];
         else if (!strcmp(a, "--frames") && i + 1 < argc) frames = (unsigned)atoi(argv[++i]);
         else if (!strcmp(a, "--ppm-at") && i + 1 < argc) ppm_at = argv[++i];
+        else if (!strcmp(a, "--crc-at") && i + 1 < argc) crc_at = argv[++i];
         else if (!strcmp(a, "--out") && i + 1 < argc) out = argv[++i];
         else if (!strcmp(a, "--blargg")) blargg = true;
         else if (!strcmp(a, "--time")) timing = true;
@@ -110,6 +111,8 @@ int main(int argc, char **argv) {
         const uint64_t dt = now_ns() - t0;
         if (fr > 60) { t_emu += dt; timed++; } // skip start-up
         if (fr <= trace && g_core.debug) { printf("f%-5u", fr); g_core.debug(); }
+        if (in_list(crc_at, fr) && g_core.frame_crc)
+            printf("frame %u crc %08X\n", fr, (unsigned)g_core.frame_crc());
         if (in_list(ppm_at, fr)) {
             char p[512];
             snprintf(p, sizeof p, "%s/%s_%s_f%u.ppm", out, g_core.name, base, fr);

@@ -83,6 +83,7 @@ extras/tools/nes_test/build/
 extras/tools/nes_test/out/
 extras/tools/nes_test/cores/
 extras/tools/nes_test/roms/
+extras/tools/nes_test/fruitjam_spike/src/
 
 # Claude Code worktrees -- transient checkouts with their own build output.
 # Narrow on purpose: a future tracked .claude/settings.json stays visible.

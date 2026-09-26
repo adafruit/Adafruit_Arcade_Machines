@@ -7188,3 +7188,100 @@ on-device timings many times the host harness's). It still fits (16.3 ms worst
 in play, no starvation), but it is now the game with the least margin. If
 it ever needs room back, the first thing to try is moving TinyUSB's hot
 paths into RAM.
+
+### 135. The NES core spike: nofrendo, fixNES, two bugs, and 7 ms a frame on the Fruit Jam
+
+Phase 2 started by choosing the core with measurements, not by argument
+(extras/CONSOLES_PLAN.md, "NES core candidates").
+
+**The harness.** `extras/tools/nes_test/fetch.sh` pins both candidates and
+blargg's test ROMs into gitignored folders; nothing is vendored yet. It
+pins nofrendo as maintained in retro-go, LGPL-2 per file, and fixNES,
+MIT. One front end, `harness.c`, provides:
+
+- blargg's `$6000` result protocol;
+- PPM frames;
+- per-frame timing;
+- scripted pads;
+- a per-frame PC trace;
+- frame CRCs.
+
+It sits over one small adapter per core.
+
+**Accuracy (blargg):**
+
+- **fixNES passes 21 of 23:** every CPU single, `official_only`,
+  `instr_timing`, `ppu_vbl_nmi`, `apu_test` and MMC3 clocking.
+- **nofrendo passes 14 of 23**, after two fixes, each found by a test ROM
+  and kept as a patch that `fetch.sh` applies:
+  - **zp-wrap.** `ZP_READWORD` read a 16-bit word straight out of memory,
+    so a `(zp,X)` or `(zp),Y` pointer at `$FF` took its high byte from
+    `$100` (the stack) instead of `$00`. That broke 30 opcodes in
+    `08-ind_x` and `09-ind_y`.
+  - **mmc1-surom.** The MMC1 mapper took PRG A18 from CHR bit 4 at
+    `>= 16` 16 KB banks, which is every 256 KB cart, not only 512 KB
+    SUROM, so a CHR write could move the program past the end of the ROM.
+    Final Fantasy is a 256 KB MMC1 cart.
+- **What nofrendo still fails is timing:** interrupt latency, APU length
+  counters, MMC3 IRQ timing, VBL period. The combined `official_only`
+  hangs even though every one of its tests passes alone. A per-frame PC
+  trace showed an interrupt handler returning into garbage, the same
+  interrupt/APU timing. These are the normal gaps of a scanline-based
+  emulator; games are the test that matters.
+
+**Six real games,** the same scripted input on both cores:
+
+| Game | Mapper | nofrendo (host) | fixNES (host) |
+|---|---|---|---|
+| Super Mario Bros. | NROM | 48.9 us | 716 us |
+| Super Mario Bros. 3 | MMC3 | 51.0 us | 833 us |
+| Kirby's Adventure | MMC3 | 58.5 us | 872 us |
+| The Legend of Zelda | MMC1 | 47.0 us | 687 us |
+| Metroid | MMC1 | 49.3 us | 832 us |
+| Final Fantasy | MMC1 | 45.0 us | 667 us |
+
+nofrendo draws every game correctly and reaches the same screens as fixNES
+at the same frames; the differences are its lighter palette and a few
+frames' difference in two fades. fixNES is ~14x slower, too slow for the
+RP2350.
+
+**A harness bug that nearly misled the timing.** The first nofrendo frames
+were blank grey (palette index 0), and its first timings, 26-36 us, were
+half the real figure. `nes_reset()`, which loading the cart runs, sets
+`nes.vidbuf = NULL`; retro-go sets the buffer every frame, and the adapter
+had set it once, before the reset. With no buffer, nofrendo simply skips
+drawing. **Check the pictures before trusting a timing.**
+
+**On the Fruit Jam** (`extras/tools/nes_test/fruitjam_spike`, built by
+`build_spike.sh` with nofrendo copied into the sketch, not the library):
+Super Mario Bros. from `/cart` on the SD card, the same scripted input as
+the host, core 0 at 252 MHz, no display or audio output. `nes_emulate()`
+covers the CPU, all 240 lines drawn into an 8-bit buffer, and one frame
+of APU samples:
+
+| ROM in | Mean | Worst |
+|---|---|---|
+| SRAM | 6.9 ms | 7.3 ms |
+| PSRAM | 7.2 ms | 7.6 ms |
+
+Its frame CRCs equal the host harness's at frames 150, 650, 1200 and 1500
+(`9DAA5ADE 1686F52F 4F5AE768 B50454BA`): **the RP2350 emulates exactly
+what the host does**, so the host harness can stand in for correctness
+from here.
+
+My estimate beforehand was 2-3.5 ms. The real figure is about 140x the
+host's, not 40-60x. That still leaves ~9 ms of the 16.7 ms frame for
+drawing and sound (the Game Boy does 8.7 ms mean, everything included).
+
+**Two build lessons:**
+
+- **arduino-cli compiles a copy of the sketch.** It copies the sketch
+  under `<build path>/sketch/`, so an extra `-I` must point at that copy.
+  With both the original and the copy reachable, `#pragma once` sees two
+  files, and every header is defined twice.
+- **zsh does not word-split `$VAR`.** A loop passing `$P` as several
+  arguments must run under `sh -c`. This project has hit it before.
+
+**Decision: nofrendo.** The port must step it a scanline at a time: one
+`nes_emulate()` is ~7 ms of uninterrupted work, against ~2.2 ms of queued
+picture.

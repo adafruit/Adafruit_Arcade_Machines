@@ -54,4 +54,4 @@ static void rgb(uint8_t *out) {
     }
 }
 
-const core_t g_core = { "fixNES", load, set_pad, frame, peek_prg_ram, rgb, NULL };
+const core_t g_core = { "fixNES", load, set_pad, frame, peek_prg_ram, rgb, NULL, NULL };

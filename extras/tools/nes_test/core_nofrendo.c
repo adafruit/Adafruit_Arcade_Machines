@@ -44,4 +44,7 @@ static void debug(void) {
            mem_getbyte(c->pc_reg + 2));
 }
 
-const core_t g_core = { "nofrendo", load, set_pad, frame, peek_prg_ram, rgb, debug };
+#include "nes_frame_crc.h"
+static uint32_t frame_crc(void) { return nes_frame_crc(g_vidbuf); }
+
+const core_t g_core = { "nofrendo", load, set_pad, frame, peek_prg_ram, rgb, debug, frame_crc };

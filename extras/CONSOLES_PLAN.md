@@ -872,11 +872,26 @@ only the top-level LICENSE.
 4. **Only one small port dependency.** Its `utils.h` already has a
    non-retro-go path (`printf`, no CRC).
 
-**The spike decides.** A host harness, `extras/tools/nes_test`, runs
-nofrendo and fixNES on blargg's test ROMs and times a frame of each.
-nofrendo then goes onto the Fruit Jam with Super Mario Bros. If it fits
-the frame comfortably, it becomes the core. If not, InfoNES is next, once
-its licence is settled.
+**The spike decided it (2026-09-26, DEVNOTES #135): nofrendo.**
+
+- **fixNES is far more accurate but ~14x slower.** It passes 21 of 23
+  blargg tests, but its per-cycle loop takes 667-872 us a frame on the
+  host.
+- **nofrendo draws six real games correctly.** Super Mario Bros., SMB3,
+  Kirby's Adventure, Zelda, Metroid and Final Fantasy all render, and
+  reach the same screens as fixNES under the same input.
+- **Two bugs were fixed**, kept as patches in `extras/tools/nes_test`: a
+  CPU zero-page wrap, and MMC1 256 KB carts being treated as 512 KB.
+- **On the Fruit Jam at 252 MHz,** SMB's `nes_emulate()` takes **6.9 ms
+  mean, 7.3 ms worst** with the ROM in SRAM, and 7.2 / 7.6 ms in PSRAM.
+- **The Fruit Jam matches the host exactly:** its frame CRCs equal the
+  host harness's at every checked frame.
+
+**One change the port needs:** `nes_emulate()` runs a whole frame (about
+7 ms) without returning, against the display queue's ~2.2 ms of picture.
+Like the Game Boy, the NES port must step a scanline at a time and top up
+the queue in between. nofrendo's frame loop is already per scanline, so
+it splits cleanly.
 
 ## Roadmap
 
