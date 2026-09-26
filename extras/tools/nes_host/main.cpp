@@ -42,7 +42,7 @@ void render(void *ctx, uint32_t y, uint16_t *buf) {
     (void)ctx;
     if (!g_ok) { nes_video_fill_scanline(buf, g_error_color); return; }
     nes_video_render_scanline(y, buf, nes_core_front_base(), nes_core_palette565(g_sys.palette),
-                              g_sys.rotation, g_sys.mirror_x);
+                              g_sys.rotation, g_sys.mirror_x, g_sys.stretch);
 }
 
 bool held(const std::vector<press_t> &presses, const char *name, unsigned frame) {
@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
                *wav_path = nullptr;
     unsigned frames = 600;
     int rotation = 0, palette = 0;
-    bool mirror = false;
+    bool mirror = false, stretch = false;
     std::vector<press_t> presses;
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
@@ -92,6 +92,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--rotation") && i + 1 < argc) rotation = atoi(argv[++i]);
         else if (!strcmp(a, "--palette") && i + 1 < argc) palette = atoi(argv[++i]);
         else if (!strcmp(a, "--mirror")) mirror = true;
+        else if (!strcmp(a, "--stretch")) stretch = true;
         else if (!strcmp(a, "--press") && i + 1 < argc) {
             // BUTTON@FROM-TO: up down left right a b start select
             char name[16]; unsigned from, to;
@@ -103,7 +104,7 @@ int main(int argc, char **argv) {
         } else {
             fprintf(stderr, "usage: %s --rom DIR [--frames N] [--ppm-at F1,F2] [--crc-at F1,F2]\n"
                             "       [--out DIR] [--press BUTTON@FROM-TO]... [--rotation 0-3]\n"
-                            "       [--mirror] [--palette N] [--wav FILE]\n", argv[0]);
+                            "       [--mirror] [--stretch] [--palette N] [--wav FILE]\n", argv[0]);
             return 2;
         }
     }
@@ -123,6 +124,7 @@ int main(int argc, char **argv) {
     }
     g_sys.rotation = (uint8_t)(rotation & 3);
     g_sys.mirror_x = mirror;
+    g_sys.stretch = stretch;
     g_sys.palette = (uint8_t)(palette % (int)nes_core_palette_count());
 
     FILE *wav = nullptr;
@@ -139,7 +141,7 @@ int main(int argc, char **argv) {
         nes_input_update(&g_sys, held(presses, "up", f), held(presses, "down", f),
                          held(presses, "left", f), held(presses, "right", f),
                          held(presses, "a", f), held(presses, "b", f),
-                         held(presses, "start", f), held(presses, "select", f), false, false);
+                         held(presses, "start", f), held(presses, "select", f), false, false, false);
         nes_run_frame(&g_sys);
 
         owed += (double)NES_AUDIO_SAMPLE_RATE / 60.0;
@@ -170,8 +172,8 @@ int main(int argc, char **argv) {
             const size_t dot = stem.rfind('.');
             if (dot != std::string::npos) stem.resize(dot);
             char path[512];
-            snprintf(path, sizeof path, "%s/%s_r%d%s_f%u.ppm", out, stem.c_str(),
-                     g_sys.rotation, g_sys.mirror_x ? "m" : "", f);
+            snprintf(path, sizeof path, "%s/%s_r%d%s%s_f%u.ppm", out, stem.c_str(),
+                     g_sys.rotation, g_sys.mirror_x ? "m" : "", g_sys.stretch ? "s" : "", f);
             if (host_ppm_write(path, render, nullptr)) printf("frame %u -> %s\n", f, path);
         }
     }

@@ -7377,3 +7377,34 @@ The second session was about 6 minutes of play, and the user saw no red
 lines. The rule, as for the Game Boy (#127): no single uninterrupted
 call longer than the queue's slack, and a total frame time does not show
 the problem.
+
+### 137. NES aspect correction on Button 1
+
+A NES pixel is 8:7 (NTSC), so the 1:1 picture looks slightly narrow. Button
+1 (STRETCH), which the NES sketch had left unused, now toggles correction,
+starting off, as in the arcade games (`av_geom`):
+
+- **Landscape:** the 256 columns span 292 canvas pixels (x 8/7), inside
+  the 320-wide canvas.
+- **Rotated 90:** the NES's width runs up the screen and is already
+  cropped to 240, so the 240 rows narrow to 210 canvas pixels instead
+  (x 7/8), the same proportions.
+- **Sampling:** both are nearest-neighbour tables sampled at pixel
+  centres, so the first and last source pixels both appear.
+- **The 1:1 path never goes through a table.** Routing the unstretched
+  path through one cost Donkey Kong 1.6 ms (`arcade_video_geom.h`). The
+  host confirms 1:1 is untouched: the four rotation frames are
+  byte-identical before and after.
+
+On the Fruit Jam with SMB3, the user found it "works and looks great"; no
+starvation either way, queue low point 13:
+
+| Landscape | Work, mean | Work, worst |
+|---|---|---|
+| 1:1 (121 heartbeats) | 8.9 ms | 11.4 ms |
+| Corrected (123 heartbeats) | 10.6 ms | 13.4 ms |
+
+**That comparison is confounded,** not a measured cost of the table: the
+corrected period was gameplay, and most of the 1:1 period was the title
+screen. It shows the worst case still fits, with 3 ms to spare, but not
+what the table itself costs.
