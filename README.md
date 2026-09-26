@@ -165,9 +165,10 @@ frame-budget cost of each option.
 ### Prebuilt firmware
 
 If you'd rather not install the toolchain, every [release](../../releases)
-carries **all seven games for both boards** — fourteen files — plus, from
-v2.11.0, `gameboy_fruitjam.uf2` for the Fruit Jam. The Fruit Jam builds
-include USB gamepad support.
+carries **all seven games for both boards** — fourteen files — plus the
+consoles for the Fruit Jam: `gameboy_fruitjam.uf2` (from v2.11.0) and
+`nes_fruitjam.uf2` (from v2.12.0). The Fruit Jam builds include USB gamepad
+support.
 
 **Fruit Jam — `<game>_fruitjam.uf2`.** Hold **BOOT** while connecting USB (or
 hold BOOT and tap **RESET**), then copy the `.uf2` onto the `RP2350` drive
@@ -189,7 +190,7 @@ which is not the same for every game; see below.
 To build the whole set yourself, ready to attach to a release:
 
 ```bash
-./extras/dist/build_all.sh      # seven <game>_fruitjam.uf2, gameboy_fruitjam.uf2, seven <game>_featheresp32.bin
+./extras/dist/build_all.sh      # seven <game>_fruitjam.uf2, gameboy_ and nes_fruitjam.uf2, seven <game>_featheresp32.bin
 ```
 
 `extras/dist/` is gitignored apart from that script and its README — the binaries
@@ -491,9 +492,9 @@ flashing it.
 ### `arduino-lint`, and the two ways to run it wrong
 
 `arduino-lint` is what Library Manager submissions are checked against. This
-library **passes**: 0 errors, 1 warning, exit 0, with all 24 examples clean —
-fourteen games (seven per board), the Game Boy console, and nine SelfTest
-sketches (checked for v2.11.0).
+library **passes**: 0 errors, 1 warning, exit 0, with all 25 examples clean —
+fourteen games (seven per board), the Game Boy and NES consoles, and nine
+SelfTest sketches (checked for v2.12.0).
 
 ```bash
 # lint what the registry would actually clone, NOT the working tree
