@@ -7183,7 +7183,8 @@ on the attract screens, frames 600-3600, with the Mantapad plugged in:
 That is +0.35 ms mean and +0.44 ms worst: more than Galaga's +0.25 ms,
 with a pad that reports only on change. A likely cause, not yet measured,
 is XIP cache contention: TinyUSB's code runs from flash, and Burger Time
-has been cache-sensitive before (#117-#121). It still fits (16.3 ms worst
+has been flash-stall-sensitive before (#60, where flash stalls made its
+on-device timings many times the host harness's). It still fits (16.3 ms worst
 in play, no starvation), but it is now the game with the least margin. If
 it ever needs room back, the first thing to try is moving TinyUSB's hot
 paths into RAM.
