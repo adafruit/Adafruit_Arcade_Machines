@@ -7617,3 +7617,65 @@ is the scripted Start press changing screens (frame 960), a single
 frame. Also tried on Tetris, the ROM in internal DRAM made no difference
 (15.31 against 15.31 ms, same windows): all its core buffers were already
 internal, 99 KB.
+
+### 141. The NES on the Feather ESP32: full speed on two cores, and a card that needed a power cycle
+
+`examples/Consoles/nes_featheresp32` runs the NES on the Feather ESP32 V2
+the way the Feather arcade sketches run their games (galaga_featheresp32).
+Emulation runs on core 0, and painting on core 1, the Arduino loop. Core 1
+hands core 0 two frames at a time and paints while they run. Only the
+second of each pair is drawn (#140), and a wall-clock limiter holds the
+NES's 60.0988 Hz. `nes_machine` gained the calls for it:
+
+- `nes_emulate_frame(sys, draw)` does emulation, audio and a save step,
+  with no display.
+- `nes_present()` makes the last drawn frame the front one.
+- `nes_paint()` paints the front frame.
+
+`nes_run_frame()` stays for the Fruit Jam, unchanged. On the host,
+`nes_host --two-core` drives the calls in the sketch's order. Its frames
+are identical to the normal loop's in all four test games.
+
+**Audio needed the Feather's larger ring target.** The emulation task
+makes two frames of samples at once, then waits a whole paint. So
+`console_audio` gained `console_audio_set_target()`, and the ring grew
+from 2048 to 4096 so the target leaves room above it. The Feather uses
+1250, the target Donkey Kong needed there (#119). The Fruit Jam keeps the
+default, 768.
+
+**Measured on the Feather, SMB, 15 s of the attract demo:**
+
+| | Measured | Target |
+|---|---|---|
+| Emulated | 60.1 fps (100%) | 60.1 |
+| Painted | 30.0 to 30.1 fps | 30 |
+| Paint | mean 31.8 ms, max 32.0 ms | 33.3 ms |
+| Emulation per frame | mean 10.6 to 10.7 ms, max 13.8 ms | 16.6 ms |
+| Audio | 0 underruns, 0 overruns, ring never below 1073 | target 1250 |
+
+The mean emulation time is lower than the spike's 12.6 ms because half the
+frames are now skipped, not drawn. The worst frame still leaves ~17%
+margin, even with core 1 painting from the same flash cache and PSRAM.
+Played on the hardware: controls, sound and all four rotations good, with
+no lag and no tearing.
+
+**Two things that looked like bugs and were not:**
+
+- **"RED: no SD card", with a good card in.** The first flash said that.
+  An experiment moved the card read ahead of the display init, and the
+  board still hung after "boot". A real power cycle (USB out and back in)
+  fixed it. The reset button and esptool's reset don't power the card
+  down, so a card stuck in a bad state stays stuck through both. With
+  the original order (display init, then card read) flashed back and
+  started by a plain reset, the card mounted and SMB played. So the
+  order was never the cause, and it stays as the Game Boy and the arcade
+  games have it (galaga_machine.cpp does the same). **When a Feather that
+  mounted a card before reports no card, power-cycle it before debugging
+  the code.**
+- **Tens of thousands of audio underruns in the first status line.**
+  `console_audio_init()` starts the audio pump during the cartridge load.
+  It then plays silence through the display init, ~1.6 s, until the
+  emulation task starts, and every silent sample counts as an underrun.
+  Nothing is audible. The sketch now discards those counts when the task
+  starts, so the first line counts only the game's own underruns: it now
+  reads 0.

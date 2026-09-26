@@ -79,7 +79,27 @@ void nes_input_update(nes_system *sys, bool up, bool down, bool left, bool right
                       bool a, bool b, bool start, bool select,
                       bool rotate, bool palette_next, bool stretch);
 
+// ONE-CORE BOARDS (the Fruit Jam): one frame of emulation interleaved with
+// feeding the display queue, paced by it.
 void nes_run_frame(nes_system *sys);
+
+// TWO-CORE BOARDS (the Feather ESP32), whose display has no queue to pace
+// by and paints slower than the game runs (~30 fps against the NES's 60):
+//   nes_emulate_frame()  on the emulation core, once per emulated frame --
+//                        emulation, audio and a save step, no display.
+//                        `draw` says whether this frame will be shown (only
+//                        the last of each paint's frames need be drawn).
+//   nes_present()        on the display core, while the emulation core is
+//                        idle: the last drawn frame becomes the front.
+//   nes_paint()          on the display core: the 240 canvas lines of the
+//                        front frame, through hal_video_acquire/submit.
+void nes_emulate_frame(nes_system *sys, bool draw);
+void nes_present(nes_system *sys);
+void nes_paint(const nes_system *sys);
+
+// Worst and mean nes_emulate_frame() time since the last call (then reset).
+void nes_take_emulate_us(uint32_t *mean, uint32_t *max);
+
 void nes_draw_error_frame(uint16_t color);
 
 // Worst single scanline of emulation since the last call (then reset), us.

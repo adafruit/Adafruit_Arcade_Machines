@@ -82,6 +82,7 @@ int main(int argc, char **argv) {
     int rotation = 0, palette = 0;
     bool mirror = false, stretch = false;
     unsigned draw_every = 1; // draw only frames f % N == 0 (the Feather draws every 2nd)
+    bool two_core = false;   // drive the two-core calls, as the Feather sketch does
     std::vector<press_t> presses;
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
@@ -96,6 +97,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--mirror")) mirror = true;
         else if (!strcmp(a, "--stretch")) stretch = true;
         else if (!strcmp(a, "--draw-every") && i + 1 < argc) draw_every = (unsigned)atoi(argv[++i]);
+        else if (!strcmp(a, "--two-core")) two_core = true;
         else if (!strcmp(a, "--press") && i + 1 < argc) {
             // BUTTON@FROM-TO: up down left right a b start select
             char name[16]; unsigned from, to;
@@ -145,8 +147,15 @@ int main(int argc, char **argv) {
                          held(presses, "left", f), held(presses, "right", f),
                          held(presses, "a", f), held(presses, "b", f),
                          held(presses, "start", f), held(presses, "select", f), false, false, false);
-        nes_core_set_draw(draw_every <= 1 || f % draw_every == 0);
-        nes_run_frame(&g_sys);
+        if (two_core) {
+            // nes_featheresp32's order: frames emulated with only every
+            // second one drawn, and the drawn one presented after it.
+            nes_emulate_frame(&g_sys, f % 2 == 0);
+            if (f % 2 == 0) nes_present(&g_sys);
+        } else {
+            nes_core_set_draw(draw_every <= 1 || f % draw_every == 0);
+            nes_run_frame(&g_sys);
+        }
 
         owed += (double)NES_AUDIO_SAMPLE_RATE / 60.0;
         while (owed >= 256.0) {

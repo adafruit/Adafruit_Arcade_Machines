@@ -197,6 +197,52 @@ void nes_run_frame(nes_system *sys) {
     while (g_swap_pending) emit_line(sys);
 }
 
+// --- Two-core frame: emulation and painting on different cores -----------
+
+static volatile bool g_drawn_pending = false;
+static uint32_t g_emu_sum = 0, g_emu_n = 0, g_emu_max = 0;
+
+void nes_emulate_frame(nes_system *sys, bool draw) {
+    const uint64_t t0 = ARCADE_TIME_US64();
+    nes_core_set_pad(sys->pad);
+    nes_core_set_draw(draw);
+    nes_core_frame_begin();
+    while (!nes_core_step_line()) {}
+    static int16_t samples[NES_APU_MAX_SAMPLES];
+    const uint32_t total = nes_core_audio_samples_per_frame();
+    nes_core_audio_render(samples, total);
+    console_audio_push(samples, total);
+    console_save_frame();
+    if (draw) g_drawn_pending = true;
+    const uint32_t us = (uint32_t)(ARCADE_TIME_US64() - t0);
+    g_emu_sum += us; g_emu_n++;
+    if (us > g_emu_max) g_emu_max = us;
+}
+
+void nes_present(nes_system *sys) {
+    (void)sys;
+    if (g_drawn_pending) {
+        nes_core_swap();
+        g_drawn_pending = false;
+    }
+}
+
+void nes_paint(const nes_system *sys) {
+    for (uint32_t y = 0; y < HAL_VIDEO_HEIGHT; y++) {
+        uint16_t *buf = hal_video_acquire_scanline();
+        nes_video_render_scanline(y, buf, nes_core_front_base(),
+                                  nes_core_palette565(sys->palette), sys->rotation,
+                                  sys->mirror_x, sys->stretch);
+        hal_video_submit_scanline(buf);
+    }
+}
+
+void nes_take_emulate_us(uint32_t *mean, uint32_t *max) {
+    *mean = g_emu_n ? g_emu_sum / g_emu_n : 0;
+    *max = g_emu_max;
+    g_emu_sum = g_emu_n = g_emu_max = 0;
+}
+
 void nes_draw_error_frame(uint16_t color) {
     for (uint32_t i = 0; i < HAL_VIDEO_HEIGHT; i++) {
         uint16_t *buf = hal_video_acquire_scanline();
