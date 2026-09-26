@@ -21,7 +21,12 @@ static bool load(const char *path, uint8_t *rom, size_t size) {
 }
 
 static void set_pad(uint8_t bits) { input_update(0, bits); }
-static void frame(void) { nes_emulate(true); }
+// nes_reset() (which loading the cart runs) clears the frame buffer
+// pointer, so set it every frame, as retro-go does.
+static void frame(void) {
+    nes_setvidbuf(g_vidbuf);
+    nes_emulate(true);
+}
 static uint8_t peek_prg_ram(uint16_t a) { return mem_getbyte(a); }
 
 static void rgb(uint8_t *out) {
