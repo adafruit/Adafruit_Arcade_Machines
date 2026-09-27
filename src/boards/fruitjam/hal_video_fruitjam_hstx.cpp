@@ -18,6 +18,15 @@
 // doubles each pixel into the 640-pixel line, and after the second use puts
 // the buffer back on the free queue.
 //
+// NOTHING THE CALLBACK TOUCHES MAY LIVE IN FLASH. The first version used
+// the Pico SDK's queue_t, whose functions are in flash and take spin locks.
+// With a game running from flash on core 0, a cache miss inside the video
+// interrupt made it late, one HSTX command word went out wrong, and the
+// stream desynchronised for good: a blank TV, with lines "completing" at
+// bus speed (pico_hdmi's own video_output_force_resync() comment describes
+// exactly this). So the two queues are lock-free single-producer rings,
+// fully inlined, as in the spike that worked (DEVNOTES #147, #148).
+//
 // THE LINE ORDER HEALS ITSELF. The consumer cannot block the way PicoDVI's
 // pump does, so a late line cannot simply be waited for. Each buffer
 // carries the row it was submitted for; a stale row is dropped, a row that
@@ -27,7 +36,6 @@
 #if defined(ARDUINO_ADAFRUIT_FRUITJAM_RP2350) && defined(ARCADE_FRUITJAM_HSTX)
 
 #include <Adafruit_DVI_Audio.h>   // pico_hdmi: video_output.h, the audio queue
-#include "pico/util/queue.h"
 #include "pico/platform.h"
 #include "pico/time.h"
 #include "hardware/vreg.h"
@@ -42,7 +50,38 @@ const uint32_t HAL_VIDEO_HEIGHT = 240;
 
 static uint16_t s_buf[N_SCANBUF][320];
 static uint16_t s_row[N_SCANBUF];     // the canvas row each buffer holds
-static queue_t  s_free, s_valid;      // uint16_t* each; interrupt-safe
+
+// A single-producer, single-consumer ring of buffer pointers, big enough
+// for every buffer. `valid`: core 0 pushes, core 1's callback pops. `free`:
+// the callback pushes, core 0 pops. No locks; a barrier orders each slot
+// write before the index that publishes it.
+typedef struct {
+    uint16_t *slot[N_SCANBUF];
+    volatile uint32_t head;   // written by the producer only
+    volatile uint32_t tail;   // written by the consumer only
+} ring_t;
+
+static ring_t s_free, s_valid;
+
+static __force_inline void ring_init(ring_t *r) { r->head = r->tail = 0; }
+static __force_inline uint32_t ring_level(const ring_t *r) { return r->head - r->tail; }
+static __force_inline bool ring_push(ring_t *r, uint16_t *b) {
+    if (r->head - r->tail >= N_SCANBUF) return false;
+    r->slot[r->head & (N_SCANBUF - 1u)] = b;
+    __dmb();
+    r->head = r->head + 1;
+    return true;
+}
+static __force_inline bool ring_peek(const ring_t *r, uint16_t **b) {
+    if (r->tail == r->head) return false;
+    __dmb();
+    *b = r->slot[r->tail & (N_SCANBUF - 1u)];
+    return true;
+}
+static __force_inline void ring_drop(ring_t *r) {
+    __dmb();
+    r->tail = r->tail + 1;
+}
 static uint32_t s_next_row = 0;       // producer: the row the next submit is
 
 static volatile uint32_t s_blocked_us = 0;
@@ -63,8 +102,7 @@ static bool      s_cur_owned = false; // it must go back to the free queue
 
 static void __not_in_flash_func(release_cur)(void) {
     if (s_cur_owned) {
-        uint16_t *b = s_cur;
-        (void)queue_try_add(&s_free, &b);
+        (void)ring_push(&s_free, s_cur);
         s_cur_owned = false;
     }
     s_cur = nullptr;
@@ -78,17 +116,17 @@ static void __not_in_flash_func(scanline_cb)(uint32_t v_scanline, uint32_t activ
         release_cur();
         // Take the buffer for this row: drop stale ones, leave an early one.
         uint16_t *b;
-        while (queue_try_peek(&s_valid, &b)) {
+        while (ring_peek(&s_valid, &b)) {
             const uint32_t r = s_row[buf_index(b)];
             const uint32_t ahead = (r + HAL_VIDEO_HEIGHT - row) % HAL_VIDEO_HEIGHT;
             if (ahead == 0) {                          // this row
-                (void)queue_try_remove(&s_valid, &b);
+                ring_drop(&s_valid);
                 s_cur = b; s_cur_owned = true;
                 break;
             }
             if (ahead < HAL_VIDEO_HEIGHT / 2) break;   // early: keep it
-            (void)queue_try_remove(&s_valid, &b);      // stale: drop it
-            (void)queue_try_add(&s_free, &b);
+            ring_drop(&s_valid);                       // stale: drop it
+            (void)ring_push(&s_free, b);
         }
     }
     if (s_cur) {
@@ -106,12 +144,9 @@ static void __not_in_flash_func(scanline_cb)(uint32_t v_scanline, uint32_t activ
 // --- The HAL ---------------------------------------------------------------
 
 bool hal_video_init(void) {
-    queue_init(&s_free,  sizeof(uint16_t *), N_SCANBUF);
-    queue_init(&s_valid, sizeof(uint16_t *), N_SCANBUF);
-    for (int i = 0; i < N_SCANBUF; i++) {
-        uint16_t *b = s_buf[i];
-        queue_add_blocking(&s_free, &b);
-    }
+    ring_init(&s_free);
+    ring_init(&s_valid);
+    for (int i = 0; i < N_SCANBUF; i++) (void)ring_push(&s_free, s_buf[i]);
     s_next_row = 0;
     // pico_hdmi's core voltage for 252 MHz HSTX. Here, not only in
     // fruitjam_set_sys_clock_khz(), because some sketches set the clock with
@@ -130,11 +165,11 @@ bool hal_video_init(void) {
 uint16_t *hal_video_acquire_scanline(void) {
     uint16_t *b;
     const uint32_t t0 = time_us_32();
-    if (void (*hook)(void) = s_idle_hook) {
-        while (!queue_try_remove(&s_free, &b)) hook();
-    } else {
-        queue_remove_blocking(&s_free, &b);
+    void (*hook)(void) = s_idle_hook;
+    while (!ring_peek(&s_free, &b)) {
+        if (hook) hook(); else tight_loop_contents();
     }
+    ring_drop(&s_free);
     s_blocked_us += time_us_32() - t0;
     return b;
 }
@@ -142,8 +177,8 @@ uint16_t *hal_video_acquire_scanline(void) {
 void hal_video_submit_scanline(uint16_t *buf) {
     s_row[buf_index(buf)] = (uint16_t)s_next_row;
     if (++s_next_row == HAL_VIDEO_HEIGHT) s_next_row = 0;
-    queue_add_blocking(&s_valid, &buf);
-    const uint32_t lvl = queue_get_level_unsafe(&s_valid);
+    while (!ring_push(&s_valid, buf)) tight_loop_contents();   // cannot fill: 32 slots
+    const uint32_t lvl = ring_level(&s_valid);
     if (lvl <= 1u) s_starve_events++;
     if (lvl < s_min_valid) s_min_valid = lvl;
 }
@@ -154,7 +189,7 @@ uint32_t hal_video_take_blocked_us(void) {
     return v;
 }
 
-uint32_t hal_video_valid_level(void) { return queue_get_level_unsafe(&s_valid); }
+uint32_t hal_video_valid_level(void) { return ring_level(&s_valid); }
 
 uint32_t hal_video_take_min_valid_level(void) {
     const uint32_t v = s_min_valid;
