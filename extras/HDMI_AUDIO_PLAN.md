@@ -72,7 +72,12 @@ thin MIT wrapper around [fliperama86/pico_hdmi](https://github.com/fliperama86/p
    all of core 1 for PicoDVI's software TMDS encoding today.
 2. **An HSTX video backend** for the Fruit Jam behind the existing HAL,
    with PicoDVI kept as a build-time fallback. A/B all nine Fruit Jam
-   sketches for frame time and starvation.
+   sketches for frame time and starvation. **Done 2026-09-27, DEVNOTES
+   #148:** `src/boards/fruitjam/hal_video_fruitjam_hstx.cpp`, selected by
+   `-DARCADE_FRUITJAM_HSTX`. All nine match PicoDVI on the same frames
+   (Donkey Kong +10% work, still inside budget), and all nine look right on
+   the TV. There's a desync watchdog for pico_hdmi's intermittent stream
+   loss.
 3. **An HDMI audio backend**, with the machines' fill callbacks unchanged
    and the pump on core 1, feeding the DAC too.
 4. **Docs, `depends=`, release**, once the library is in Library Manager.

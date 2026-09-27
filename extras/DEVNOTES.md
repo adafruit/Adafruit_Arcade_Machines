@@ -8115,3 +8115,87 @@ and saw the colour bars with the sweeping line correct.
   pixel doubling ("native pixel mode") could remove it. That needs a build
   option the wrapper fixes (`PICO_HDMI_PRECOMPOSED_ACTIVE_LINES`), so it's a
   later question.
+
+### 148. The Fruit Jam's HSTX video backend: three failures, then parity with PicoDVI
+
+`src/boards/fruitjam/hal_video_fruitjam_hstx.cpp` implements `hal_video` on
+pico_hdmi (step 2 of `extras/HDMI_AUDIO_PLAN.md`), selected at build time
+by `-DARCADE_FRUITJAM_HSTX`; PicoDVI stays the default.
+
+- **Same design as PicoDVI's backend:** the same 32 buffers, free and valid
+  queues, statistics and USB idle hook.
+- **pico_hdmi's per-line callback** on core 1 takes a buffer per two
+  output lines and doubles it to 640 pixels.
+- **Each buffer carries its row,** so a late line shows red and can't shift
+  the picture.
+
+It took three fixes to get there, and each looked like the last.
+
+**1. Blank screen, 73 fps: the voltage? No.** The first Galaga run showed a
+blank TV, the game running at 73 fps, and the valid queue at zero. pico_hdmi
+runs 252 MHz at 1.15 V; Galaga sets its clock with a bare
+`set_sys_clock_khz()`, so the core stayed at 1.10 V. Raising it in
+`hal_video_init()` gave a clean 60 fps boot. The 1.15 V stays, as pico_hdmi's
+tested setting, but that boot was luck: Pac-Man failed the same way
+straight after.
+
+**2. The real bug: flash code in the video interrupt.** A diagnostic
+counted 66,000 line callbacks a second against 28,800, all on core 1, with
+the HSTX clock correct (126 MHz). pico_hdmi's own comment on
+`video_output_force_resync()` names the symptom: "one corrupted/mis-sized
+command word makes the expander misinterpret everything after it,
+permanently -- symptom: sink loses lock while scanlines 'complete' at bus
+speed". The callback called the Pico SDK's `queue_try_peek/remove/add`,
+which live in flash and take spin locks. With a game running from flash on
+core 0 (the XIP cache is shared by both cores), a miss made the interrupt
+late. Replaced with two inlined, lock-free single-producer rings; the
+disassembly shows the callback in SRAM making no calls. Pac-Man then
+matched PicoDVI.
+
+Checked on the way and ruled out, by measurement or by reading:
+
+- **DMA IRQ 0 shared with core 0:** the callback never ran on core 0, and
+  the interrupt was off there.
+- **The core's SPI:** its DMA interrupt is used only by `transferAsync()`,
+  which SdFat never calls; blocking transfers use no DMA.
+- **The USB host:** Galaga without TinyUSB failed the same way.
+- **pico_hdmi's own interrupt path** (`dma_irq_handler` and its callees)
+  is all in scratch RAM. Its one flash call, a compiler-generated
+  `memset`, is on the no-callback path, which we never take.
+
+**3. Still intermittent: a watchdog.** One later Donkey Kong boot desynced
+again, with the same signature. pico_hdmi ships the recovery,
+`video_output_force_resync()`, "safe to call from Core 1 thread context".
+The backend's core-1 background task counts frames every 250 ms; more
+than 20 (15 expected) means a runaway stream, so it resyncs and counts
+it, and the backend prints `[hstx] video resynced (N so far)` once from
+the sketch's status call. In the seven HSTX runs after it went in, it
+never fired. So the root cause of the residual desync is still unknown,
+and so is how often it happens.
+
+Also measured: pico_hdmi sets DMA ahead of both CPUs on the bus; putting
+the default back made no difference to Donkey Kong (14,457 us against
+14,463 us).
+
+**All nine Fruit Jam sketches, attract mode, same frames:**
+
+| Game | PicoDVI work | HSTX work | Min queue | Starvation events |
+|---|---|---|---|---|
+| Space Invaders | 5,795 us | 5,817 us | 29 -> 28 | 0 -> 0 |
+| Lunar Rescue | 5,390 us | 5,480 us | 14 -> 15 | 0 -> 0 |
+| Pac-Man | 8,834 us | 8,625 us | 27 -> 28 | 0 -> 0 |
+| Ms. Pac-Man | 9,644 us | 9,518 us | 27 -> 28 | 0 -> 0 |
+| Galaga | 12,111 us | 11,993 us | 22 -> 22 | 0 -> 0 |
+| Donkey Kong | 13,090 us | 14,463 us | 23 -> 13 (24 on a later boot) | 0 -> 0 |
+| Burger Time | 15,058 us | 15,317 us | 21 -> 17 | 200 -> 40 |
+| Game Boy (Link's Awakening) | 9,251 us | 9,247 us | 12 -> 12 | 0 -> 0 |
+| NES (Zelda) | 9,803 us | 9,855 us | 15 -> 15 | 0 -> 0 |
+
+- **Donkey Kong is the one real cost,** +10% work, still inside the
+  16.7 ms budget. Memory contention with core 1's line-doubling copy is
+  the likely reason, unproven. pico_hdmi's hardware pixel doubling would
+  remove that copy.
+- **Audio:** the consoles had no audio underruns on either backend.
+- **SD:** the NES loaded its save over SD. A save written mid-game on HSTX
+  hasn't been exercised yet.
+- **On the TV:** the user checked all nine and all look right.

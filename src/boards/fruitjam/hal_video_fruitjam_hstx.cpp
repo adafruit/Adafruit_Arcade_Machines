@@ -141,6 +141,32 @@ static void __not_in_flash_func(scanline_cb)(uint32_t v_scanline, uint32_t activ
     if (active_line == MODE_V_ACTIVE_LINES - 1u) release_cur();
 }
 
+// --- Desync watchdog: core 1's background loop -----------------------------
+//
+// pico_hdmi's stream can still desynchronise now and then with a game
+// running (DEVNOTES #148): the TV loses lock and frames "complete" far
+// faster than 60 a second. pico_hdmi ships the recovery for exactly this,
+// video_output_force_resync() (not in its header), "safe to call from
+// Core 1 thread context". So: every 250 ms, more than 20 frames (15
+// expected) means a runaway stream, and it is restarted and counted.
+
+extern "C" void video_output_force_resync(void);
+
+static volatile uint32_t s_resyncs = 0;
+
+static void __not_in_flash_func(background_task)(void) {
+    static uint32_t t0 = 0, f0 = 0;
+    const uint32_t now = time_us_32();
+    if (now - t0 < 250000u) return;
+    const uint32_t frames = video_frame_count - f0;
+    if (t0 != 0 && frames > 20u) {
+        video_output_force_resync();
+        s_resyncs = s_resyncs + 1;
+    }
+    t0 = now;
+    f0 = video_frame_count;
+}
+
 // --- The HAL ---------------------------------------------------------------
 
 bool hal_video_init(void) {
@@ -159,6 +185,7 @@ bool hal_video_init(void) {
     video_output_init(MODE_H_ACTIVE_PIXELS, MODE_V_ACTIVE_LINES);
     pico_hdmi_set_audio_sample_rate(HDMI_AUDIO_RATE);
     video_output_set_scanline_callback(scanline_cb);
+    video_output_set_background_task(background_task);
     return true;
 }
 
@@ -200,6 +227,12 @@ uint32_t hal_video_take_min_valid_level(void) {
 uint32_t hal_video_scanbuf_count(void) { return (uint32_t)N_SCANBUF; }
 
 uint32_t hal_video_take_starve_count(void) {
+    // Report a watchdog resync once, from the sketch's status call.
+    static uint32_t reported = 0;
+    if (s_resyncs != reported) {
+        reported = s_resyncs;
+        Serial.printf("[hstx] video resynced (%lu so far)\n", (unsigned long)reported);
+    }
     const uint32_t v = s_starve_events;
     s_starve_events = 0;
     return v;
