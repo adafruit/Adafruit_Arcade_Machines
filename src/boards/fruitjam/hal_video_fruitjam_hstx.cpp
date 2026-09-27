@@ -180,7 +180,7 @@ static void __not_in_flash_func(hdmi_tap)(const int32_t *block, int count) {
 static void hdmi_audio_pump(void) {
     uint32_t level = s_ring_head - s_ring_tail;
     if (level < s_hdmi_ring_min) s_hdmi_ring_min = level;
-    uint32_t budget = 16;   // packets per call, so the watchdog keeps running
+    uint32_t budget = 32;   // packets per call: ~11 are due each millisecond
     while (budget-- && hstx_di_queue_get_level() < HDMI_DI_TARGET) {
         level = s_ring_head - s_ring_tail;
         if (level < 2) break;
@@ -220,9 +220,17 @@ extern "C" void video_output_force_resync(void);
 static volatile uint32_t s_resyncs = 0;
 
 static void __not_in_flash_func(background_task)(void) {
-    hdmi_audio_pump();
-    static uint32_t t0 = 0, f0 = 0;
     const uint32_t now = time_us_32();
+    // The pump runs once a millisecond, not flat out: the queue holds
+    // ~18 ms of audio, and a loop that polls the ring and pico_hdmi's queue
+    // continuously is SRAM traffic core 0's emulation competes with
+    // (DEVNOTES #149).
+    static uint32_t last_pump = 0;
+    if (now - last_pump >= 1000u) {
+        last_pump = now;
+        hdmi_audio_pump();
+    }
+    static uint32_t t0 = 0, f0 = 0;
     if (now - t0 < 250000u) return;
     const uint32_t frames = video_frame_count - f0;
     if (t0 != 0 && frames > 20u) {
@@ -231,6 +239,15 @@ static void __not_in_flash_func(background_task)(void) {
     }
     t0 = now;
     f0 = video_frame_count;
+}
+
+// pico_hdmi calls this in a tight loop. Sleeping until the next interrupt
+// (the video interrupt comes every scanline, ~31,000 times a second) keeps
+// core 1 off the bus between passes; spinning cost core 0's emulation
+// ~0.4 ms a frame in Pac-Man (DEVNOTES #149).
+static void __not_in_flash_func(background_task_sleepy)(void) {
+    background_task();
+    __wfe();
 }
 
 // --- The HAL ---------------------------------------------------------------
@@ -251,7 +268,7 @@ bool hal_video_init(void) {
     video_output_init(MODE_H_ACTIVE_PIXELS, MODE_V_ACTIVE_LINES);
     pico_hdmi_set_audio_sample_rate(HDMI_AUDIO_RATE);
     video_output_set_scanline_callback(scanline_cb);
-    video_output_set_background_task(background_task);
+    video_output_set_background_task(background_task_sleepy);
     arch_i2s_set_tap(hdmi_tap);   // HDMI audio: a copy of the DAC's samples
     return true;
 }
