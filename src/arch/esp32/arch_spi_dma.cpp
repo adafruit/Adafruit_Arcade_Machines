@@ -25,6 +25,10 @@ static spi_device_handle_t s_dev  = NULL;
 static spi_device_handle_t s_dev_slow = NULL;
 static bool                s_ready = false;
 static int                 s_dc   = -1;
+static int                 s_cs   = -1;     // the panel's, held low
+static spi_host_device_t   s_host = SPI3_HOST;
+static spi_device_handle_t s_aux  = NULL;   // a second device, between frames
+static int                 s_aux_cs = -1;
 
 // Two descriptors, alternated, so one transfer can be in flight while the
 // next scanline is being rendered. `s_pending` counts what the driver still
@@ -58,6 +62,8 @@ bool arch_spi_lcd_begin(int spi_host, int sck, int mosi, int miso,
     SPI.end();
 
     s_dc = dc;
+    s_cs = cs;
+    s_host = host;
     gpio_reset_pin((gpio_num_t)dc);
     gpio_set_direction((gpio_num_t)dc, GPIO_MODE_OUTPUT);
     pinMode(cs, OUTPUT);
@@ -167,6 +173,58 @@ void arch_spi_lcd_data_async(const void *data, size_t len) {
 }
 
 void arch_spi_lcd_flush(void) { if (s_ready) reap(0); }
+
+// ---------------------------------------------------------------------------
+// A second device, between frames (see the header). Manual CS for it too:
+// the panel's is manual, and one scheme for both keeps the order of the
+// edges -- panel up before the card goes down -- in one place.
+
+bool arch_spi_aux_add(int cs, int clock_hz) {
+    if (!s_ready) return false;
+    if (s_aux) return true;
+    s_aux_cs = cs;
+    gpio_reset_pin((gpio_num_t)cs);
+    gpio_set_direction((gpio_num_t)cs, GPIO_MODE_OUTPUT);
+    gpio_set_level((gpio_num_t)cs, 1);
+    spi_device_interface_config_t cfg = {};
+    cfg.clock_speed_hz = clock_hz;
+    cfg.mode           = 0;                 // SD cards in SPI mode: mode 0
+    cfg.spics_io_num   = -1;
+    cfg.queue_size     = 1;
+    return spi_bus_add_device(s_host, &cfg, &s_aux) == ESP_OK;
+}
+
+void arch_spi_aux_select(void) {
+    gpio_set_level((gpio_num_t)s_cs, 1);     // the panel stops listening
+    gpio_set_level((gpio_num_t)s_aux_cs, 0);
+}
+
+void arch_spi_aux_deselect(void) {
+    gpio_set_level((gpio_num_t)s_aux_cs, 1);
+    (void)arch_spi_aux_byte(0xFF);           // idle clocks, every CS high
+    gpio_set_level((gpio_num_t)s_cs, 0);     // the panel's again
+}
+
+void arch_spi_aux_xfer(const void *tx, void *rx, size_t len) {
+    if (!s_aux || len == 0) return;
+    spi_transaction_t t = {};
+    t.length    = len * 8;
+    t.tx_buffer = tx;
+    t.rx_buffer = rx;
+    t.rxlength  = rx ? len * 8 : 0;
+    spi_device_polling_transmit(s_aux, &t);
+}
+
+uint8_t arch_spi_aux_byte(uint8_t out) {
+    if (!s_aux) return 0xFF;
+    spi_transaction_t t = {};
+    t.length     = 8;
+    t.rxlength   = 8;
+    t.flags      = SPI_TRANS_USE_TXDATA | SPI_TRANS_USE_RXDATA;
+    t.tx_data[0] = out;
+    spi_device_polling_transmit(s_aux, &t);
+    return t.rx_data[0];
+}
 
 // ---------------------------------------------------------------------------
 // Diagnostic read path. Everything below exists to answer "what did the

@@ -31,6 +31,7 @@
 #include <SPI.h>
 #include "hal/arcade_hal_video.h"
 #include "board_config_feather_esp32.h"
+#include "hal_storage_feather_esp32.h"
 #include "arch/esp32/arch_spi_dma.h"
 
 // Same canvas as the Fruit Jam, which is a genuine coincidence worth
@@ -211,8 +212,15 @@ void hal_video_submit_scanline(uint16_t *buf) {
     }
 
     if (++s_y >= HAL_VIDEO_HEIGHT) {
-        if (s_dma) arch_spi_lcd_flush();
-        else       s_tft.endWrite();
+        if (s_dma) {
+            arch_spi_lcd_flush();
+            // The bus is idle until the next frame's first command: the one
+            // moment a save's sector can go to the SD card that shares it
+            // (hal_storage_feather_esp32.cpp, DEVNOTES #144).
+            feather_storage_service();
+        } else {
+            s_tft.endWrite();
+        }
         s_in_frame = false;
         s_srow = 0;
     }
@@ -235,6 +243,9 @@ void hal_video_run(void) {
                                SCK, MOSI, MISO,
                                FEATHER_TFT_CS, FEATHER_TFT_DC,
                                40000000);
+    // The SD card, as a second device for mid-game save writes, at the
+    // 16 MHz SdFat mounted it at.
+    if (s_dma) (void)arch_spi_aux_add(FEATHER_SD_CS, 16000000);
     Serial.printf("[video] pins sck=%d mosi=%d miso=%d cs=%d dc=%d\n",
                   (int)SCK, (int)MOSI, (int)MISO,
                   (int)FEATHER_TFT_CS, (int)FEATHER_TFT_DC);

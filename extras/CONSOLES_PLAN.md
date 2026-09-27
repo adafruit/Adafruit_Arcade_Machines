@@ -917,7 +917,7 @@ project's hardware-verified standard.
 | **1b. Game Boy, bank-switched carts** (**done** 2026-09-25: DEVNOTES #129, #130) | MBC1/3/5, ROMs in PSRAM, battery saves through the new storage write path. mooneye results recorded but not required (see [Why Peanut-GB, not SameBoy](#why-peanut-gb-not-sameboy)). | A save survives a power cycle on hardware. A compatibility list exists. |
 | **2. NES** (**done** 2026-09-26: SMB and SMB3 (MMC3, from PSRAM) in all four rotations, aspect correction, and Zelda's battery save surviving a power cycle; DEVNOTES #135-#138) | **Spike first:** a host harness running nofrendo and fixNES on blargg's test ROMs, with frame timing (`extras/tools/nes_test`), then nofrendo on the Fruit Jam with Super Mario Bros. against the 16.7 ms budget. Then port the chosen core onto the HAL (the first GPL core): PicoDVI video at 252 MHz, our audio and input, console geometry. The core brings its mappers with it (nofrendo: 59), so there's no mapper-by-mapper build-up. | blargg's NES CPU tests pass on the host harness. Super Mario Bros. (NROM) and an MMC3 game run at 60 fps on the Fruit Jam with sound, **in all four rotations**. The `nm` check passes on every arcade binary. |
 | **3. SMS / Game Gear** | Port SMS Plus **with its Z80 replaced by our `src/cpu/z80/`** | The license table shows no non-commercial files left. One title per system runs at 60 fps. |
-| **4. Feather ESP32** (**mostly done** 2026-09-26: both consoles play at full speed on hardware, with volume set by ear, and the Wii Classic / SNES Classic controller works in every Feather sketch; DEVNOTES #140-#143. Still to do: saves) | Game Boy and NES on the second board, which is the part of our case PicoPlus doesn't cover | Both run on hardware, including a save over the shared SPI bus (see Risks) |
+| **4. Feather ESP32** (**done** 2026-09-27: both consoles play at full speed on hardware, with volume set by ear; the Wii Classic / SNES Classic controller works in every Feather sketch; battery saves over the shared SPI bus survive a power cycle in Zelda and Link's Awakening; DEVNOTES #140-#144) | Game Boy and NES on the second board, which is the part of our case PicoPlus doesn't cover | Both run on hardware, including a save over the shared SPI bus (see Risks) |
 | **5. Genesis** *(spike only)* | Swap Gwenesis's 68000 for MIT Musashi, then measure it at 252 MHz. If it doesn't fit, estimate the cost of an HSTX Fruit Jam backend at a higher clock. | A go/no-go number and a clock requirement, not a port |
 
 ## Game Boy compatibility list
@@ -1006,7 +1006,9 @@ MAME is the reference for the arcade ports.
   with the frame-budget heartbeat, as for everything else in the frame.
 - **Shared SPI bus on the ESP32 FeatherWing.** The SD slot and the TFT share
   one SPI bus, so a save write collides with the display transport rules.
-  This needs design work in Phase 4, not a patch.
+  This needs design work in Phase 4, not a patch. (**Resolved** 2026-09-27,
+  DEVNOTES #144: raw sector writes to the prepared `.sav`, queued by the
+  emulation core and carried out by the painting core between frames.)
 - **The compatibility long tail.** A NES mapper that is 95% right looks done
   until one game's status bar tears. Scope each phase by mapper and feature,
   never by "NES works." Adopting mature cores shortens this tail but doesn't
