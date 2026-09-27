@@ -4,7 +4,8 @@
 # SPDX-License-Identifier: MIT
 
 # Build the release binaries into dist/: seven Fruit Jam game .uf2 files,
-# the Game Boy and NES console .uf2s, and the Feather ESP32 V2 images.
+# the Game Boy and NES console .uf2s, and the Feather ESP32 V2 images of
+# the same nine sketches.
 #
 # TWO THINGS THIS DOES DELIBERATELY:
 #
@@ -77,13 +78,15 @@ done
 # That merged image is padded to the full 8MB of flash, almost all of it
 # 0xFF, so it is trimmed to its real content and sector-aligned here: ~504KB
 # instead of 8MB, which matters when someone is pushing it through a browser.
-ESP_GAMES="pacman mspacman galaga btime invaders dkong lrescue"
-for g in $ESP_GAMES; do
+# The consoles live under examples/Consoles/, the games under Games/.
+ESP_SKETCHES="Games/pacman Games/mspacman Games/galaga Games/btime Games/invaders Games/dkong Games/lrescue Consoles/gameboy Consoles/nes"
+for path in $ESP_SKETCHES; do
+    g=$(basename "$path")
     sk="${g}_featheresp32"
     printf '%-20s ' "$sk"
     if ! arduino-cli compile --library "$ROOT" \
             --fqbn esp32:esp32:adafruit_feather_esp32_v2 \
-            --output-dir "$HERE" "examples/Games/$sk" \
+            --output-dir "$HERE" "examples/${path}_featheresp32" \
             > "$HERE/.$g-esp32.log" 2>&1; then
         echo "FAILED -- see $HERE/.$g-esp32.log"
         exit 1
