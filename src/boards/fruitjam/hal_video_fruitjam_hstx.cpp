@@ -141,6 +141,71 @@ static void __not_in_flash_func(scanline_cb)(uint32_t v_scanline, uint32_t activ
     if (active_line == MODE_V_ACTIVE_LINES - 1u) release_cur();
 }
 
+// --- HDMI audio: the DAC's samples, sent over HDMI too ----------------------
+//
+// Step 3 of extras/HDMI_AUDIO_PLAN.md. The I2S interrupt (core 0) hands
+// each block it has just made for the DAC to hdmi_tap(), which copies the
+// mono samples into a ring. The pump, in core 1's background task, takes
+// two at a time, repeats each (44.1 kHz is exactly twice the machines'
+// 22,050 Hz), encodes a 4-frame packet and keeps pico_hdmi's queue topped
+// up. The DAC and HDMI run from the same crystal but not the same divider,
+// so the ring is held near its middle by dropping or repeating one sample
+// when it drifts.
+
+#include "arch/rp2040/arch_audio_i2s.h"
+
+#define HDMI_RING       2048u   // mono samples, power of two
+#define HDMI_RING_HIGH  1024u   // above: drop one sample
+#define HDMI_RING_LOW    256u   // below: repeat one sample
+#define HDMI_DI_TARGET   200u   // queued packets, as pico_hdmi's example keeps
+
+static int16_t           s_ring[HDMI_RING];
+static volatile uint32_t s_ring_head = 0;   // I2S interrupt (core 0)
+static volatile uint32_t s_ring_tail = 0;   // pump (core 1)
+static volatile uint32_t s_hdmi_packets = 0, s_hdmi_drops = 0, s_hdmi_repeats = 0,
+                         s_hdmi_overflow = 0, s_hdmi_ring_min = 0xFFFFFFFFu;
+static int s_channel_frame = 0;
+
+static void __not_in_flash_func(hdmi_tap)(const int32_t *block, int count) {
+    uint32_t head = s_ring_head;
+    for (int i = 0; i < count; i++) {
+        if (head - s_ring_tail >= HDMI_RING) { s_hdmi_overflow = s_hdmi_overflow + 1; break; }
+        s_ring[head & (HDMI_RING - 1u)] = (int16_t)(block[i] & 0xFFFF);
+        head++;
+    }
+    __dmb();
+    s_ring_head = head;
+}
+
+static void hdmi_audio_pump(void) {
+    uint32_t level = s_ring_head - s_ring_tail;
+    if (level < s_hdmi_ring_min) s_hdmi_ring_min = level;
+    uint32_t budget = 16;   // packets per call, so the watchdog keeps running
+    while (budget-- && hstx_di_queue_get_level() < HDMI_DI_TARGET) {
+        level = s_ring_head - s_ring_tail;
+        if (level < 2) break;
+        __dmb();
+        uint32_t tail = s_ring_tail;
+        const int16_t a = s_ring[tail & (HDMI_RING - 1u)];
+        const int16_t b = s_ring[(tail + 1) & (HDMI_RING - 1u)];
+        if (level > HDMI_RING_HIGH)     { tail += 3; s_hdmi_drops = s_hdmi_drops + 1; }
+        else if (level < HDMI_RING_LOW) { tail += 1; s_hdmi_repeats = s_hdmi_repeats + 1; }
+        else                            { tail += 2; }
+        audio_sample_t f[4];
+        f[0].left = f[0].right = a; f[1].left = f[1].right = a;
+        f[2].left = f[2].right = b; f[3].left = f[3].right = b;
+        hstx_packet_t packet;
+        const int next = hstx_packet_set_audio_samples_cs_rate(&packet, f, 4, s_channel_frame,
+                                                               HDMI_AUDIO_RATE);
+        hstx_data_island_t island;
+        hstx_encode_data_island(&island, &packet, false, DI_HSYNC_ACTIVE);
+        if (!hstx_di_queue_push(&island)) break;
+        s_channel_frame = next;
+        s_ring_tail = tail;
+        s_hdmi_packets = s_hdmi_packets + 1;
+    }
+}
+
 // --- Desync watchdog: core 1's background loop -----------------------------
 //
 // pico_hdmi's stream can still desynchronise now and then with a game
@@ -155,6 +220,7 @@ extern "C" void video_output_force_resync(void);
 static volatile uint32_t s_resyncs = 0;
 
 static void __not_in_flash_func(background_task)(void) {
+    hdmi_audio_pump();
     static uint32_t t0 = 0, f0 = 0;
     const uint32_t now = time_us_32();
     if (now - t0 < 250000u) return;
@@ -186,6 +252,7 @@ bool hal_video_init(void) {
     pico_hdmi_set_audio_sample_rate(HDMI_AUDIO_RATE);
     video_output_set_scanline_callback(scanline_cb);
     video_output_set_background_task(background_task);
+    arch_i2s_set_tap(hdmi_tap);   // HDMI audio: a copy of the DAC's samples
     return true;
 }
 
@@ -232,6 +299,19 @@ uint32_t hal_video_take_starve_count(void) {
     if (s_resyncs != reported) {
         reported = s_resyncs;
         Serial.printf("[hstx] video resynced (%lu so far)\n", (unsigned long)reported);
+    }
+    // HDMI audio, every tenth status call (~10 s in most sketches).
+    static uint32_t calls = 0;
+    if (++calls % 10u == 0) {
+        static uint32_t pk0 = 0;
+        const uint32_t pk = s_hdmi_packets;
+        Serial.printf("[hstx] hdmi audio: %lu packets (%lu Hz over the last 10 calls), "
+                      "drops %lu, repeats %lu, overflow %lu, ring min %lu\n",
+                      (unsigned long)pk, (unsigned long)((pk - pk0) * 4u / 10u),
+                      (unsigned long)s_hdmi_drops, (unsigned long)s_hdmi_repeats,
+                      (unsigned long)s_hdmi_overflow, (unsigned long)s_hdmi_ring_min);
+        pk0 = pk;
+        s_hdmi_ring_min = 0xFFFFFFFFu;
     }
     const uint32_t v = s_starve_events;
     s_starve_events = 0;
