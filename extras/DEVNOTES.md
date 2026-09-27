@@ -8073,3 +8073,45 @@ The Fruit Jam is untouched: its branch of the two macros is unchanged,
 and Galaga on the Fruit Jam still builds. The other Feather games keep
 their tasks on core 0. The Game Boy (8% margin) might gain from the same
 move, but that's unmeasured.
+
+### 147. HDMI audio spike: pico_hdmi on the Fruit Jam's HSTX, from our kind of line queue
+
+`extras/HDMI_AUDIO_PLAN.md` has the plan. This is step 1: a spike before
+anything replaces PicoDVI. `examples/SelfTest/hdmi_audio_test_fruitjam`
+uses pico_hdmi's C API through the Adafruit DVI Audio library (a local
+copy, not yet in Library Manager):
+
+- **The clock stays ours:** 1.15 V, then `fruitjam_set_sys_clock_khz()`.
+- **Video:** core 0 renders 320-pixel test lines into a 16-line queue, the
+  way the machines feed `hal_video`. pico_hdmi's per-line callback on
+  core 1 pops one line per two output lines and doubles it to 640.
+- **Audio:** a core 1 background task makes a 440 Hz tone at 22,050 Hz,
+  repeats each sample to make 44.1 kHz, encodes 4-frame packets and keeps
+  pico_hdmi's queue at 200.
+
+**On hardware (Fruit Jam, HDMI to the user's TV), steady every second:**
+
+| Measure | Result |
+|---|---|
+| Frame rate | 60 fps |
+| Missed / out-of-order lines | 0 / 0 |
+| Audio delivered | 11,023 packets/s = 44,092 Hz (one-second window, nominal 44,100) |
+| Audio queue | never below 199 of 200 |
+| Core 1: line callback | 313 ms/s (31%), 10.9 us per line, max 11 us |
+| Core 1: audio encoding | ~100 ms/s (10%), ~9 us per packet, max 37 us |
+
+The user heard the tone from the TV's speakers with no clicks or dropouts,
+and saw the colour bars with the sweeping line correct.
+
+**What it shows:**
+
+- Our push-model line queue drives pico_hdmi's pull-model callback with no
+  missed lines.
+- 44.1 kHz made by repeating a 22,050 Hz stream plays correctly, so the
+  machines' audio needs no real resampling.
+- Video and audio together take about 41% of core 1, where PicoDVI's
+  software TMDS encoding takes all of it today.
+- The line-doubling copy is the biggest share, and pico_hdmi's hardware
+  pixel doubling ("native pixel mode") could remove it. That needs a build
+  option the wrapper fixes (`PICO_HDMI_PRECOMPOSED_ACTIVE_LINES`), so it's a
+  later question.
