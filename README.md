@@ -96,9 +96,10 @@ two boards.
 [`gameboy_featheresp32/`](examples/Consoles/gameboy_featheresp32/) (60Hz, as
 on the Fruit Jam) and [`nes_featheresp32/`](examples/Consoles/nes_featheresp32/)
 (60.1Hz). One microSD card can hold both, a `.gb` and a `.nes` in `/cart`:
-each sketch looks only for its own. They keep no battery saves yet,
-because the card shares the SPI bus with the display. See
-`extras/DEVNOTES.md` #141-#142.
+each sketch looks only for its own. Battery saves work here too, in the
+same standard `.sav` as on the Fruit Jam, written in the background
+between frames on the SPI bus the card shares with the display. See
+`extras/DEVNOTES.md` #141-#142 and #144.
 
 **A Wii Classic or SNES Classic controller** works in every Feather
 sketch, arcade and console, on the STEMMA QT port through the Wii

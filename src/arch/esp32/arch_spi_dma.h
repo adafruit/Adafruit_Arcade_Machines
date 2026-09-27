@@ -80,6 +80,27 @@ void arch_spi_lcd_data_async(const void *data, size_t len);
 // Block until every queued transfer has completed.
 void arch_spi_lcd_flush(void);
 
+// --- A second device on the bus, BETWEEN FRAMES ONLY -----------------------
+//
+// The SD card shares this bus (the TFT FeatherWing's slot), and the panel's
+// chip select is held low for good (see arch_spi_lcd_begin), so the panel
+// would take anything else on the bus as pixels. These calls raise the
+// panel's CS for the duration, which is only safe while no display transfer
+// is in flight: call them from the core that paints, after the frame's
+// arch_spi_lcd_flush() and before the next frame's first command.
+// src/boards/feather_esp32 does it at the end of each painted frame
+// (DEVNOTES #144).
+//
+// add() once, after arch_spi_lcd_begin(). select() / deselect() bracket each
+// use; deselect() also sends the eight idle clocks with every CS high that
+// an SD card needs to release MISO. xfer() is full duplex (`rx` may be NULL);
+// buffers longer than 4 bytes must be in internal DRAM.
+bool    arch_spi_aux_add(int cs, int clock_hz);
+void    arch_spi_aux_select(void);
+void    arch_spi_aux_deselect(void);
+void    arch_spi_aux_xfer(const void *tx, void *rx, size_t len);
+uint8_t arch_spi_aux_byte(uint8_t out);
+
 // --- Diagnostic read path --------------------------------------------------
 // Reads run on a slower second device, so the fast one gives up the bus for
 // the duration. Bracket every read with begin/end. Only useful for a panel

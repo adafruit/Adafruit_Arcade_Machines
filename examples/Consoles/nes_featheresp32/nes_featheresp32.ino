@@ -35,15 +35,19 @@
 //   Palette      --                   Y
 //   Volume       --                   hold X, press Up / Down (3 dB steps)
 //
-// Battery saves are not available on this board yet: its SD card shares
-// the SPI bus with the display (CONSOLES_PLAN.md, Phase 4); a battery
-// cartridge plays, and its save RAM is not kept.
+// Battery saves: a battery cartridge's save RAM is kept in a standard .sav
+// next to the ROM, the same file as the Fruit Jam's and PC emulators'. A
+// save starts once the game's save RAM has been quiet for a second, and is
+// written a sector per painted frame between frames, on the SPI bus the
+// card shares with the display (DEVNOTES #144).
 #include <Adafruit_Arcade_Machines.h>
 #include <hal/arcade_hal_video.h>
 #include <hal/arcade_hal_input.h>
 #include <machines/nes/nes_machine.h>
 #include <machines/nes/nes_core.h>
 #include <console/console_audio.h>
+#include <console/console_save.h>
+#include <boards/feather_esp32/hal_storage_feather_esp32.h>
 #include <boards/feather_esp32/board_config_feather_esp32.h>
 #include <boards/feather_esp32/wii_input_feather_esp32.h>
 
@@ -241,5 +245,20 @@ void loop() {
                       (unsigned long)(ws.request_fails + ws.read_fails),
                       (unsigned long)console_audio_volume());
         paint_sum = paint_max = 0;
+        {
+            // Battery saves, only for a cartridge that has them. Short on
+            // purpose (see Serial.setTxBufferSize above).
+            console_save_stats_t ss;
+            console_save_take_stats(&ss);
+            if (ss.state != CONSOLE_SAVE_NONE) {
+                static const char *const kState[] = { "none", "UNAVAILABLE", "ready", "writing" };
+                Serial.printf("[nes-esp32] save %s %s: loaded %s, saves %lu, last %lu frames, "
+                              "busy %lu, errors %lu, bus step max %lu us\n",
+                              kState[ss.state], ss.path, ss.loaded ? "yes" : "no",
+                              (unsigned long)ss.saves, (unsigned long)ss.last_save_frames,
+                              (unsigned long)ss.busy_waits, (unsigned long)ss.errors,
+                              (unsigned long)feather_storage_take_service_us_max());
+            }
+        }
     }
 }

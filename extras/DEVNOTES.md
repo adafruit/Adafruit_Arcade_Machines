@@ -7893,3 +7893,66 @@ Checked on hardware:
 All seven arcade builds compile with the pad; only Galaga was played with
 it. The Fruit Jam's Wii self-test still builds; the driver change applies
 there too, untested on that board.
+
+### 144. Battery saves on the Feather ESP32, between frames on a shared bus
+
+The Feather's SD slot shares one SPI bus with the display. After the
+handover at `hal_video_run()`, ESP-IDF's driver owns that bus, SdFat's
+SPIClass is shut down, and the panel's chip select is held low for good
+(pin 15 driven by hand; the driver's own CS left the panel deaf, as the
+comment in `arch_spi_lcd_begin()` records), so
+any other traffic reads as pixels. That is why the Feather's contiguous-file
+and extent-write calls were stubs until now.
+
+**The Fruit Jam's save design already avoids the filesystem during play.**
+At boot the `.sav` is made one contiguous run of sectors, and a save only
+ever rewrites those raw 512-byte sectors (#130). Raw sector writes are a
+small, fixed part of the SD protocol, so the Feather does them without
+SdFat, all inside `src/boards/feather_esp32/` and `src/arch/esp32/`, with
+no change to `console_save` or the machines:
+
+- **Boot, SdFat still owning the bus:** `hal_storage_make_contiguous()` is
+  the Fruit Jam's code. It also notes whether the card addresses by block
+  (SDHC/SDXC) or by byte, since nothing can ask SdFat after the handover.
+- **The emulation core only queues.** `console_save` still calls
+  begin / write_sector / end from inside `*_emulate_frame()`. Each call
+  puts its request in a one-slot mailbox (release/acquire atomics across
+  the cores) and returns BUSY while one is waiting. begin and write_sector
+  return OK once queued, and an error surfaces on the next call, when
+  `console_save` abandons that save and retries later, as on the Fruit
+  Jam. end returns OK only once the stop has actually gone out.
+- **The painting core carries it out, between frames.** At the end of each
+  painted frame, after `arch_spi_lcd_flush()`, the video HAL calls
+  `feather_storage_service()`. That step:
+  - raises the panel's CS and selects the card (`arch_spi_aux_*`, a second
+    IDF device on the same host at 16 MHz, manual CS);
+  - checks whether the card is busy (MISO low);
+  - sends one CMD25 start, one 0xFC-token sector, or the 0xFD stop;
+  - deselects with eight idle clocks and gives the bus back.
+
+  One core drives both the display and the card, one after the other, so
+  they can't collide. A write abandoned mid-way is closed with a stop token
+  before the next begin.
+
+**On hardware (Feather ESP32 V2, first-party cards):**
+
+| Game | Save | Written in | Errors | Longest bus step |
+|---|---|---|---|---|
+| Zelda (NES, MMC1, 8 KB) | created, then rewritten | 70-73 frames (~1.2 s) | 0 | 527 us |
+| Link's Awakening (GB, MBC1, 8 KB) | created, then rewritten | 70 frames | 0 | 442 us |
+
+- **Both survive a power cycle:** SdFat reads the raw-written file back at
+  the next boot ("loaded yes"), and the name registered in Zelda and the
+  Link's Awakening file are there in the games.
+- **No glitch on screen during writes**, checked by eye.
+- **Timing held:** 30 fps display, full speed, 0 audio underruns in both.
+  Each bus step fits in the ~1.5 ms a 33 ms paint leaves over.
+- **Link's Awakening's first run on this board:** a 512 KB cartridge read
+  from PSRAM, 14.9 ms mean per frame against 16.7.
+
+Both games write their save RAM at power-on, so each boot triggers one
+save a second later. That is the game's own behaviour, and it's harmless.
+
+The seven Feather arcade builds link and call the service each frame; with
+nothing queued it's a single atomic load. Not run on hardware with this
+change.
