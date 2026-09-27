@@ -5780,7 +5780,9 @@ rounds of hardware testing and a collaborator's evening. Corrected in #116.
 
 Galaga on the Feather ESP32 went from **76% of arcade speed under sprite
 load to 97-100%** by moving emulation to core 0. Played through stage 1 on
-hardware with no crash.
+hardware with no crash. (**Correction, #145:** longer play on busier
+stages runs at 87-92%, in this very build (the v2.10.1 release's binary);
+97-100% held for stage 1 only.)
 
 **This came from reading galagino's source rather than reasoning.** Lined
 up against it, we already did three of its four techniques and had arrived
@@ -7990,10 +7992,23 @@ weren't tuned individually.
   controller. 100% everywhere, except 96% at frame 360 and 99% at frame
   450, the two dips #143 measured. The scaling loop is ~256 multiplies per
   11.6 ms block.
-- **Gameplay:** Galaga ran 93-99%, against #114's record of "97-100% under
-  sprite load". Play doesn't repeat frame for frame, so this isn't an A/B.
-  Heavier screens are the likely reason, but the controller's I2C cost
-  (#143) under that load isn't ruled out.
+- **Gameplay, measured properly afterwards.** The user played Galaga for
+  several minutes on each of three builds while one recorder logged every
+  one-second window:
+
+  | Build | Gameplay windows | Mean | 97-100% | 90-96% | below 90% | Lowest |
+  |---|---|---|---|---|---|---|
+  | v2.10.1 release binary (no controller, no volume) | 239 | 93.1% | 70 | 101 | 68 | 87% |
+  | This branch, controller plugged in | 178 | 92.6% | 54 | 55 | 69 | 84% |
+  | This branch, controller unplugged | 130 | 91.3% | 12 | 71 | 47 | 86% |
+
+  **Nothing regressed.** All three give 100% on quiet screens and 87-92%
+  while a stage is full of enemies. #114's "97-100% under sprite load"
+  came from stage 1 only, and the README's "each at 100%" was wrong for
+  Galaga; both are corrected. The controller and the master volume are
+  cleared: the release binary predates both and measures the same. A fix
+  would be its own job: the Game Boy's IRAM lever (#142) is the obvious
+  candidate for Galaga's three Z80s.
 - **After slow stretches,** the limiter ran a few windows at 101%, repaying
   the time it had lost (#122).
 
