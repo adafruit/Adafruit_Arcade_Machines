@@ -30,6 +30,12 @@
 // Z80_RAMFUNC (see z80.c).
 #if defined(ARDUINO_ARCH_RP2040) || defined(PICO_ON_DEVICE)
 #define GALAGA_M_RAMFUNC __attribute__((section(".time_critical.galagam")))
+#elif defined(ARDUINO_ARCH_ESP32)
+// The same reason on the ESP32, which runs code from flash through a 32 KB
+// cache: without this, all of it ran from flash there, and Galaga fell to
+// 87-92% of its speed on busy stages (DEVNOTES #146).
+#include <esp_attr.h>
+#define GALAGA_M_RAMFUNC IRAM_ATTR
 #else
 #define GALAGA_M_RAMFUNC
 #endif
