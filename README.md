@@ -68,8 +68,8 @@ any known quirks. They all share the building steps below.
 
 | Console | Sketch | Notes |
 |---|---|---|
-| NES | [`nes_fruitjam/`](examples/Consoles/nes_fruitjam/README.md) | The microSD card is the cartridge (one `.nes` in `/cart`), with nofrendo's 59 mappers, battery saves to a standard `.sav`, 8:7 aspect correction on Button 1, six palettes on Button 3, and full APU sound. Core: nofrendo from retro-go, **GPL-2.0-only** (linked only into this sketch). Fruit Jam only for now. |
-| Game Boy (DMG) | [`gameboy_fruitjam/`](examples/Consoles/gameboy_fruitjam/README.md) | The project's first **console**: the microSD card is the cartridge (one `.gb` in `/cart`), loaded into PSRAM, with MBC1/2/3/5 bank switching, battery saves to a standard `.sav`, four colour palettes on Button 3, and full APU sound. Core: Peanut-GB (MIT). Fruit Jam only for now; more consoles are planned in `extras/CONSOLES_PLAN.md`. |
+| NES | [`nes_fruitjam/`](examples/Consoles/nes_fruitjam/README.md) | The microSD card is the cartridge (one `.nes` in `/cart`), with nofrendo's 59 mappers, battery saves to a standard `.sav`, 8:7 aspect correction on Button 1, six palettes on Button 3, and full APU sound. Core: nofrendo from retro-go, **GPL-2.0-only** (linked only into the NES sketches). Also on the Feather ESP32 V2: [`nes_featheresp32/`](examples/Consoles/nes_featheresp32/). |
+| Game Boy (DMG) | [`gameboy_fruitjam/`](examples/Consoles/gameboy_fruitjam/README.md) | The project's first **console**: the microSD card is the cartridge (one `.gb` in `/cart`), loaded into PSRAM, with MBC1/2/3/5 bank switching, battery saves to a standard `.sav`, four colour palettes on Button 3, and full APU sound. Core: Peanut-GB (MIT). Also on the Feather ESP32 V2: [`gameboy_featheresp32/`](examples/Consoles/gameboy_featheresp32/). More consoles are planned in `extras/CONSOLES_PLAN.md`. |
 
 **USB gamepads** work in every Fruit Jam game and both consoles, plugged
 into either Type-A port, when the sketch is built with the Adafruit TinyUSB
@@ -91,6 +91,14 @@ two boards.
 | Ms. Pac-Man | [`mspacman_featheresp32/`](examples/Games/mspacman_featheresp32/) | 60.606Hz | 30.3fps |
 | Donkey Kong | [`dkong_featheresp32/`](examples/Games/dkong_featheresp32/) | 60.606Hz | 30.3fps |
 | Burger Time | [`btime_featheresp32/`](examples/Games/btime_featheresp32/) | 57.445Hz | 28.7fps |
+
+**Both consoles run here too**, at full speed with 30fps on screen:
+[`gameboy_featheresp32/`](examples/Consoles/gameboy_featheresp32/) (60Hz, as
+on the Fruit Jam) and [`nes_featheresp32/`](examples/Consoles/nes_featheresp32/)
+(60.1Hz). One microSD card can hold both, a `.gb` and a `.nes` in `/cart`:
+each sketch looks only for its own. For now they use the Feather's own
+buttons (no palette button) and keep no battery saves, because the card
+shares the SPI bus with the display. See `extras/DEVNOTES.md` #141-#142.
 
 \* Lunar Rescue's is the one number here that is **not** a cabinet
 measurement. It shares Space Invaders' 8080bw board and 59.542Hz refresh, but

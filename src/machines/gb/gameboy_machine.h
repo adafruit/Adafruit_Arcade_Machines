@@ -99,6 +99,24 @@ void gameboy_set_palette(gameboy_system *sys, uint8_t palette);
 // gameboy_machine.cpp for how emulation and scanline output interleave.
 void gameboy_run_frame(gameboy_system *sys);
 
+// TWO-CORE BOARDS (the Feather ESP32), whose display has no queue to pace
+// by and paints slower than the game runs (~30 fps against 59.7):
+//   gameboy_emulate_frame()  on the emulation core, once per emulated
+//                            frame -- emulation, audio and a save step, no
+//                            display. `draw` says whether this frame will
+//                            be shown (only the last of each paint's frames
+//                            need be drawn).
+//   gameboy_present()        on the display core, while the emulation core
+//                            is idle: the last drawn frame becomes the front.
+//   gameboy_paint()          on the display core: the 240 canvas lines of
+//                            the front frame, through hal_video_acquire/submit.
+void gameboy_emulate_frame(gameboy_system *sys, bool draw);
+void gameboy_present(gameboy_system *sys);
+void gameboy_paint(const gameboy_system *sys);
+
+// Worst and mean gameboy_emulate_frame() time since the last call (then reset).
+void gameboy_take_emulate_us(uint32_t *mean, uint32_t *max);
+
 // One full canvas frame of a solid colour, for the boot error screens.
 void gameboy_draw_error_frame(uint16_t color);
 

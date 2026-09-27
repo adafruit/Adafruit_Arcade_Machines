@@ -34,6 +34,13 @@ void *hal_mem_bulk_alloc(size_t size);
 // Bytes of bulk memory currently free (0 on a board with none).
 size_t hal_mem_bulk_free(void);
 
+// Allocates `size` bytes for data that is hot but large -- a console's
+// frame buffers -- from fast on-chip RAM if the board has that much free,
+// and from bulk memory otherwise; NULL if neither. On the Fruit Jam
+// (520 KB of SRAM) it is on-chip; on the Feather ESP32 V2 (~124 KB of
+// usable DRAM) big buffers land in PSRAM. Allocate once, at boot.
+void *hal_mem_fast_alloc(size_t size);
+
 #ifdef __cplusplus
 }
 #endif

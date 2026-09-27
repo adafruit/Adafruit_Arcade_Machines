@@ -7500,3 +7500,306 @@ The Game Boy's own audio ring and save path were the originals that
 - The queue low point was 9, against 11 in #130's session. The only new
   per-frame work is an 8 KB compare, a few microseconds, so the
   difference is more likely the game than the change; not isolated.
+
+### 140. Phase 4 spike: the consoles on the Feather ESP32 are tight, and -O2 only looked faster
+
+Before porting the Game Boy and the NES to the Feather ESP32 V2, step 1 of
+Phase 4 timed their cores there: `extras/tools/console_spike_featheresp32`.
+It loads the first `.gb` or `.nes` from `/cart` into PSRAM, runs it
+through the library's own core wrappers headless, with the host
+harnesses' scripted input, and prints emulation and audio time per frame.
+For the NES it also prints frame CRCs. Core 1 is idle in this sketch.
+
+**Both consoles' big buffers had to leave static DRAM first.** The
+Feather's usable DRAM (`dram0_0_seg`) is ~124 KB in all, and the spike
+overflowed it by 152 KB: the NES's two frame buffers are 130 KB, and the
+Game Boy's frame buffers, bank-0 mirror and cartridge RAM 94 KB.
+
+- A new HAL call, `hal_mem_fast_alloc()`, allocates on-chip RAM if there
+  is room, else bulk memory. It is `malloc()` then `pmalloc()` on the
+  Fruit Jam, and `heap_caps_malloc(INTERNAL)` then `ps_malloc()` on the
+  Feather.
+- Both cores now allocate their buffers through it at init, frame buffers
+  first, and the NES reserves them before copying a small ROM into SRAM.
+- On the host, the Game Boy regression and the NES CRCs and WAVs are
+  byte-identical after the change.
+- On the Fruit Jam the builds' static RAM fell as expected (Game Boy 21%,
+  NES 18%). The hardware timing check there was done later, with #142's
+  changes: no regression (see the end of #142).
+
+**Results on the Feather (ESP32 at 240 MHz), -O3:**
+
+| Cart | Emulation, mean | Worst | Budget |
+|---|---|---|---|
+| Tetris | 15.2 ms | 19.3 ms since start-up | 16.7 ms |
+| Super Mario Bros. | 12.6 ms | 13.4 ms | 16.7 ms |
+
+SMB's frame CRCs match the host's exactly. The Fruit Jam runs the same
+SMB emulation in 6.9 ms (#135), so the ESP32 is roughly half as fast at
+this.
+
+**Where the buffers go matters; the ROM doesn't.**
+
+- **SMB with the ROM in PSRAM** and both frame buffers in internal DRAM
+  (the spike reports 139 KB of internal RAM taken by the core's init):
+  12.6 ms.
+- **SMB with the ROM copied into internal DRAM:** slower, 14.7 ms mean and
+  16.9 ms worst. The 40 KB ROM took the room one frame buffer needed, and
+  writing a frame into PSRAM costs more than reading the ROM from it
+  saves.
+
+**-O2 and IRAM did not help, and a first reading said -O2 did.**
+
+- **The first comparison was confounded.** The ESP32 runs code from flash
+  through a 32 KB cache, so a smaller build can be faster (the Feather's
+  Pac-Man uses -O2). A first -O2 run printed 11.3 ms against -O3's 12.6
+  and looked like a 10% win. But the per-second windows vary with what is
+  on screen: the same -O2 run shows 14.0 ms windows too.
+- **Compared on the same 30 windows** (frames 120 to 1860):
+
+| Build | Mean of window means | Worst |
+|---|---|---|
+| -O3 | 12,550 us | 13,380 us |
+| -O2 | 12,964 us | 14,004 us |
+| -O2 with `nes6502_execute` in IRAM | 13,073 us | 14,034 us |
+
+retro-go marks `nes6502_execute` `IRAM_ATTR`, which nofrendo's
+non-retro-go `utils.h` defines empty. Making it real moved the function's
+20.6 KB into IRAM and bought nothing, so the experiment was reverted.
+**Compare timings on the same frames, never on whichever window each run
+printed last.**
+
+**What it means for the port:**
+
+- **The NES fits with ~20% margin.**
+- **The Game Boy is at ~91%.** The one lever left untried for it is
+  Tetris's second 16 KB bank, read from PSRAM on every access.
+- **The real test is the real sketch.** With core 1 painting, both cores
+  share the flash cache and PSRAM, and emulation will likely slow further.
+
+**Board note:** this Feather's USB bridge is a CH9102. esptool loses the
+chip at 921,600 baud on `/dev/cu.usbserial-*` but uploads cleanly on
+`/dev/cu.wchusbserial*`.
+
+**Drawing only the frames that are shown.** The Feather paints ~30 frames
+a second, so only every second emulated frame is ever seen, yet both cores
+drew all of them. Both can skip it, and retro-go uses the same trick on
+the ESP32. Two new calls decide it per frame, defaulting to drawing, so
+the Fruit Jam is unchanged; call it before each frame and swap only after
+a drawn one:
+
+- **`gameboy_core_set_draw()`** sets Peanut-GB's own frame skip for
+  exactly that frame (`direct.frame_skip`, with `display.frame_skip_count`
+  cleared at the frame's start; Peanut-GB flips the count at each vblank).
+- **`nes_core_set_draw()`** passes nofrendo's `draw_flag`, which still
+  runs each PPU line (scroll, sprite 0 hit, overflow) and only skips the
+  pixel writes, as `nes_emulate(false)` does.
+
+**Checked on the host:**
+
+- Drawing every frame stays byte-identical: the Game Boy regression and
+  the NES CRCs and WAVs.
+- With `--draw-every 2`, every drawn frame is identical to full drawing:
+  Tetris's seven regression frames and its WAV, and the NES CRCs at
+  frames 150/650/1200/1500 of SMB, SMB3, Kirby and Zelda. So skipping
+  changes no emulation.
+
+**On the Feather**, Tetris, the same 42 windows:
+
+| Drawing | Mean | Worst |
+|---|---|---|
+| Every frame | 15.3 ms | 18.8 ms |
+| Every 2nd | 13.6 ms | 18.8 ms |
+
+With every 2nd drawn, a drawn frame is ~15.2 ms and a skipped one
+~11.8 ms: ~27 ms per 33 ms paint, down from 30.6. The one 18.8 ms frame
+is the scripted Start press changing screens (frame 960), a single
+frame. Also tried on Tetris, the ROM in internal DRAM made no difference
+(15.31 against 15.31 ms, same windows): all its core buffers were already
+internal, 99 KB.
+
+### 141. The NES on the Feather ESP32: full speed on two cores, and a card that needed a power cycle
+
+`examples/Consoles/nes_featheresp32` runs the NES on the Feather ESP32 V2
+the way the Feather arcade sketches run their games (galaga_featheresp32).
+Emulation runs on core 0, and painting on core 1, the Arduino loop. Core 1
+hands core 0 two frames at a time and paints while they run. Only the
+second of each pair is drawn (#140), and a wall-clock limiter holds the
+NES's 60.0988 Hz. `nes_machine` gained the calls for it:
+
+- `nes_emulate_frame(sys, draw)` does emulation, audio and a save step,
+  with no display.
+- `nes_present()` makes the last drawn frame the front one.
+- `nes_paint()` paints the front frame.
+
+`nes_run_frame()` stays for the Fruit Jam, unchanged. On the host,
+`nes_host --two-core` drives the calls in the sketch's order. Its frames
+are identical to the normal loop's in all four test games.
+
+**Audio needed the Feather's larger ring target.** The emulation task
+makes two frames of samples at once, then waits a whole paint. So
+`console_audio` gained `console_audio_set_target()`, and the ring grew
+from 2048 to 4096 so the target leaves room above it. The Feather uses
+1250, the target Donkey Kong needed there (#119). The Fruit Jam keeps the
+default, 768.
+
+**Measured on the Feather, SMB, 15 s of the attract demo:**
+
+| | Measured | Target |
+|---|---|---|
+| Emulated | 60.1 fps (100%) | 60.1 |
+| Painted | 30.0 to 30.1 fps | 30 |
+| Paint | mean 31.8 ms, max 32.0 ms | 33.3 ms |
+| Emulation per frame | mean 10.6 to 10.7 ms, max 13.8 ms | 16.6 ms |
+| Audio | 0 underruns, 0 overruns, ring never below 1073 | target 1250 |
+
+The mean emulation time is lower than the spike's 12.6 ms because half the
+frames are now skipped, not drawn. The worst frame still leaves ~17%
+margin, even with core 1 painting from the same flash cache and PSRAM.
+Played on the hardware: controls, sound and all four rotations good, with
+no lag and no tearing.
+
+**Two things that looked like bugs and were not:**
+
+- **"RED: no SD card", with a good card in.** The first flash said that.
+  An experiment moved the card read ahead of the display init, and the
+  board still hung after "boot". A real power cycle (USB out and back in)
+  fixed it. The reset button and esptool's reset don't power the card
+  down, so a card stuck in a bad state stays stuck through both. With
+  the original order (display init, then card read) flashed back and
+  started by a plain reset, the card mounted and SMB played. So the
+  order was never the cause, and it stays as the Game Boy and the arcade
+  games have it (galaga_machine.cpp does the same). **When a Feather that
+  mounted a card before reports no card, power-cycle it before debugging
+  the code.**
+- **Tens of thousands of audio underruns in the first status line.**
+  `console_audio_init()` starts the audio pump during the cartridge load.
+  It then plays silence through the display init, ~1.6 s, until the
+  emulation task starts, and every silent sample counts as an underrun.
+  Nothing is audible. The sketch now discards those counts when the task
+  starts, so the first line counts only the game's own underruns: it now
+  reads 0.
+
+### 142. The Game Boy on the Feather ESP32: a slow demo, the CPU loop into IRAM, and a volume setting
+
+`examples/Consoles/gameboy_featheresp32` is the NES sketch's twin (#141).
+Emulation runs on core 0 and painting on core 1, two frames per ~30 fps
+paint with only the second drawn. `gameboy_machine` gained the same calls:
+`gameboy_emulate_frame()`, `gameboy_present()`, `gameboy_paint()` and
+`gameboy_take_emulate_us()`. The limiter holds **60 Hz, not the Game Boy's
+59.73**: the Fruit Jam runs it at 60, locked to its display, and the audio
+rate is chosen for that (`GAMEBOY_APU_RATE`, `gameboy_core.h`). So both
+boards play at the same speed and pitch.
+
+On the host, `gb_host --two-core` drives the new calls in the sketch's
+order, and `--crc-at` checksums the core's finished picture. In Tetris and
+Zelda, all eight checked frames are identical to drawing every second frame
+and to drawing every frame, and the WAVs are byte-identical.
+
+**The first build was fast on the title screen and slow in the demo.**
+Tetris's title took 14.2 ms per emulated frame. The attract demo took
+17.5 ms against a 16.7 ms budget: 94% speed and about 1,000 audio
+underruns a second. The spike's 13.6 ms (#140) was an average over mostly
+title-screen frames, so it overstated the headroom. Two causes were ruled
+out on the same demo windows before anything was changed:
+
+- **Not core 1's painting.** With painting compiled out, the demo cost the
+  same, 17.5 ms.
+- **Not the ROM in PSRAM.** Mirroring the first 32 KB (all of Tetris) into
+  internal RAM changed nothing, and was reverted.
+
+**The fix: Peanut-GB's hot code into IRAM.** The CPU loop,
+`__gb_step_cpu`, is ~17 KB of code, run from flash through the ESP32's
+32 KB cache. `gameboy_core.c` redeclares it, with `__gb_read`,
+`__gb_write`, `__gb_execute_cb` and `__gb_draw_line`, in
+`ARCADE_FAST_SECTION` before including `peanut_gb.h`. A section attribute
+on an earlier declaration carries over to the definition, so the vendored
+file stays unpatched. The core's own ROM, cartridge-RAM and line callbacks
+go there too. IRAM text went from 75 KB to 98 KB. **ESP32 only**
+(`GB_HOT` is empty elsewhere): the Fruit Jam is unchanged until it can be
+timed there.
+
+Tetris, paints 300 to 720 (15 windows), the same demo frames every run:
+
+| Build | Demo, mean | Worst frame | Underruns |
+|---|---|---|---|
+| -O3 | 17,468 us | 21,545 us | 15,635 |
+| -O2 | 16,110 us | 20,507 us | 0 |
+| -O3, hot code in IRAM | **15,284 us** | 19,156 us | 0 |
+| -O2, hot code in IRAM | 15,812 us | 19,992 us | 0 |
+| -O3, IRAM plus minigb's audio | 15,285 us | 19,171 us | 0 |
+
+With IRAM, -O3 beats -O2 again. The audio generator in IRAM bought
+nothing (it runs once a frame, ~290 us), so it stays in flash and keeps
+its 2.3 KB of IRAM free. The single worst frame, ~19 ms, is repaid by the
+limiter. Played on the hardware: clean sound, right speed, controls and
+rotation good.
+
+A NES build and a Galaga build on the Feather contain no Game Boy symbols
+(`nm`). `IRAM_ATTR` gives each function its own section,
+`.iram1.<__COUNTER__>` in `esp_attr.h`, so `--gc-sections` still drops
+what a sketch doesn't use. `arch/esp32/esp32.h` had said the opposite,
+and still called the whole ESP32 arm "UNTESTED"; both are corrected.
+
+**Volume: `console_audio_set_volume()`.** Through the Feather's MAX98357A,
+which has no volume control of its own, Tetris was very loud. From the
+host WAVs, Tetris averages -14 to -16 dBFS RMS, against SMB's -25, SMB3's
+-22 and Kirby's -19. So `console_audio` gained a linear volume, 0 to 256
+(256 unchanged, the default). It is applied once per frame when the
+samples are queued, never in the ISR, and full volume stays a plain copy.
+The level was chosen by ear on the hardware, stepping down 128, 90, 64,
+45, 32, 16: **16 (-24 dB)** is the Game Boy Feather's default. The Fruit
+Jam keeps full volume. A volume control on the Wii Classic controller is
+planned.
+
+The NES Feather sketch was then set to match. SMB is ~10 dB quieter than
+Tetris at the source, so 256 x (Tetris's RMS x 16/256) / SMB's RMS gives
+44 to 54. **48 (-14.5 dB)**, the first try, sounded right on the
+hardware, so it is the NES Feather's default.
+
+**A card that works in a computer can refuse SPI.** For that NES test the
+SMB card, which had loaded on this Feather earlier the same day, stopped
+mounting: a red screen after ~10 s of retries, through power cycles and a
+reseat, while it still read fine in a computer. SdFat's error, printed
+from a temporary diagnostic, was `sdErrorCode 0x01` (CMD0) with data
+`0xFF`: the card never answered the first command. It is the same
+signature as #127's bad card on the Fruit Jam. The Tetris card mounted in
+the same slot at once, so the slot was fine. A computer's reader talks to
+a card in native SD mode, while these boards use SPI mode, which some
+cards handle badly. The fix was to copy SMB to another card. One card can
+hold both consoles' games: each sketch looks only for its own extension
+in `/cart/`.
+
+**Open: two slow boots.** In about 11 boots during this work, two came up
+at a third of normal speed:
+
+- Emulation took 42 ms a frame, painting 85 ms.
+- The audio ring sat empty, and generation took 8 us, not ~290.
+- Once, the serial output came out garbled: each character repeated about
+  five times, interleaved.
+
+Both came right after an `arduino-cli upload`. Reflashing the identical
+binary ran normally, so the code isn't what differed. Ten boots afterwards
+(six esptool resets, four uploads) were all normal. The cause is unknown.
+If a Feather game ever runs at a third of its speed, this is it: capture
+the serial output before resetting.
+
+**Fruit Jam recheck.** This branch changed shared code under the Fruit Jam
+too: heap frame buffers (#140), draw-skip calls, the 4096 audio ring and
+the volume setting. So both consoles were flashed there and compared
+against the v2.12.0 release, built from a worktree of `main`, on the same
+frames:
+
+| Console | Build | Work, mean | Worst | Starve | Min queue | Underruns |
+|---|---|---|---|---|---|---|
+| Tetris (frames 720-2700) | v2.12.0 | 11,702 us | 13,014 us | 0 | 8/32 | 0 |
+| | this branch | 10,846 us | 12,086 us | 0 | 8/32 | 0 |
+| SMB (frames 360-2100) | v2.12.0 | 9,221 us | 9,512 us | 0 | 13/32 | 0 |
+| | this branch | 9,163 us | 9,452 us | 0 | 13/32 | 0 |
+
+The Game Boy got 7% faster. The heap buffers or the link layout are the
+likely cause, but that was not isolated. The NES is unchanged, and so is
+its average audio ring depth (855 against 856). Static RAM fell from 39%
+to 21% (Game Boy) and from 43% to 19% (NES). Played on the TV, both
+look, sound and play right, with no red lines.
+

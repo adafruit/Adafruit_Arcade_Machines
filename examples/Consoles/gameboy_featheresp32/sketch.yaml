@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
+#
+# SPDX-License-Identifier: MIT
+
+# The optimisation level comes from build_opt.h beside this file, the
+# documented per-sketch flag mechanism on this core (-O3; measured against
+# -O2 on the same frames, DEVNOTES #140).
+default_fqbn: esp32:esp32:adafruit_feather_esp32_v2

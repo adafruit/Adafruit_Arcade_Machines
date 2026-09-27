@@ -44,6 +44,11 @@ typedef enum {
     NES_CORE_NO_MEMORY,
 } nes_core_status_t;
 
+// Allocates the two frame buffers (hal_mem_fast_alloc) if not yet done;
+// false if it can't. nes_core_init() calls it; the machine calls it first,
+// so the buffers get on-chip RAM before a small ROM is copied there.
+bool nes_core_reserve_buffers(void);
+
 // Binds the core to a ROM already in memory (kept, not copied; it may be in
 // PSRAM) and resets it. Call once. `sample_rate` is the audio rate.
 nes_core_status_t nes_core_init(uint8_t *rom, uint32_t size, uint32_t sample_rate);
@@ -56,6 +61,13 @@ void nes_core_set_pad(uint8_t bits);
 // A frame: frame_begin(), then step_line() until it returns true (262
 // scanlines, NTSC). After the last line, audio_frame() may be called once.
 void nes_core_frame_begin(void);
+
+// Whether the frames that follow draw their picture (default true). A board
+// that shows only some emulated frames -- the Feather paints every second
+// one -- skips the pixel writes of the rest; the PPU still runs each line
+// (scroll, sprite 0 hit), as nofrendo's own nes_emulate(false). Swap only
+// after a drawn frame.
+void nes_core_set_draw(bool draw);
 bool nes_core_step_line(void);
 
 // The front buffer: 240 rows of NES_ROW_PITCH bytes, the 256 visible

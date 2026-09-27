@@ -12,6 +12,7 @@
 #include "gameboy_audio.h"
 #include "console/console_save.h"
 #include "gameboy_palette.h"
+#include "arch/arch.h"
 #include "cart/cart_loader.h"
 #include "hal/arcade_hal_video.h"
 #include "hal/arcade_hal_storage.h"
@@ -87,6 +88,7 @@ bool gameboy_load_cart(gameboy_system *sys, uint16_t *out_error_color) {
     if (cs != GAMEBOY_CORE_OK) {
         hal_storage_unmount();
         return fail(sys, cs == GAMEBOY_CORE_BAD_CHECKSUM ? GAMEBOY_BOOT_BAD_CHECKSUM
+                       : cs == GAMEBOY_CORE_NO_MEMORY    ? GAMEBOY_BOOT_NO_BULK_MEMORY
                                                           : GAMEBOY_BOOT_UNSUPPORTED,
                     out_error_color);
     }
@@ -204,6 +206,52 @@ void gameboy_run_frame(gameboy_system *sys) {
     console_save_frame();
     g_swap_pending = true;
     while (g_swap_pending) emit_line(sys);
+}
+
+// --- Two-core frame: emulation and painting on different cores -----------
+//
+// For a board whose display has no queue (the Feather ESP32): the whole
+// frame is emulated at once on one core, and the other paints the last
+// drawn frame. See gameboy_machine.h for the order the calls go in.
+
+static volatile bool g_drawn_pending = false;
+static uint32_t g_emu_sum = 0, g_emu_n = 0, g_emu_max = 0;
+
+void gameboy_emulate_frame(gameboy_system *sys, bool draw) {
+    const uint64_t t0 = ARCADE_TIME_US64();
+    gameboy_core_set_pad(sys->pad);
+    gameboy_core_set_draw(draw);
+    gameboy_core_frame_begin();
+    while (!gameboy_core_step(0xFFFFFFFFu)) {}
+    gameboy_audio_frame();
+    console_save_frame();
+    if (draw) g_drawn_pending = true;
+    const uint32_t us = (uint32_t)(ARCADE_TIME_US64() - t0);
+    g_emu_sum += us; g_emu_n++;
+    if (us > g_emu_max) g_emu_max = us;
+}
+
+void gameboy_present(gameboy_system *sys) {
+    (void)sys;
+    if (g_drawn_pending) {
+        gameboy_core_swap();
+        g_drawn_pending = false;
+    }
+}
+
+void gameboy_paint(const gameboy_system *sys) {
+    for (uint32_t y = 0; y < HAL_VIDEO_HEIGHT; y++) {
+        uint16_t *buf = hal_video_acquire_scanline();
+        gameboy_video_render_scanline(y, buf, gameboy_core_front(),
+                                      sys->rotation, sys->mirror_x);
+        hal_video_submit_scanline(buf);
+    }
+}
+
+void gameboy_take_emulate_us(uint32_t *mean, uint32_t *max) {
+    *mean = g_emu_n ? g_emu_sum / g_emu_n : 0;
+    *max = g_emu_max;
+    g_emu_sum = g_emu_n = g_emu_max = 0;
 }
 
 void gameboy_draw_error_frame(uint16_t color) {

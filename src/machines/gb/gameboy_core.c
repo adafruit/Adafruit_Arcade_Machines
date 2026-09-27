@@ -36,6 +36,27 @@ uint8_t audio_read(uint16_t addr) { return minigb_apu_audio_read(&g_apu, addr); 
 void audio_write(uint16_t addr, uint8_t val) { minigb_apu_audio_write(&g_apu, addr, val); }
 
 // --- CPU/PPU core ------------------------------------------------------
+
+// THE HOT CODE IN IRAM, ON THE ESP32 ONLY. That chip runs code from flash
+// through a 32 KB cache, and Peanut-GB's CPU loop alone is ~17 KB, so a
+// frame spends much of its time on cache misses. A declaration placed
+// before the definition carries its section attribute over to it, so this
+// moves the functions without patching the vendored file. Measured on
+// Tetris's demo (DEVNOTES #142). Not on the Fruit Jam until it is timed
+// there: GB_HOT is empty everywhere else.
+#if defined(ARDUINO_ARCH_ESP32) || defined(ESP_PLATFORM)
+#include "arch/esp32/esp32.h"
+#define GB_HOT ARCADE_FAST_SECTION("gb")
+struct gb_s;
+uint8_t __gb_read(struct gb_s *gb, uint16_t addr) GB_HOT;
+void __gb_write(struct gb_s *gb, uint_fast16_t addr, uint8_t val) GB_HOT;
+uint8_t __gb_execute_cb(struct gb_s *gb) GB_HOT;
+void __gb_draw_line(struct gb_s *gb) GB_HOT;
+void __gb_step_cpu(struct gb_s *gb) GB_HOT;
+#else
+#define GB_HOT
+#endif
+
 #define ENABLE_SOUND 1
 #define ENABLE_LCD 1
 #include "core/peanut_gb.h"
@@ -43,6 +64,7 @@ void audio_write(uint16_t addr, uint8_t val) { minigb_apu_audio_write(&g_apu, ad
 // After the vendored code, not before: arch.h pulls in the Pico SDK, whose
 // MAX/MIN would otherwise be redefined by minigb_apu.c.inc's own.
 #include "arch/arch.h"
+#include "hal/arcade_hal_memory.h"
 
 _Static_assert(GAMEBOY_PAD_A == JOYPAD_A && GAMEBOY_PAD_B == JOYPAD_B &&
                GAMEBOY_PAD_SELECT == JOYPAD_SELECT && GAMEBOY_PAD_START == JOYPAD_START &&
@@ -59,32 +81,36 @@ static uint32_t g_rom_size;
 // Bank 0 in SRAM. Games run their interrupt handlers and most core routines
 // from here, so it is read far more than any switchable bank; the rest of
 // the ROM may be in PSRAM, which shares the XIP cache with the program.
-static uint8_t g_bank0[0x4000];
+#define BANK0_SIZE    0x4000u
+#define CART_RAM_SIZE 0x8000u
+static uint8_t *g_bank0;   // BANK0_SIZE, from hal_mem_fast_alloc()
 static char g_title[17];
 
 // Cartridge RAM. Phase 1a (Tetris) needs none; this covers MBC1/MBC3 carts
 // that use it, but is NOT persisted -- battery saves arrive in Phase 1b.
-static uint8_t g_cart_ram[0x8000];
+static uint8_t *g_cart_ram; // CART_RAM_SIZE, from hal_mem_fast_alloc()
 
-static gameboy_row_t g_fb[2][GAMEBOY_LCD_H];
+// Two frames of GAMEBOY_LCD_H rows. Heap, not static: the Feather ESP32
+// has ~124 KB of usable DRAM in all (hal/arcade_hal_memory.h).
+static gameboy_row_t (*g_fb)[GAMEBOY_LCD_H];
 static uint8_t g_back = 0;
 
-static uint8_t rom_read(struct gb_s *gb, const uint_fast32_t addr) {
+static GB_HOT uint8_t rom_read(struct gb_s *gb, const uint_fast32_t addr) {
     (void)gb;
-    if (addr < sizeof g_bank0) return g_bank0[addr];
+    if (addr < BANK0_SIZE) return g_bank0[addr];
     return addr < g_rom_size ? g_rom[addr] : 0xFF;
 }
 
-static uint8_t cart_ram_read(struct gb_s *gb, const uint_fast32_t addr) {
+static GB_HOT uint8_t cart_ram_read(struct gb_s *gb, const uint_fast32_t addr) {
     (void)gb;
-    return addr < sizeof g_cart_ram ? g_cart_ram[addr] : 0xFF;
+    return addr < CART_RAM_SIZE ? g_cart_ram[addr] : 0xFF;
 }
 
 // Saves notice changes by comparing this RAM with a copy each frame
 // (console/console_save.h), so a write needs no bookkeeping here.
-static void cart_ram_write(struct gb_s *gb, const uint_fast32_t addr, const uint8_t val) {
+static GB_HOT void cart_ram_write(struct gb_s *gb, const uint_fast32_t addr, const uint8_t val) {
     (void)gb;
-    if (addr < sizeof g_cart_ram) g_cart_ram[addr] = val;
+    if (addr < CART_RAM_SIZE) g_cart_ram[addr] = val;
 }
 
 // The core reports an invalid opcode or access and carries on; nothing
@@ -98,7 +124,7 @@ static void core_error(struct gb_s *gb, const enum gb_error_e err, const uint16_
 
 // Bits 0-1 are the shade after the game's palette registers, bits 4-5 the
 // layer it came from; a Game Boy Color palette colours the layers apart.
-static void lcd_draw_line(struct gb_s *gb, const uint8_t *pixels, const uint_fast8_t line) {
+static GB_HOT void lcd_draw_line(struct gb_s *gb, const uint8_t *pixels, const uint_fast8_t line) {
     (void)gb;
     uint8_t *dst = g_fb[g_back][line];
     for (int x = 0; x < GAMEBOY_LCD_W; x++) dst[x] = pixels[x] & 0x33u;
@@ -107,11 +133,17 @@ static void lcd_draw_line(struct gb_s *gb, const uint8_t *pixels, const uint_fas
 gameboy_core_status_t gameboy_core_init(const uint8_t *rom, uint32_t rom_size) {
     g_rom = rom;
     g_rom_size = rom_size;
-    memset(g_bank0, 0xFF, sizeof g_bank0);
-    memcpy(g_bank0, rom, rom_size < sizeof g_bank0 ? rom_size : sizeof g_bank0);
+    // The frame buffers first: they are the hottest, written and read every
+    // pixel, so they get on-chip RAM before the rest when it is scarce.
+    if (!g_fb) g_fb = (gameboy_row_t (*)[GAMEBOY_LCD_H])hal_mem_fast_alloc(2u * sizeof(gameboy_row_t) * GAMEBOY_LCD_H);
+    if (!g_bank0) g_bank0 = (uint8_t *)hal_mem_fast_alloc(BANK0_SIZE);
+    if (!g_cart_ram) g_cart_ram = (uint8_t *)hal_mem_fast_alloc(CART_RAM_SIZE);
+    if (!g_fb || !g_bank0 || !g_cart_ram) return GAMEBOY_CORE_NO_MEMORY;
+    memset(g_bank0, 0xFF, BANK0_SIZE);
+    memcpy(g_bank0, rom, rom_size < BANK0_SIZE ? rom_size : BANK0_SIZE);
     g_errors = 0;
-    memset(g_cart_ram, 0xFF, sizeof g_cart_ram);
-    memset(g_fb, 0x20, sizeof g_fb); // background, lightest shade
+    memset(g_cart_ram, 0xFF, CART_RAM_SIZE);
+    memset(g_fb, 0x20, 2u * sizeof(gameboy_row_t) * GAMEBOY_LCD_H); // background, lightest shade
     g_back = 0;
 
     memset(g_title, 0, sizeof g_title);
@@ -132,7 +164,17 @@ gameboy_core_status_t gameboy_core_init(const uint8_t *rom, uint32_t rom_size) {
 
 const char *gameboy_core_title(void) { return g_title; }
 
-void gameboy_core_frame_begin(void) { g_gb.gb_frame = false; }
+// Peanut-GB's own frame skip draws a frame's lines only while
+// display.frame_skip_count is set, and flips that count at each vblank; set
+// here before the frame's first line, it decides exactly this frame.
+static bool g_draw = true;
+void gameboy_core_set_draw(bool draw) { g_draw = draw; }
+
+void gameboy_core_frame_begin(void) {
+    g_gb.gb_frame = false;
+    g_gb.direct.frame_skip = !g_draw;
+    g_gb.display.frame_skip_count = false;
+}
 
 // GAMEBOY_CORE_PROFILE: time every single core call. Off by default, since
 // it reads the clock twice per instruction.
@@ -200,7 +242,7 @@ bool gameboy_core_has_battery(void) {
 uint32_t gameboy_core_save_size(void) {
     size_t n = 0;
     if (gb_get_save_size_s(&g_gb, &n) != 0) return 0;
-    return n <= sizeof g_cart_ram ? (uint32_t)n : 0;
+    return n <= CART_RAM_SIZE ? (uint32_t)n : 0;
 }
 
 uint8_t *gameboy_core_save_ram(void) { return g_cart_ram; }

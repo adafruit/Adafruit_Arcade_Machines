@@ -15,6 +15,11 @@ void *hal_mem_bulk_alloc(size_t size) { return pmalloc(size); }
 
 size_t hal_mem_bulk_free(void) { return (size_t)rp2040.getFreePSRAMHeap(); }
 
+void *hal_mem_fast_alloc(size_t size) {
+    void *p = malloc(size);  // SRAM heap
+    return p ? p : pmalloc(size);
+}
+
 // PSRAM TIMING MUST FOLLOW THE SYSTEM CLOCK. arduino-pico sets the PSRAM
 // interface's clock divider and read delay at boot, for F_CPU (125 MHz by
 // default on this board), and retimes it only for its own startup clock

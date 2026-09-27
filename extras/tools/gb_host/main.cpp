@@ -83,6 +83,9 @@ int main(int argc, char **argv) {
     unsigned frames = 600;
     int rotation = 0;
     bool mirror = false;
+    unsigned draw_every = 1; // draw only frames f % N == 0 (the Feather draws every 2nd)
+    bool two_core = false;   // drive the two-core calls, as the Feather sketch does
+    const char *crc_at = nullptr; // frames whose finished picture to checksum
     int palette = GAMEBOY_PALETTE_DEFAULT;
     std::vector<press_t> presses;
     for (int i = 1; i < argc; i++) {
@@ -94,6 +97,9 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--wav") && i + 1 < argc) wav_path = argv[++i];
         else if (!strcmp(a, "--rotation") && i + 1 < argc) rotation = atoi(argv[++i]);
         else if (!strcmp(a, "--mirror")) mirror = true;
+        else if (!strcmp(a, "--draw-every") && i + 1 < argc) draw_every = (unsigned)atoi(argv[++i]);
+        else if (!strcmp(a, "--two-core")) two_core = true;
+        else if (!strcmp(a, "--crc-at") && i + 1 < argc) crc_at = argv[++i];
         else if (!strcmp(a, "--palette") && i + 1 < argc) {
             const char *n = argv[++i];
             palette = !strcmp(n, "green")  ? GAMEBOY_PALETTE_DMG_GREEN
@@ -114,7 +120,8 @@ int main(int argc, char **argv) {
         } else {
             fprintf(stderr, "usage: %s --rom DIR [--frames N] [--ppm-at F1,F2] [--out DIR]\n"
                             "       [--press BUTTON@FROM-TO]... [--rotation 0-3] [--mirror] [--wav FILE]\n"
-                            "       [--palette green|greys|pocket|gbc]\n",
+                            "       [--palette green|greys|pocket|gbc] [--draw-every N]\n"
+                            "       [--two-core] [--crc-at F1,F2]\n",
                     argv[0]);
             return 2;
         }
@@ -156,7 +163,24 @@ int main(int argc, char **argv) {
                              held(presses, "a", f), held(presses, "b", f),
                              held(presses, "start", f), held(presses, "select", f),
                              false, false);
-        gameboy_run_frame(&g_sys);
+        if (two_core) {
+            // gameboy_featheresp32's order: frames emulated with only every
+            // second one drawn, and the drawn one presented after it.
+            gameboy_emulate_frame(&g_sys, f % 2 == 0);
+            if (f % 2 == 0) { gameboy_present(&g_sys); gameboy_paint(&g_sys); }
+        } else {
+            gameboy_core_set_draw(draw_every <= 1 || f % draw_every == 0);
+            gameboy_run_frame(&g_sys);
+        }
+        if (in_list(crc_at, f)) {
+            // FNV-1a of the core's front buffer: the picture just finished,
+            // before the renderer (so rotation and palette don't matter).
+            uint32_t h = 2166136261u;
+            const gameboy_row_t *fb = gameboy_core_front();
+            for (unsigned y = 0; y < GAMEBOY_LCD_H; y++)
+                for (unsigned x = 0; x < GAMEBOY_LCD_W; x++) { h ^= fb[y][x]; h *= 16777619u; }
+            printf("crc frame %u: %08x\n", f, h);
+        }
 
         owed += (double)GAMEBOY_AUDIO_SAMPLE_RATE / 60.0;
         while (owed >= 256.0) {

@@ -115,6 +115,7 @@ extern "C" void host_audio_fill(int32_t *out, int count) {
 #include "arcade_hal_memory.h"
 void *hal_mem_bulk_alloc(size_t size) { return malloc(size); }
 size_t hal_mem_bulk_free(void) { return (size_t)64u * 1024u * 1024u; }
+void *hal_mem_fast_alloc(size_t size) { return malloc(size); }
 
 // --- storage -------------------------------------------------------------
 

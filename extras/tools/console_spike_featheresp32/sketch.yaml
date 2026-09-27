@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
+#
+# SPDX-License-Identifier: MIT
+
+# Optimisation comes from build_opt.h beside this file (the Feather sketches'
+# mechanism; see examples/Games/galaga_featheresp32/sketch.yaml).
+default_fqbn: esp32:esp32:adafruit_feather_esp32_v2

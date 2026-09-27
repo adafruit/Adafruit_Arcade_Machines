@@ -38,12 +38,16 @@
 #include "arch/arch.h"
 #include "hal/arcade_hal_audio.h"
 
-#define RING_SIZE      2048u // power of two
-#define RING_TARGET    768u
+// 4096 deep, so a two-core board's larger target (console_audio_set_target)
+// still leaves room for a burst above it.
+#define RING_SIZE      4096u // power of two
+#define RING_TARGET_DEFAULT 768u
 #define RING_DEADBAND  96u
 #define MAX_CORRECTION 3u
 
 static int16_t g_ring[RING_SIZE];
+static uint32_t g_target = RING_TARGET_DEFAULT;
+static uint32_t g_volume = CONSOLE_AUDIO_VOLUME_FULL;
 static volatile uint32_t g_head; // producer (core 0)
 static volatile uint32_t g_tail; // consumer (audio ISR)
 
@@ -73,25 +77,48 @@ void console_audio_init(uint32_t rate) {
     hal_audio_init(rate);
     memset(g_ring, 0, sizeof g_ring);
     g_tail = 0;
-    g_head = RING_TARGET; // prefilled with silence, before the pump starts
+    g_target = RING_TARGET_DEFAULT;
+    g_volume = CONSOLE_AUDIO_VOLUME_FULL;
+    g_head = g_target; // prefilled with silence, before the pump starts
     g_underruns = g_overruns = 0;
     g_min_depth = 0xFFFFFFFFu;
     hal_audio_set_fill_callback(&fill_audio);
 }
 
+void console_audio_set_target(uint32_t samples) {
+    if (samples > RING_SIZE / 2u) samples = RING_SIZE / 2u;
+    // Raise the prefill to match, before the pump has drained anything.
+    const uint32_t saved = hal_audio_enter_critical();
+    if (g_head - g_tail < samples) g_head = g_tail + samples;
+    hal_audio_exit_critical(saved);
+    g_target = samples;
+}
+
+void console_audio_set_volume(uint32_t volume) {
+    g_volume = volume > CONSOLE_AUDIO_VOLUME_FULL ? CONSOLE_AUDIO_VOLUME_FULL : volume;
+}
+
 void console_audio_push(const int16_t *samples, uint32_t n) {
     static int16_t frame[CONSOLE_AUDIO_MAX_FRAME + MAX_CORRECTION];
     if (n > CONSOLE_AUDIO_MAX_FRAME) n = CONSOLE_AUDIO_MAX_FRAME;
-    memcpy(frame, samples, n * sizeof(int16_t));
+    // The volume is applied here, once per frame on the emulation core, and
+    // never in the ISR, which only copies. Full volume is a plain copy.
+    const uint32_t vol = g_volume;
+    if (vol >= CONSOLE_AUDIO_VOLUME_FULL) {
+        memcpy(frame, samples, n * sizeof(int16_t));
+    } else {
+        for (uint32_t i = 0; i < n; i++)
+            frame[i] = (int16_t)(((int32_t)samples[i] * (int32_t)vol) / (int32_t)CONSOLE_AUDIO_VOLUME_FULL);
+    }
 
     const uint32_t depth = g_head - g_tail;
-    if (depth > RING_TARGET + RING_DEADBAND) {
-        uint32_t k = (depth - RING_TARGET) / RING_DEADBAND;
+    if (depth > g_target + RING_DEADBAND) {
+        uint32_t k = (depth - g_target) / RING_DEADBAND;
         if (k > MAX_CORRECTION) k = MAX_CORRECTION;
         g_dropped += (n > k) ? k : n;
         n = (n > k) ? n - k : 0;
-    } else if (depth + RING_DEADBAND < RING_TARGET && n > 0) {
-        uint32_t k = (RING_TARGET - depth) / RING_DEADBAND;
+    } else if (depth + RING_DEADBAND < g_target && n > 0) {
+        uint32_t k = (g_target - depth) / RING_DEADBAND;
         if (k > MAX_CORRECTION) k = MAX_CORRECTION;
         for (uint32_t i = 0; i < k; i++) { frame[n] = frame[n - 1]; n++; }
         g_repeated += k;
