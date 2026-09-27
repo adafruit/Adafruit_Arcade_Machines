@@ -35,6 +35,15 @@ void console_audio_init(uint32_t rate);
 // property, not a game one." Call after console_audio_init().
 void console_audio_set_target(uint32_t samples);
 
+// Volume, 0 (silent) to CONSOLE_AUDIO_VOLUME_FULL (unchanged, the default),
+// linear: 128 is half the amplitude, -6 dB. A board property like the
+// target: the Feather's MAX98357A amp has no volume control of its own and
+// plays the Game Boy's full-scale output very loud, while the Fruit Jam's
+// is right as it is. Takes effect from the next frame; any time after
+// console_audio_init().
+#define CONSOLE_AUDIO_VOLUME_FULL 256u
+void console_audio_set_volume(uint32_t volume);
+
 // One frame of mono samples from the emulation loop (core 0).
 void console_audio_push(const int16_t *samples, uint32_t n);
 

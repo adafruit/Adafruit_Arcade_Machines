@@ -36,6 +36,27 @@ uint8_t audio_read(uint16_t addr) { return minigb_apu_audio_read(&g_apu, addr); 
 void audio_write(uint16_t addr, uint8_t val) { minigb_apu_audio_write(&g_apu, addr, val); }
 
 // --- CPU/PPU core ------------------------------------------------------
+
+// THE HOT CODE IN IRAM, ON THE ESP32 ONLY. That chip runs code from flash
+// through a 32 KB cache, and Peanut-GB's CPU loop alone is ~17 KB, so a
+// frame spends much of its time on cache misses. A declaration placed
+// before the definition carries its section attribute over to it, so this
+// moves the functions without patching the vendored file. Measured on
+// Tetris's demo (DEVNOTES #142). Not on the Fruit Jam until it is timed
+// there: GB_HOT is empty everywhere else.
+#if defined(ARDUINO_ARCH_ESP32) || defined(ESP_PLATFORM)
+#include "arch/esp32/esp32.h"
+#define GB_HOT ARCADE_FAST_SECTION("gb")
+struct gb_s;
+uint8_t __gb_read(struct gb_s *gb, uint16_t addr) GB_HOT;
+void __gb_write(struct gb_s *gb, uint_fast16_t addr, uint8_t val) GB_HOT;
+uint8_t __gb_execute_cb(struct gb_s *gb) GB_HOT;
+void __gb_draw_line(struct gb_s *gb) GB_HOT;
+void __gb_step_cpu(struct gb_s *gb) GB_HOT;
+#else
+#define GB_HOT
+#endif
+
 #define ENABLE_SOUND 1
 #define ENABLE_LCD 1
 #include "core/peanut_gb.h"
@@ -74,20 +95,20 @@ static uint8_t *g_cart_ram; // CART_RAM_SIZE, from hal_mem_fast_alloc()
 static gameboy_row_t (*g_fb)[GAMEBOY_LCD_H];
 static uint8_t g_back = 0;
 
-static uint8_t rom_read(struct gb_s *gb, const uint_fast32_t addr) {
+static GB_HOT uint8_t rom_read(struct gb_s *gb, const uint_fast32_t addr) {
     (void)gb;
     if (addr < BANK0_SIZE) return g_bank0[addr];
     return addr < g_rom_size ? g_rom[addr] : 0xFF;
 }
 
-static uint8_t cart_ram_read(struct gb_s *gb, const uint_fast32_t addr) {
+static GB_HOT uint8_t cart_ram_read(struct gb_s *gb, const uint_fast32_t addr) {
     (void)gb;
     return addr < CART_RAM_SIZE ? g_cart_ram[addr] : 0xFF;
 }
 
 // Saves notice changes by comparing this RAM with a copy each frame
 // (console/console_save.h), so a write needs no bookkeeping here.
-static void cart_ram_write(struct gb_s *gb, const uint_fast32_t addr, const uint8_t val) {
+static GB_HOT void cart_ram_write(struct gb_s *gb, const uint_fast32_t addr, const uint8_t val) {
     (void)gb;
     if (addr < CART_RAM_SIZE) g_cart_ram[addr] = val;
 }
@@ -103,7 +124,7 @@ static void core_error(struct gb_s *gb, const enum gb_error_e err, const uint16_
 
 // Bits 0-1 are the shade after the game's palette registers, bits 4-5 the
 // layer it came from; a Game Boy Color palette colours the layers apart.
-static void lcd_draw_line(struct gb_s *gb, const uint8_t *pixels, const uint_fast8_t line) {
+static GB_HOT void lcd_draw_line(struct gb_s *gb, const uint8_t *pixels, const uint_fast8_t line) {
     (void)gb;
     uint8_t *dst = g_fb[g_back][line];
     for (int x = 0; x < GAMEBOY_LCD_W; x++) dst[x] = pixels[x] & 0x33u;

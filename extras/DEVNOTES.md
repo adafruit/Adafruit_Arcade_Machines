@@ -7679,3 +7679,90 @@ no lag and no tearing.
   Nothing is audible. The sketch now discards those counts when the task
   starts, so the first line counts only the game's own underruns: it now
   reads 0.
+
+### 142. The Game Boy on the Feather ESP32: a slow demo, the CPU loop into IRAM, and a volume setting
+
+`examples/Consoles/gameboy_featheresp32` is the NES sketch's twin (#141).
+Emulation runs on core 0 and painting on core 1, two frames per ~30 fps
+paint with only the second drawn. `gameboy_machine` gained the same calls:
+`gameboy_emulate_frame()`, `gameboy_present()`, `gameboy_paint()` and
+`gameboy_take_emulate_us()`. The limiter holds **60 Hz, not the Game Boy's
+59.73**: the Fruit Jam runs it at 60, locked to its display, and the audio
+rate is chosen for that (`GAMEBOY_APU_RATE`, `gameboy_core.h`). So both
+boards play at the same speed and pitch.
+
+On the host, `gb_host --two-core` drives the new calls in the sketch's
+order, and `--crc-at` checksums the core's finished picture. In Tetris and
+Zelda, all eight checked frames are identical to drawing every second frame
+and to drawing every frame, and the WAVs are byte-identical.
+
+**The first build was fast on the title screen and slow in the demo.**
+Tetris's title took 14.2 ms per emulated frame. The attract demo took
+17.5 ms against a 16.7 ms budget: 94% speed and about 1,000 audio
+underruns a second. The spike's 13.6 ms (#140) was an average over mostly
+title-screen frames, so it overstated the headroom. Two causes were ruled
+out on the same demo windows before anything was changed:
+
+- **Not core 1's painting.** With painting compiled out, the demo cost the
+  same, 17.5 ms.
+- **Not the ROM in PSRAM.** Mirroring the first 32 KB (all of Tetris) into
+  internal RAM changed nothing, and was reverted.
+
+**The fix: Peanut-GB's hot code into IRAM.** The CPU loop,
+`__gb_step_cpu`, is ~17 KB of code, run from flash through the ESP32's
+32 KB cache. `gameboy_core.c` redeclares it, with `__gb_read`,
+`__gb_write`, `__gb_execute_cb` and `__gb_draw_line`, in
+`ARCADE_FAST_SECTION` before including `peanut_gb.h`. A section attribute
+on an earlier declaration carries over to the definition, so the vendored
+file stays unpatched. The core's own ROM, cartridge-RAM and line callbacks
+go there too. IRAM text went from 75 KB to 98 KB. **ESP32 only**
+(`GB_HOT` is empty elsewhere): the Fruit Jam is unchanged until it can be
+timed there.
+
+Tetris, paints 300 to 720 (15 windows), the same demo frames every run:
+
+| Build | Demo, mean | Worst frame | Underruns |
+|---|---|---|---|
+| -O3 | 17,468 us | 21,545 us | 15,635 |
+| -O2 | 16,110 us | 20,507 us | 0 |
+| -O3, hot code in IRAM | **15,284 us** | 19,156 us | 0 |
+| -O2, hot code in IRAM | 15,812 us | 19,992 us | 0 |
+| -O3, IRAM plus minigb's audio | 15,285 us | 19,171 us | 0 |
+
+With IRAM, -O3 beats -O2 again. The audio generator in IRAM bought
+nothing (it runs once a frame, ~290 us), so it stays in flash and keeps
+its 2.3 KB of IRAM free. The single worst frame, ~19 ms, is repaid by the
+limiter. Played on the hardware: clean sound, right speed, controls and
+rotation good.
+
+A NES build and a Galaga build on the Feather contain no Game Boy symbols
+(`nm`). `IRAM_ATTR` gives each function its own section,
+`.iram1.<__COUNTER__>` in `esp_attr.h`, so `--gc-sections` still drops
+what a sketch doesn't use. `arch/esp32/esp32.h` had said the opposite,
+and still called the whole ESP32 arm "UNTESTED"; both are corrected.
+
+**Volume: `console_audio_set_volume()`.** Through the Feather's MAX98357A,
+which has no volume control of its own, Tetris was very loud. From the
+host WAVs, Tetris averages -14 to -16 dBFS RMS, against SMB's -25, SMB3's
+-22 and Kirby's -19. So `console_audio` gained a linear volume, 0 to 256
+(256 unchanged, the default). It is applied once per frame when the
+samples are queued, never in the ISR, and full volume stays a plain copy.
+The level was chosen by ear on the hardware, stepping down 128, 90, 64,
+45, 32, 16: **16 (-24 dB)** is the Game Boy Feather's default. The Fruit
+Jam keeps full volume. A volume control on the Wii Classic controller is
+planned. The NES Feather sketch is unchanged at full volume; SMB there is
+~10 dB quieter than Tetris at the source.
+
+**Open: two slow boots.** In about 11 boots during this work, two came up
+at a third of normal speed:
+
+- Emulation took 42 ms a frame, painting 85 ms.
+- The audio ring sat empty, and generation took 8 us, not ~290.
+- Once, the serial output came out garbled: each character repeated about
+  five times, interleaved.
+
+Both came right after an `arduino-cli upload`. Reflashing the identical
+binary ran normally, so the code isn't what differed. Ten boots afterwards
+(six esptool resets, four uploads) were all normal. The cause is unknown.
+If a Feather game ever runs at a third of its speed, this is it: capture
+the serial output before resetting.

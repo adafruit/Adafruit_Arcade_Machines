@@ -47,6 +47,7 @@
 
 static int16_t g_ring[RING_SIZE];
 static uint32_t g_target = RING_TARGET_DEFAULT;
+static uint32_t g_volume = CONSOLE_AUDIO_VOLUME_FULL;
 static volatile uint32_t g_head; // producer (core 0)
 static volatile uint32_t g_tail; // consumer (audio ISR)
 
@@ -77,6 +78,7 @@ void console_audio_init(uint32_t rate) {
     memset(g_ring, 0, sizeof g_ring);
     g_tail = 0;
     g_target = RING_TARGET_DEFAULT;
+    g_volume = CONSOLE_AUDIO_VOLUME_FULL;
     g_head = g_target; // prefilled with silence, before the pump starts
     g_underruns = g_overruns = 0;
     g_min_depth = 0xFFFFFFFFu;
@@ -92,10 +94,22 @@ void console_audio_set_target(uint32_t samples) {
     g_target = samples;
 }
 
+void console_audio_set_volume(uint32_t volume) {
+    g_volume = volume > CONSOLE_AUDIO_VOLUME_FULL ? CONSOLE_AUDIO_VOLUME_FULL : volume;
+}
+
 void console_audio_push(const int16_t *samples, uint32_t n) {
     static int16_t frame[CONSOLE_AUDIO_MAX_FRAME + MAX_CORRECTION];
     if (n > CONSOLE_AUDIO_MAX_FRAME) n = CONSOLE_AUDIO_MAX_FRAME;
-    memcpy(frame, samples, n * sizeof(int16_t));
+    // The volume is applied here, once per frame on the emulation core, and
+    // never in the ISR, which only copies. Full volume is a plain copy.
+    const uint32_t vol = g_volume;
+    if (vol >= CONSOLE_AUDIO_VOLUME_FULL) {
+        memcpy(frame, samples, n * sizeof(int16_t));
+    } else {
+        for (uint32_t i = 0; i < n; i++)
+            frame[i] = (int16_t)(((int32_t)samples[i] * (int32_t)vol) / (int32_t)CONSOLE_AUDIO_VOLUME_FULL);
+    }
 
     const uint32_t depth = g_head - g_tail;
     if (depth > g_target + RING_DEADBAND) {
