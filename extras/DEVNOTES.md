@@ -7524,8 +7524,8 @@ Game Boy's frame buffers, bank-0 mirror and cartridge RAM 94 KB.
 - On the host, the Game Boy regression and the NES CRCs and WAVs are
   byte-identical after the change.
 - On the Fruit Jam the builds' static RAM fell as expected (Game Boy 21%,
-  NES 18%). **A hardware timing check there is still to do**; the board
-  was not connected.
+  NES 18%). The hardware timing check there was done later, with #142's
+  changes: no regression (see the end of #142).
 
 **Results on the Feather (ESP32 at 240 MHz), -O3:**
 
@@ -7783,3 +7783,23 @@ binary ran normally, so the code isn't what differed. Ten boots afterwards
 (six esptool resets, four uploads) were all normal. The cause is unknown.
 If a Feather game ever runs at a third of its speed, this is it: capture
 the serial output before resetting.
+
+**Fruit Jam recheck.** This branch changed shared code under the Fruit Jam
+too: heap frame buffers (#140), draw-skip calls, the 4096 audio ring and
+the volume setting. So both consoles were flashed there and compared
+against the v2.12.0 release, built from a worktree of `main`, on the same
+frames:
+
+| Console | Build | Work, mean | Worst | Starve | Min queue | Underruns |
+|---|---|---|---|---|---|---|
+| Tetris (frames 720-2700) | v2.12.0 | 11,702 us | 13,014 us | 0 | 8/32 | 0 |
+| | this branch | 10,846 us | 12,086 us | 0 | 8/32 | 0 |
+| SMB (frames 360-2100) | v2.12.0 | 9,221 us | 9,512 us | 0 | 13/32 | 0 |
+| | this branch | 9,163 us | 9,452 us | 0 | 13/32 | 0 |
+
+The Game Boy got 7% faster. The heap buffers or the link layout are the
+likely cause, but that was not isolated. The NES is unchanged, and so is
+its average audio ring depth (855 against 856). Static RAM fell from 39%
+to 21% (Game Boy) and from 43% to 19% (NES). Played on the TV, both
+look, sound and play right, with no red lines.
+
