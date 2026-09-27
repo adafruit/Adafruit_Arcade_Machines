@@ -317,16 +317,17 @@ uint32_t hal_video_take_starve_count(void) {
         reported = s_resyncs;
         Serial.printf("[hstx] video resynced (%lu so far)\n", (unsigned long)reported);
     }
-    // HDMI audio, every tenth status call (~10 s in most sketches).
-    static uint32_t calls = 0;
-    if (++calls % 10u == 0) {
-        static uint32_t pk0 = 0;
+    // HDMI audio, at most every 10 s (sketches call this at different rates).
+    static uint32_t t_last = 0, pk0 = 0;
+    const uint32_t t_now = time_us_32();
+    if (t_now - t_last >= 10000000u) {
         const uint32_t pk = s_hdmi_packets;
-        Serial.printf("[hstx] hdmi audio: %lu packets (%lu Hz over the last 10 calls), "
-                      "drops %lu, repeats %lu, overflow %lu, ring min %lu\n",
-                      (unsigned long)pk, (unsigned long)((pk - pk0) * 4u / 10u),
+        const uint32_t ms = (t_now - t_last) / 1000u;
+        Serial.printf("[hstx] hdmi audio: %lu Hz, drops %lu, repeats %lu, overflow %lu, ring min %lu\n",
+                      (unsigned long)(t_last ? (uint64_t)(pk - pk0) * 4000u / ms : 0),
                       (unsigned long)s_hdmi_drops, (unsigned long)s_hdmi_repeats,
                       (unsigned long)s_hdmi_overflow, (unsigned long)s_hdmi_ring_min);
+        t_last = t_now;
         pk0 = pk;
         s_hdmi_ring_min = 0xFFFFFFFFu;
     }

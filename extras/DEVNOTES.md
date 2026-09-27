@@ -8199,3 +8199,53 @@ the default back made no difference to Donkey Kong (14,457 us against
 - **SD:** the NES loaded its save over SD. A save written mid-game on HSTX
   hasn't been exercised yet.
 - **On the TV:** the user checked all nine and all look right.
+
+### 149. HDMI audio on the Fruit Jam, and what core 1's background loop costs core 0
+
+Step 3 of `extras/HDMI_AUDIO_PLAN.md`. The machines are untouched.
+
+- **The tap:** the RP2040 I2S driver gains `arch_i2s_set_tap()`, called in
+  its interrupt with each block right after the machine's fill callback
+  made it for the DAC.
+- **The ring:** the HSTX backend's tap copies the mono samples into a
+  2,048-sample lock-free ring, core 0 to core 1.
+- **The pump:** in core 1's background task, it takes two samples at a
+  time, repeats each (44.1 kHz = 2 x 22,050 Hz), encodes a 4-frame packet
+  and keeps pico_hdmi's queue at 200. When the ring drifts it drops or
+  repeats one sample to stay between 256 and 1,024.
+- **The DAC** gets exactly what it did before, so sound goes to both
+  outputs, as decided.
+
+**On hardware:** Pac-Man and Burger Time are clean and in sync from the
+TV and the 3.5 mm jack at once (checked by the user). Delivery is
+44,100 Hz. Repeats happen only while the ring first fills (~650), and
+then there are no drops or overflows, with the ring steady.
+
+**The cost was core 1's loop, not the encoding.** Pac-Man's core 0 work,
+same frames:
+
+| Build | Work mean |
+|---|---|
+| PicoDVI | 8,851 us |
+| HSTX, no background loop (#148's first A/B) | 8,625 us |
+| + watchdog loop spinning, no audio | 9,011 us |
+| + HDMI audio, pump flat out | 9,752 us |
+| Experiment: one pre-encoded packet queued repeatedly | 9,989 us |
+| Pump once a millisecond | 9,387 us |
+| **+ `__wfe()` after each pass** | **9,240 us** |
+
+- **Encoding isn't the cost.** Queueing copies of a single pre-encoded
+  packet cost the same as encoding every one, so pico_hdmi's flash-resident
+  encoder (and the shared flash cache) is ruled out.
+- **Core 1 spinning was.** pico_hdmi calls the background task in a tight
+  loop, and one that polls SRAM and the timer millions of times a second
+  slows core 0's emulation.
+- **The fix, both parts:** the pump runs once a millisecond, and each pass
+  ends in `__wfe()`. Core 1 then sleeps until the next scanline interrupt,
+  about 31,000 a second, which is still far more often than the 1 ms pump
+  and 250 ms watchdog need.
+
+**Burger Time, the heaviest game, same frames:** PicoDVI 15,058 us; HSTX
+without audio (#148, spinning loop) 15,317 us; **HSTX with HDMI audio
+14,965 us.** Starvation events drop from 200 to 40, min queue 17/32. With
+the loop fixed, HDMI audio costs less than the old loop did.
