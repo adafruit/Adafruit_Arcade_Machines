@@ -33,6 +33,9 @@ static int32_t s_buf[I2S_FRAMES];
 static I2SClass s_i2s;
 static volatile hal_audio_fill_cb g_fill_cb = NULL;
 static bool s_running = false;
+static volatile uint32_t s_volume = 256;
+
+void arch_i2s_set_volume(uint32_t volume) { s_volume = volume > 256 ? 256 : volume; }
 
 // CROSS-CORE CRITICAL SECTION, and a spinlock is the right primitive here
 // specifically because the guarded regions are tiny.
@@ -74,6 +77,17 @@ static void i2s_task(void *arg) {
         hal_audio_fill_cb cb = g_fill_cb;
         if (cb) {
             cb(s_buf, I2S_FRAMES);
+            // Master volume, on the whole mix: both 16-bit halves of each
+            // frame, which the fill contract makes the same sample. Full
+            // volume is left alone, so a board that never sets it pays
+            // nothing.
+            const int32_t vol = (int32_t)s_volume;
+            if (vol < 256) {
+                for (int i = 0; i < I2S_FRAMES; i++) {
+                    const int32_t v = (int32_t)(int16_t)(s_buf[i] & 0xFFFF) * vol / 256;
+                    s_buf[i] = (int32_t)((uint32_t)(uint16_t)v << 16 | (uint16_t)v);
+                }
+            }
         } else {
             // Silence until a machine registers itself. Writing it rather
             // than idling keeps the I2S clocks running, which matters: the

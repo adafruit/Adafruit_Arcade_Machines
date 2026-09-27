@@ -7956,3 +7956,46 @@ save a second later. That is the game's own behaviour, and it's harmless.
 The seven Feather arcade builds link and call the service each frame; with
 nothing queued it's a single atomic load. Not run on hardware with this
 change.
+
+### 145. A master volume for the Feather's arcade games
+
+The consoles got a volume setting in #142 because the MAX98357A amp has
+none. The arcade games didn't, because each mixes in its own per-game
+audio code, not in `console_audio`. So the Feather gains a **master
+volume on the finished mix**, which covers all seven games without
+touching their audio:
+
+- **`arch_i2s_set_volume()`, in the ESP32 audio task.** It scales each
+  256-frame block after the game's fill callback and before I2S, on both
+  16-bit halves of each frame (the fill contract makes them the same mono
+  sample). Full volume skips the loop.
+- **`feather_audio_set_volume()` / `feather_audio_volume_step()`**
+  (`hal_audio_feather_esp32.h`): the board's calls, with the same 3 dB
+  table as the consoles.
+- **The controller:** X + Up/Down now steps the volume in the arcade map as
+  well as the console map. While X is held the D-pad goes to the volume,
+  not the game. Each arcade sketch applies the steps where it reads its
+  buttons and prints the new level.
+
+**The default, 45 (-15 dB), was tuned live on Galaga,** not flashed build
+by build. Opening the serial port resets this board, so one streaming
+recorder ran for the whole session, and the user stepped the volume with
+X + Up/Down until it matched the consoles. The log showed every level
+tried, 8 to 256, ending at 45. All seven games start at 45; the other six
+weren't tuned individually.
+
+**Speed:**
+
+- **Attract mode, same frames:** identical to the release build with the
+  controller. 100% everywhere, except 96% at frame 360 and 99% at frame
+  450, the two dips #143 measured. The scaling loop is ~256 multiplies per
+  11.6 ms block.
+- **Gameplay:** Galaga ran 93-99%, against #114's record of "97-100% under
+  sprite load". Play doesn't repeat frame for frame, so this isn't an A/B.
+  Heavier screens are the likely reason, but the controller's I2C cost
+  (#143) under that load isn't ruled out.
+- **After slow stretches,** the limiter ran a few windows at 101%, repaying
+  the time it had lost (#122).
+
+Played on hardware: Galaga, with the volume combo working. The other six
+arcade sketches build; not run with this change.

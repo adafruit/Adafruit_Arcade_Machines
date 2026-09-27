@@ -105,7 +105,9 @@ between frames on the SPI bus the card shares with the display. See
 sketch, arcade and console, on the STEMMA QT port through the Wii
 Nunchuck breakout, alongside the Feather's own buttons. On the consoles
 it adds what the Feather has no buttons for: L for 8:7 aspect (NES), Y for
-the palette, and X + Up/Down for the volume. See `extras/DEVNOTES.md` #143
+the palette, and X + Up/Down for the volume, which works in the arcade
+games too (a master volume on the whole mix, since the Feather's amp has
+none). See `extras/DEVNOTES.md` #143
 and the mapping table in `extras/CONSOLES_PLAN.md`.
 
 \* Lunar Rescue's is the one number here that is **not** a cabinet

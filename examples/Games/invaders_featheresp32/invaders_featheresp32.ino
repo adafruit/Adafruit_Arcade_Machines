@@ -36,6 +36,7 @@
 #include <hal/arcade_hal_input.h>
 #include <boards/feather_esp32/board_config_feather_esp32.h>
 #include <boards/feather_esp32/wii_input_feather_esp32.h>
+#include <boards/feather_esp32/hal_audio_feather_esp32.h>
 #include <machines/invaders/invaders_machine.h>
 #include <machines/invaders/invaders_video.h>
 #include <machines/invaders/invaders_input.h>
@@ -74,6 +75,13 @@ static arcade_system g_system;
 // than as a slowdown. DEVNOTES #115.
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+
+// The master volume at boot, 0-256 (256 = full): 45, -15 dB, chosen by ear
+// on Galaga to match the consoles (DEVNOTES #145). See
+// feather_audio_set_volume() in setup().
+#ifndef AUDIO_VOLUME
+#define AUDIO_VOLUME 45u
+#endif
 
 static TaskHandle_t g_emu_task   = NULL;
 static TaskHandle_t g_video_task = NULL;
@@ -115,6 +123,10 @@ void setup() {
     // B=ACTION2, Start=START1, Select=COIN, Y=START2, R=ROTATE, alongside
     // the Feather's own buttons.
     feather_wii_input_begin(FEATHER_WII_MAP_ARCADE);
+    // The Feather's amp has no volume control; this is the master volume
+    // for the whole mix (hal_audio_feather_esp32.h). X + Up/Down on the
+    // controller moves it from here.
+    feather_audio_set_volume(AUDIO_VOLUME);
 
     hal_video_run();
 
@@ -196,6 +208,9 @@ void loop() {
     bool left   = hal_input_read(HAL_BTN_LEFT);
     bool right  = hal_input_read(HAL_BTN_RIGHT);
     bool rotate = hal_input_read(HAL_BTN_ROTATE);
+    // The controller's X + Up/Down: the master volume, in 3 dB steps.
+    if (const int steps = feather_wii_input_take_volume_steps())
+        Serial.printf("[invaders-esp32] volume %lu\n", (unsigned long)feather_audio_volume_step(steps));
     bool mirror = hal_input_read(HAL_BTN_MIRROR);   // always false here
 
     // Space Invaders: left/right/shoot only -- no up/down.

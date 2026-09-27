@@ -47,6 +47,11 @@ bool arch_i2s_init(uint32_t sample_rate, int bclk, int lrc, int din);
 // task is pinned away from the core running the game.
 void arch_i2s_set_fill_callback(hal_audio_fill_cb cb);
 
+// Master volume, 0 to 256 (256 = unchanged, the default), linear, applied
+// to each block after the fill callback and before I2S. For a board whose
+// amp has no volume control of its own (the Feather's MAX98357A).
+void arch_i2s_set_volume(uint32_t volume);
+
 // Guard state shared between the game and the audio task. Cross-core safe.
 uint32_t arch_i2s_enter_critical(void);
 void     arch_i2s_exit_critical(uint32_t saved_state);

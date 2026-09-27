@@ -79,6 +79,7 @@
 
 #include "hal/arcade_hal_audio.h"
 #include "board_config_feather_esp32.h"
+#include "hal_audio_feather_esp32.h"
 #include "arch/esp32/arch_audio_i2s.h"
 
 bool hal_audio_init(uint32_t sample_rate) {
@@ -99,5 +100,37 @@ uint32_t hal_audio_enter_critical(void) {
 void hal_audio_exit_critical(uint32_t saved_state) {
     arch_i2s_exit_critical(saved_state);
 }
+
+// --- Master volume (hal_audio_feather_esp32.h) -----------------------------
+
+// 3 dB apart, the steps the console defaults were chosen from
+// (console_audio.cpp has the same table for the consoles' own volume).
+static const uint16_t kVolumeSteps[] = {
+    2, 3, 4, 6, 8, 11, 16, 23, 32, 45, 64, 90, 128, 181, 256,
+};
+static uint32_t s_volume = 256;
+
+void feather_audio_set_volume(uint32_t volume) {
+    s_volume = volume > 256 ? 256 : volume;
+    arch_i2s_set_volume(s_volume);
+}
+
+uint32_t feather_audio_volume_step(int steps) {
+    const int n = (int)(sizeof kVolumeSteps / sizeof kVolumeSteps[0]);
+    int idx = 0;
+    uint32_t best = 0xFFFFFFFFu;
+    for (int i = 0; i < n; i++) {
+        const uint32_t d = kVolumeSteps[i] > s_volume ? kVolumeSteps[i] - s_volume
+                                                      : s_volume - kVolumeSteps[i];
+        if (d < best) { best = d; idx = i; }
+    }
+    int to = idx + steps;
+    if (to < 0) to = 0;
+    if (to >= n) to = n - 1;
+    feather_audio_set_volume(kVolumeSteps[to]);
+    return s_volume;
+}
+
+uint32_t feather_audio_volume(void) { return s_volume; }
 
 #endif // ARDUINO_ADAFRUIT_FEATHER_ESP32_V2
