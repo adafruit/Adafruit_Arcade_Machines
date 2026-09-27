@@ -31,6 +31,7 @@
 #include "driver/gpio.h"   // GPIO_IS_VALID_OUTPUT_GPIO
 #include "hal/arcade_hal_input.h"
 #include "board_config_feather_esp32.h"
+#include "wii_input_feather_esp32.h"
 
 // -1 marks a control this board does not wire. HAL_BTN_MIRROR,
 // HAL_BTN_STRETCH, HAL_BTN_ACTION2 and HAL_BTN_ACTION3 read false forever,
@@ -100,6 +101,9 @@ static void input_task(void *arg) {
             if (f->stable) st |= (1u << i);
         }
         s_state = st;
+        // A Wii Classic / SNES Classic controller, if the sketch started one
+        // (wii_input_feather_esp32.h); returns at once otherwise.
+        feather_wii_input_tick(millis());
         vTaskDelay(pdMS_TO_TICKS(POLL_INTERVAL_MS));
     }
 }
@@ -137,13 +141,16 @@ void hal_input_init(void) {
     if (!started) {
         // Priority above the Arduino loop task so a long frame cannot delay
         // sampling -- the point of this task is a steady interval.
-        xTaskCreatePinnedToCore(input_task, "arcade_input", 2048, NULL, 2, NULL, 0);
+        xTaskCreatePinnedToCore(input_task, "arcade_input", 4096, NULL, 2, NULL, 0);
         started = true;
     }
 }
 
+// A button is pressed if its GPIO line is, or if a connected Wii Classic /
+// SNES Classic controller holds it (wii_input_feather_esp32.h). The
+// controller needs no debounce here: it reports clean digital states.
 bool hal_input_read(uint8_t index) {
     if (index >= HAL_BTN_COUNT) return false;
-    return (s_state >> index) & 1u;
+    return ((s_state >> index) & 1u) || feather_wii_input_held(index);
 }
 #endif

@@ -74,6 +74,7 @@ typedef struct {
     uint8_t  step;           // start-up step
     uint32_t step_at_ms;     // when the current step may run
     bool     requested;      // a report read is pending (0x00 written)
+    uint8_t  fail_streak;    // report transactions failed in a row
 
     // What the controller last said, for reporting.
     uint8_t  id[6];          // identity (register 0xFA)
@@ -86,10 +87,11 @@ typedef struct {
     uint32_t drops;          // times a READY controller stopped answering
 
     // Diagnostics: failures per start-up step (index 0 = the first write,
-    // 0xF0) and, for the latest failure, the step and the Wire result
+    // 0xF0; 5 = a report request, 6 = a report read, both once READY) and,
+    // for the latest failure, the step and the Wire result
     // (endTransmission()'s code, or requestFrom()'s count; for step 4, 0xA4
     // means the identity was read but didn't match).
-    uint32_t step_fails[5];
+    uint32_t step_fails[7];
     uint8_t  last_fail_step;
     uint8_t  last_fail_code;
 } wii_classic_t;
@@ -105,7 +107,8 @@ void wii_classic_service(wii_classic_t *pad, uint32_t now_ms);
 // request() writes the register address (the controller then prepares the
 // data), collect() reads it and updates `buttons`. Each is one short I2C
 // transaction. A failed transaction drops the controller back to ABSENT
-// with no buttons held. Both do nothing unless READY.
+// with no buttons held -- but only after several failures in a row; a
+// single failure just skips that poll. Both do nothing unless READY.
 void wii_classic_request(wii_classic_t *pad);
 void wii_classic_collect(wii_classic_t *pad);
 

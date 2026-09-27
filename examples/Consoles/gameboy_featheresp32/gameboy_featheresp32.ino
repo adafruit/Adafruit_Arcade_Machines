@@ -18,13 +18,22 @@
 // rate is chosen for (GAMEBOY_APU_RATE in gameboy_core.h), so both boards
 // play at the same speed and pitch.
 //
-// Controls, for now the Feather's own buttons (a Wii Classic controller
-// over I2C comes next, extras/CONSOLES_PLAN.md):
-//   D-pad   UP 7, DOWN 8, LEFT 39, RIGHT 36
-//   A       SHOOT (4)        B       START2 (34)
-//   Start   START1 (25)      Select  COIN (26)
-//   ROTATE (37) cycles the picture's rotation.
-//   The palette stays DMG green: this board has no button for it yet.
+// Controls: the Feather's own buttons, and a Wii Classic or SNES Classic
+// controller on STEMMA QT through the Wii Nunchuck breakout, either or both
+// at once (wii_input_feather_esp32.h).
+//
+//                Feather button       Controller
+//   D-pad        UP 7, DOWN 8,        D-pad
+//                LEFT 39, RIGHT 36
+//   A            SHOOT (4)            A
+//   B            START2 (34)          B
+//   Start        START1 (25)          Start (+ on the Wii Classic)
+//   Select       COIN (26)            Select (-)
+//   Rotation     ROTATE (37)          R
+//   Palette      --                   Y   (DMG green, Greys, Pocket, GBC)
+//   Volume       --                   hold X, press Up / Down (3 dB steps)
+//   L does nothing on the Game Boy, as Button 1 does nothing on the Fruit
+//   Jam's.
 //
 // Battery saves are not available on this board yet: its SD card shares
 // the SPI bus with the display (CONSOLES_PLAN.md, Phase 4); a battery
@@ -37,6 +46,8 @@
 #include <machines/gb/gameboy_palette.h>
 #include <console/console_audio.h>
 #include <boards/feather_esp32/board_config_feather_esp32.h>
+#include <boards/feather_esp32/wii_input_feather_esp32.h>
+#include <input/wii_classic.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -52,8 +63,8 @@
 // The MAX98357A amp has no volume control, and the Game Boy's full-scale
 // output through it is very loud: Tetris averages -14 to -16 dBFS, some
 // 9-11 dB above Super Mario Bros. 16 of 256 (-24 dB) was chosen by ear on
-// the hardware, stepping down from 128 (DEVNOTES #142). A volume control
-// on the Wii Classic controller comes later.
+// the hardware, stepping down from 128 (DEVNOTES #142). The controller's
+// X + Up/Down moves it from there.
 #ifndef AUDIO_VOLUME
 #define AUDIO_VOLUME 16u
 #endif
@@ -89,6 +100,10 @@ static void print_cart(void) {
 }
 
 void setup() {
+    // A deep transmit buffer, so a status line queues rather than blocking
+    // the paint loop: at 115200 baud a line that overflows the default one
+    // stalled a paint by ~45 ms, long enough to run the audio dry (#143).
+    Serial.setTxBufferSize(2048);
     Serial.begin(115200);
     delay(1500);
     Serial.println("[gameboy-esp32] boot");
@@ -98,6 +113,10 @@ void setup() {
     if (g_cart_ok) print_cart();
     else Serial.printf("[gameboy-esp32] cart FAILED: %s\n",
                        gameboy_boot_error_text(g_system.boot_error));
+
+    // The controller, if one is plugged in now or later. After the cart
+    // load, which starts the input task it runs on.
+    feather_wii_input_begin(FEATHER_WII_MAP_CONSOLE);
 
     // Hand the SPI bus to the IDF display driver -- AFTER the cartridge is
     // read over SPIClass; the two cannot both own it (arch_spi_dma.h).
@@ -140,11 +159,17 @@ void loop() {
     bool left   = hal_input_read(HAL_BTN_LEFT);
     bool right  = hal_input_read(HAL_BTN_RIGHT);
     bool a      = hal_input_read(HAL_BTN_SHOOT);
-    bool b      = hal_input_read(HAL_BTN_START2);
+    bool b      = hal_input_read(HAL_BTN_START2) || hal_input_read(HAL_BTN_ACTION2);
     bool start  = hal_input_read(HAL_BTN_START1);
     bool select = hal_input_read(HAL_BTN_COIN);
     bool rotate = hal_input_read(HAL_BTN_ROTATE);
-    bool palette_next = hal_input_read(HAL_BTN_MIRROR); // not wired here yet
+    bool palette_next = hal_input_read(HAL_BTN_MIRROR); // the controller's Y
+
+    // The controller's X + Up/Down. Counted on the input task, so a tap
+    // between two paints still counts.
+    if (const int steps = feather_wii_input_take_volume_steps())
+        Serial.printf("[gameboy-esp32] volume %lu\n",
+                      (unsigned long)console_audio_volume_step(steps));
 
 #ifdef TEST_AUTOSTART
     // gameboy_fruitjam's Tetris script, counted in emulated frames: Start on
@@ -168,6 +193,12 @@ void loop() {
     gameboy_input_update(&g_system, up, down, left, right, a, b, start, select,
                          rotate, palette_next);
     gameboy_present(&g_system);
+    static uint8_t palette_shown = 0xFF;
+    if (g_system.palette != palette_shown) {
+        palette_shown = g_system.palette;
+        Serial.printf("[gameboy-esp32] palette %s\n",
+                      gameboy_palette_name((gameboy_palette_t)palette_shown));
+    }
     // 3. Release core 0 for the next two frames, and paint concurrently.
     for (uint32_t f = 0; f < EMULATED_FRAMES_PER_PAINT; f++) xTaskNotifyGive(g_emu_task);
     gameboy_paint(&g_system);
@@ -199,10 +230,12 @@ void loop() {
         gameboy_take_emulate_us(&emu_mean, &emu_max);
         gameboy_audio_stats_t as;
         gameboy_audio_take_stats(&as);
+        feather_wii_input_stats_t ws;
+        feather_wii_input_get_stats(&ws);
         Serial.printf("[gameboy-esp32] paint %lu: %.1f fps display, %.1f fps emulated (%.0f%% of 60 Hz); "
                       "paint mean %lu max %lu us; emulate mean %lu max %lu us (budget %u); "
                       "audio ur %lu ov %lu min %lu depth %lu gen_max %lu us; rot %u, pad 0x%02X, "
-                      "core_err %lu\n",
+                      "core_err %lu; wii %s%s 0x%04X (drops %lu, skipped %lu), volume %lu\n",
                       (unsigned long)paint, fps, fps * EMULATED_FRAMES_PER_PAINT,
                       100.0f * fps * EMULATED_FRAMES_PER_PAINT / 60.0f,
                       (unsigned long)(paint_sum / 30u), (unsigned long)paint_max,
@@ -211,7 +244,11 @@ void loop() {
                       (unsigned long)as.min_depth, (unsigned long)as.depth,
                       (unsigned long)as.gen_us_max,
                       (unsigned)g_system.rotation, (unsigned)g_system.pad,
-                      (unsigned long)gameboy_core_errors());
+                      (unsigned long)gameboy_core_errors(),
+                      ws.connected ? "connected" : "absent", ws.hires ? " hires" : "",
+                      (unsigned)ws.buttons, (unsigned long)ws.drops,
+                      (unsigned long)(ws.request_fails + ws.read_fails),
+                      (unsigned long)console_audio_volume());
         paint_sum = paint_max = 0;
         // Every tenth heartbeat, which cartridge this is (the boot line is
         // lost if the serial port opened late).
