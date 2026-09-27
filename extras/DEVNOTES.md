@@ -5780,7 +5780,9 @@ rounds of hardware testing and a collaborator's evening. Corrected in #116.
 
 Galaga on the Feather ESP32 went from **76% of arcade speed under sprite
 load to 97-100%** by moving emulation to core 0. Played through stage 1 on
-hardware with no crash.
+hardware with no crash. (**Correction, #145:** longer play on busier
+stages runs at 87-92%, in this very build (the v2.10.1 release's binary);
+97-100% held for stage 1 only.)
 
 **This came from reading galagino's source rather than reasoning.** Lined
 up against it, we already did three of its four techniques and had arrived
@@ -7956,3 +7958,59 @@ save a second later. That is the game's own behaviour, and it's harmless.
 The seven Feather arcade builds link and call the service each frame; with
 nothing queued it's a single atomic load. Not run on hardware with this
 change.
+
+### 145. A master volume for the Feather's arcade games
+
+The consoles got a volume setting in #142 because the MAX98357A amp has
+none. The arcade games didn't, because each mixes in its own per-game
+audio code, not in `console_audio`. So the Feather gains a **master
+volume on the finished mix**, which covers all seven games without
+touching their audio:
+
+- **`arch_i2s_set_volume()`, in the ESP32 audio task.** It scales each
+  256-frame block after the game's fill callback and before I2S, on both
+  16-bit halves of each frame (the fill contract makes them the same mono
+  sample). Full volume skips the loop.
+- **`feather_audio_set_volume()` / `feather_audio_volume_step()`**
+  (`hal_audio_feather_esp32.h`): the board's calls, with the same 3 dB
+  table as the consoles.
+- **The controller:** X + Up/Down now steps the volume in the arcade map as
+  well as the console map. While X is held the D-pad goes to the volume,
+  not the game. Each arcade sketch applies the steps where it reads its
+  buttons and prints the new level.
+
+**The default, 45 (-15 dB), was tuned live on Galaga,** not flashed build
+by build. Opening the serial port resets this board, so one streaming
+recorder ran for the whole session, and the user stepped the volume with
+X + Up/Down until it matched the consoles. The log showed every level
+tried, 8 to 256, ending at 45. All seven games start at 45; the other six
+weren't tuned individually.
+
+**Speed:**
+
+- **Attract mode, same frames:** identical to the release build with the
+  controller. 100% everywhere, except 96% at frame 360 and 99% at frame
+  450, the two dips #143 measured. The scaling loop is ~256 multiplies per
+  11.6 ms block.
+- **Gameplay, measured properly afterwards.** The user played Galaga for
+  several minutes on each of three builds while one recorder logged every
+  one-second window:
+
+  | Build | Gameplay windows | Mean | 97-100% | 90-96% | below 90% | Lowest |
+  |---|---|---|---|---|---|---|
+  | v2.10.1 release binary (no controller, no volume) | 239 | 93.1% | 70 | 101 | 68 | 87% |
+  | This branch, controller plugged in | 178 | 92.6% | 54 | 55 | 69 | 84% |
+  | This branch, controller unplugged | 130 | 91.3% | 12 | 71 | 47 | 86% |
+
+  **Nothing regressed.** All three give 100% on quiet screens and 87-92%
+  while a stage is full of enemies. #114's "97-100% under sprite load"
+  came from stage 1 only, and the README's "each at 100%" was wrong for
+  Galaga; both are corrected. The controller and the master volume are
+  cleared: the release binary predates both and measures the same. A fix
+  would be its own job: the Game Boy's IRAM lever (#142) is the obvious
+  candidate for Galaga's three Z80s.
+- **After slow stretches,** the limiter ran a few windows at 101%, repaying
+  the time it had lost (#122).
+
+Played on hardware: Galaga, with the volume combo working. The other six
+arcade sketches build; not run with this change.

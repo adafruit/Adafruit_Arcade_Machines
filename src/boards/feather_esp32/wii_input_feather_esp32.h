@@ -31,7 +31,8 @@ extern "C" {
 #endif
 
 typedef enum {
-    // A=SHOOT, B=ACTION2, Start=START1, Select=COIN, Y=START2, R=ROTATE.
+    // A=SHOOT, B=ACTION2, Start=START1, Select=COIN, Y=START2, R=ROTATE,
+    // and X + Up/Down for the volume, as below.
     FEATHER_WII_MAP_ARCADE = 0,
     // The Game Boy and the NES: A=SHOOT, B=ACTION2, Start=START1,
     // Select=COIN, L=STRETCH, R=ROTATE, Y=MIRROR (the palette), so the
@@ -54,8 +55,10 @@ void feather_wii_input_tick(uint32_t now_ms);
 bool feather_wii_input_held(uint8_t hal_btn);
 
 // Volume steps since the last call, from X+Up (+1 each press) and X+Down
-// (-1) under FEATHER_WII_MAP_CONSOLE. Counted on the input task, so a quick
-// tap between two paints still counts.
+// (-1), in either map. Counted on the input task, so a quick tap between
+// two paints still counts. The sketch applies them: the consoles through
+// console_audio_volume_step(), the arcade games through
+// feather_audio_volume_step() (hal_audio_feather_esp32.h).
 int feather_wii_input_take_volume_steps(void);
 
 // For the heartbeat.

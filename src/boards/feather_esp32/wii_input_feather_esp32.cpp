@@ -63,8 +63,8 @@ static uint32_t map_buttons(uint16_t w) {
     for (size_t i = 0; i < n; i++)
         if (w & t[i].wii) held |= 1u << t[i].hal;
 
-    // The D-pad, unless X is holding it for the volume.
-    if (!(console && (w & WII_BTN_X))) {
+    // The D-pad, unless X is holding it for the volume (both maps).
+    if (!(w & WII_BTN_X)) {
         if (w & WII_BTN_UP)    held |= 1u << HAL_BTN_UP;
         if (w & WII_BTN_DOWN)  held |= 1u << HAL_BTN_DOWN;
         if (w & WII_BTN_LEFT)  held |= 1u << HAL_BTN_LEFT;
@@ -92,7 +92,7 @@ void feather_wii_input_tick(uint32_t now_ms) {
     } else if (phase == 1) {
         wii_classic_collect(&s_pad);
         const uint16_t w = wii_classic_buttons(&s_pad);
-        if (s_map == FEATHER_WII_MAP_CONSOLE && (w & WII_BTN_X)) {
+        if (w & WII_BTN_X) {
             const uint16_t pressed = w & (uint16_t)~s_prev;
             if (pressed & WII_BTN_UP)   s_volume_steps = s_volume_steps + 1;
             if (pressed & WII_BTN_DOWN) s_volume_steps = s_volume_steps - 1;
