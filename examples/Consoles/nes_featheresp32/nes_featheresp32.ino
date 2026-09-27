@@ -47,6 +47,13 @@
 // the ring must sit deep enough for the consumer to ride that out
 // (console_audio_set_target(), DEVNOTES #119).
 #define AUDIO_RING_TARGET 1250u
+// The MAX98357A amp has no volume control of its own (console_audio_set_volume();
+// 256 = full). 48 (-14.5 dB) matches gameboy_featheresp32's 16 by the
+// source levels (SMB is ~10 dB quieter than Tetris) and was confirmed by
+// ear on the hardware (DEVNOTES #142).
+#ifndef AUDIO_VOLUME
+#define AUDIO_VOLUME 48u
+#endif
 
 static nes_system g_system;
 static bool       g_cart_ok = false;
@@ -92,6 +99,7 @@ void setup() {
     // loop that hides the error screen (DEVNOTES #123).
     if (g_cart_ok) {
         console_audio_set_target(AUDIO_RING_TARGET);
+        console_audio_set_volume(AUDIO_VOLUME);
         // The audio pump has been playing silence since the cartridge load
         // (through the display init), and each of those samples counted as
         // an underrun. Start the counters here, with the game.

@@ -7750,8 +7750,25 @@ samples are queued, never in the ISR, and full volume stays a plain copy.
 The level was chosen by ear on the hardware, stepping down 128, 90, 64,
 45, 32, 16: **16 (-24 dB)** is the Game Boy Feather's default. The Fruit
 Jam keeps full volume. A volume control on the Wii Classic controller is
-planned. The NES Feather sketch is unchanged at full volume; SMB there is
-~10 dB quieter than Tetris at the source.
+planned.
+
+The NES Feather sketch was then set to match. SMB is ~10 dB quieter than
+Tetris at the source, so 256 x (Tetris's RMS x 16/256) / SMB's RMS gives
+44 to 54. **48 (-14.5 dB)**, the first try, sounded right on the
+hardware, so it is the NES Feather's default.
+
+**A card that works in a computer can refuse SPI.** For that NES test the
+SMB card, which had loaded on this Feather earlier the same day, stopped
+mounting: a red screen after ~10 s of retries, through power cycles and a
+reseat, while it still read fine in a computer. SdFat's error, printed
+from a temporary diagnostic, was `sdErrorCode 0x01` (CMD0) with data
+`0xFF`: the card never answered the first command. It is the same
+signature as #127's bad card on the Fruit Jam. The Tetris card mounted in
+the same slot at once, so the slot was fine. A computer's reader talks to
+a card in native SD mode, while these boards use SPI mode, which some
+cards handle badly. The fix was to copy SMB to another card. One card can
+hold both consoles' games: each sketch looks only for its own extension
+in `/cart/`.
 
 **Open: two slow boots.** In about 11 boots during this work, two came up
 at a third of normal speed:
