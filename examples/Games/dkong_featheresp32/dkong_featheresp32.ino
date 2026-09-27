@@ -35,6 +35,7 @@
 #include <hal/arcade_hal_video.h>
 #include <hal/arcade_hal_input.h>
 #include <boards/feather_esp32/board_config_feather_esp32.h>
+#include <boards/feather_esp32/wii_input_feather_esp32.h>
 #include <machines/dkong/dkong_machine.h>
 #include <machines/dkong/dkong_video.h>
 #include <machines/dkong/dkong_input.h>
@@ -126,6 +127,12 @@ void setup() {
     // Hand the SPI bus to the IDF driver. Must come AFTER asset loading --
     // SdFat reads the ROMs over SPIClass, and the two cannot both own the
     // peripheral. See arch_spi_dma.h.
+    // A Wii Classic or SNES Classic controller on STEMMA QT, if one is
+    // plugged in now or later (wii_input_feather_esp32.h): A=SHOOT,
+    // B=ACTION2, Start=START1, Select=COIN, Y=START2, R=ROTATE, alongside
+    // the Feather's own buttons.
+    feather_wii_input_begin(FEATHER_WII_MAP_ARCADE);
+
     hal_video_run();
 
     // ONLY WHEN THE ASSETS ACTUALLY LOADED. The note about starting this

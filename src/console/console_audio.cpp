@@ -98,6 +98,30 @@ void console_audio_set_volume(uint32_t volume) {
     g_volume = volume > CONSOLE_AUDIO_VOLUME_FULL ? CONSOLE_AUDIO_VOLUME_FULL : volume;
 }
 
+// 3 dB apart (x1.41), the steps the Feather's defaults were chosen from.
+static const uint16_t kVolumeSteps[] = {
+    2, 3, 4, 6, 8, 11, 16, 23, 32, 45, 64, 90, 128, 181, 256,
+};
+#define VOLUME_STEP_COUNT (sizeof kVolumeSteps / sizeof kVolumeSteps[0])
+
+uint32_t console_audio_volume_step(int steps) {
+    // From the step nearest the current volume, which need not be on the
+    // table (the NES Feather's default is 48).
+    uint32_t idx = 0, best = 0xFFFFFFFFu;
+    for (uint32_t i = 0; i < VOLUME_STEP_COUNT; i++) {
+        const uint32_t d = kVolumeSteps[i] > g_volume ? kVolumeSteps[i] - g_volume
+                                                      : g_volume - kVolumeSteps[i];
+        if (d < best) { best = d; idx = i; }
+    }
+    int32_t to = (int32_t)idx + steps;
+    if (to < 0) to = 0;
+    if (to >= (int32_t)VOLUME_STEP_COUNT) to = VOLUME_STEP_COUNT - 1;
+    g_volume = kVolumeSteps[to];
+    return g_volume;
+}
+
+uint32_t console_audio_volume(void) { return g_volume; }
+
 void console_audio_push(const int16_t *samples, uint32_t n) {
     static int16_t frame[CONSOLE_AUDIO_MAX_FRAME + MAX_CORRECTION];
     if (n > CONSOLE_AUDIO_MAX_FRAME) n = CONSOLE_AUDIO_MAX_FRAME;

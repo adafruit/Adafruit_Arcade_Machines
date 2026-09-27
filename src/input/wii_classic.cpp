@@ -12,6 +12,13 @@ namespace {
 
 constexpr uint8_t  kAddr = 0x52;
 constexpr uint32_t kRetryMs = 1000;  // between attempts to find a controller
+// A connected controller is given up for gone only after this many report
+// transactions IN A ROW fail. A first-party Wii Classic on the Feather ESP32
+// declines about one pointer write in a few hundred (a NACK, which that
+// core's Wire reports as code 4), and treating each one as an unplug cost a
+// second of dead input every couple of seconds. Four polls is ~16 ms at the
+// Feather's 250 Hz, so a real unplug still clears the buttons at once.
+constexpr uint8_t  kFailLimit = 4;
 
 uint8_t g_code; // the latest Wire result, for the diagnostics
 
@@ -38,13 +45,18 @@ bool read_n(TwoWire *w, uint8_t *buf, uint8_t n) {
 }
 
 void note_fail(wii_classic_t *p, uint8_t step) {
-    if (step < 5) p->step_fails[step]++;
+    if (step < 7) p->step_fails[step]++;
     p->last_fail_step = step;
     p->last_fail_code = g_code;
 }
 
+// A report transaction failed: skip this poll (the last buttons stand), or
+// drop the controller if it has now failed kFailLimit times running.
+void report_failed(wii_classic_t *p, uint8_t step);
+
 void go_absent(wii_classic_t *p, uint32_t now_ms) {
     if (p->state == WII_STATE_READY) p->drops++;
+    p->fail_streak = 0;
     p->state = WII_STATE_ABSENT;
     p->buttons = 0;
     p->requested = false;
@@ -71,6 +83,12 @@ uint16_t decode(uint8_t hi, uint8_t lo) {
     if (h & 0x10) v |= WII_BTN_MINUS;
     if (h & 0x08) v |= WII_BTN_HOME;
     return v;
+}
+
+void report_failed(wii_classic_t *p, uint8_t step) {
+    note_fail(p, step);
+    p->requested = false;
+    if (++p->fail_streak >= kFailLimit) go_absent(p, millis());
 }
 
 } // namespace
@@ -129,14 +147,15 @@ void wii_classic_service(wii_classic_t *p, uint32_t now_ms) {
 
 void wii_classic_request(wii_classic_t *p) {
     if (p->state != WII_STATE_READY) return;
-    if (!write_ptr(p->wire, 0x00)) { go_absent(p, millis()); return; }
+    if (!write_ptr(p->wire, 0x00)) { report_failed(p, 5); return; }
     p->requested = true;
 }
 
 void wii_classic_collect(wii_classic_t *p) {
     if (p->state != WII_STATE_READY || !p->requested) return;
     p->requested = false;
-    if (!read_n(p->wire, p->raw, 8)) { go_absent(p, millis()); return; }
+    if (!read_n(p->wire, p->raw, 8)) { report_failed(p, 6); return; }
+    p->fail_streak = 0;
     p->hires = !(p->raw[6] == 0x00 && p->raw[7] == 0x00);
     p->buttons = p->hires ? decode(p->raw[6], p->raw[7]) : decode(p->raw[4], p->raw[5]);
 }

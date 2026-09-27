@@ -7803,3 +7803,93 @@ its average audio ring depth (855 against 856). Static RAM fell from 39%
 to 21% (Game Boy) and from 43% to 19% (NES). Played on the TV, both
 look, sound and play right, with no red lines.
 
+
+### 143. The Wii Classic / SNES Classic controller on the Feather ESP32: 100 kHz, tolerate a NACK, and a status line that ran the audio dry
+
+`src/boards/feather_esp32/wii_input_feather_esp32` puts the Wii Classic
+driver (`src/input/wii_classic`, #132) on the Feather. It is the Feather's
+counterpart of the Fruit Jam's USB module. The sketch calls
+`feather_wii_input_begin(FEATHER_WII_MAP_ARCADE)` or `..._CONSOLE` once,
+and `hal_input_read()` ORs the pad in with the Feather's own buttons.
+
+- **Polled on the existing 1 kHz input task**, every 4 ticks: the request
+  on one tick, the collect on the next, so the controller's ~200 us
+  preparation time is never waited out. The pad is read at 250 Hz. The
+  task's stack went from 2 KB to 4 KB for the Wire calls.
+- **The bus:** STEMMA QT, SDA 22 / SCL 20, with its power switched on
+  GPIO 2 (`NEOPIXEL_I2C_POWER`), shared with the TFT FeatherWing V2's
+  TSC2007 at 0x48.
+- **The console map** gives the pad what the Feather has no buttons for:
+  L = STRETCH (the NES's 8:7), R = ROTATE, Y = MIRROR (palette), and X as a
+  volume modifier. While X is held, Up and Down step the volume 3 dB
+  (`console_audio_volume_step()`, 2 to 256), and the D-pad isn't passed to
+  the game. The steps are counted on the input task, so a quick tap
+  between two paints still counts.
+- **The arcade map** is the one decided for both boards, plus R = ROTATE
+  on the Feather. No arcade game reads ACTION2, so B does nothing there,
+  as on the Fruit Jam.
+- **All nine Feather sketches** start it. The consoles read B from START2
+  or ACTION2, so the Feather's B button and the pad's both work.
+
+**Three bugs, found in the order they hid each other:**
+
+1. **Each NACK dropped the controller.** With a Wii Classic plugged in,
+   the driver connected and dropped again every second or two. A counter
+   per report transaction showed every drop was the report REQUEST (the
+   pointer write, 0x00) failing, with Wire code 4. In this core's
+   `Wire.cpp` (lines 468-475), 4 is "anything but OK, FAIL, NOT_FOUND or
+   TIMEOUT", which is where the IDF I2C driver's unexpected-NACK error
+   lands. The controller was declining about one pointer write in a few
+   hundred, and the driver treated each as an unplug, costing a second of
+   dead input. **Fix, in the shared driver:** a failed report
+   transaction just skips that poll (the last buttons stand), and only 4
+   failures in a row count as an unplug, ~16 ms at 250 Hz.
+2. **At 400 kHz, every report was 0xFF.** With the drops gone, no button
+   reached the game. Printing the raw report showed all eight bytes 0xFF,
+   while start-up and the identity read (`00 00 A4 20 03 01`, a Classic
+   Controller in high-resolution mode) were fine. **At 100 kHz the
+   reports are real** (`85 7B 81 82 0E 11 FF FF`: sticks and triggers
+   centred, no buttons), with zero failures. The same controller ran at
+   400 kHz on the Fruit Jam's self-test. This bus also carries the
+   FeatherWing's touch controller and its pull-ups, a likely reason, not
+   proven. `WII_I2C_HZ` is 100 kHz on the Feather; a poll is then ~1 ms
+   of bus time, spent blocked in the driver.
+3. **Audio underruns every 10 seconds, from the status line.** Once
+   reports worked, the Game Boy showed short underruns (524, 135, 62
+   samples) that the demo never had before. They repeated exactly every
+   300 paints. Each came one window after a window running at 28.7 fps
+   instead of 30.0, about 45 ms lost once. Every 300 paints is when the
+   sketch prints its cartridge line, and the status line had grown with
+   the Wii fields plus a raw-bytes diagnostic. Together they overflowed
+   the serial transmit buffer, and at 115,200 baud `Serial.printf`
+   blocked the paint loop. **Fix:** the diagnostic was removed, the Wii
+   fields shortened, and both console sketches call
+   `Serial.setTxBufferSize(2048)`. The next 35 s: a flat 30.0 fps, 0
+   underruns.
+
+**What the polling costs, measured on the same frames:**
+
+| Game | Without the pad code | With it |
+|---|---|---|
+| Tetris, title | 14,084 us per frame | 14,210 us |
+| Tetris, demo | 15,285 us | 15,300 to 15,600 us |
+| SMB, attract | 10,600 to 10,700 us | 11,300 us |
+| Galaga, attract | 97% (frame 360), 100% (450) | 96%, 99% |
+
+- **Galaga:** 12 of 14 windows are at 100% either way. The two dips
+  reproduced in a second run.
+- **It's the I2C traffic, not its rate.** With polling effectively
+  disabled, Galaga went back to 97% / 100%. At 125 Hz it was unchanged
+  from 250 Hz (96% / 99%), so 250 Hz stays. Everything is still inside its
+  budget.
+
+Checked on hardware:
+
+- A first-party Wii Classic in Tetris (every control, the palettes and the
+  volume), SMB (plus aspect) and Galaga.
+- A first-party SNES Classic in SMB, hot-plugged in place of the Wii
+  Classic while the game ran.
+
+All seven arcade builds compile with the pad; only Galaga was played with
+it. The Fruit Jam's Wii self-test still builds; the driver change applies
+there too, untested on that board.

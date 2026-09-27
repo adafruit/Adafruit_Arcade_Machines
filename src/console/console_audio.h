@@ -44,6 +44,12 @@ void console_audio_set_target(uint32_t samples);
 #define CONSOLE_AUDIO_VOLUME_FULL 256u
 void console_audio_set_volume(uint32_t volume);
 
+// Moves the volume `steps` steps of 3 dB up (positive) or down, from the
+// step nearest the current volume, within 2..256 (never silent). Returns
+// the new volume. For a controller's volume buttons.
+uint32_t console_audio_volume_step(int steps);
+uint32_t console_audio_volume(void);
+
 // One frame of mono samples from the emulation loop (core 0).
 void console_audio_push(const int16_t *samples, uint32_t n);
 

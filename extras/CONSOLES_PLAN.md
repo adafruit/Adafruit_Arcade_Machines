@@ -307,7 +307,8 @@ resolution, byte 6 bit 0 is always set, so both can never be zero.
   is configured only at boot. **Feather ESP32 V2:** SDA 22 / SCL 20. The
   I2C power pin (GPIO 2) must be on, and the TFT FeatherWing V2's TSC2007
   touch controller (0x48) shares the bus. The controller is at 0x52.
-- **Timing:** a poll is about 250 µs of bus traffic at 400 kHz, plus about
+- **Timing** (the Fruit Jam's numbers; the Feather runs at 100 kHz, see
+  step 2 below): a poll is about 250 µs of bus traffic at 400 kHz, plus about
   200 µs before the controller's data is ready. The poll must not starve
   the Fruit Jam's roughly 2.2 ms display queue. The self-test measures the
   cost first; the heartbeat's `starve` and `minq` then judge it in
@@ -315,7 +316,7 @@ resolution, byte 6 bit 0 is always set, so both can never be zero.
 
 **Mapping (decided 2026-09-25):**
 
-| Controller | Arcade games (both boards) | Game Boy, Fruit Jam | Game Boy, Feather |
+| Controller | Arcade games (both boards) | Game Boy, Fruit Jam | Game Boy and NES, Feather |
 |------------|----------------------------|---------------------|-------------------|
 | D-pad | UP / DOWN / LEFT / RIGHT | D-pad | D-pad |
 | A | SHOOT | A | A |
@@ -324,12 +325,19 @@ resolution, byte 6 bit 0 is always set, so both can never be zero.
 | Select (-) | COIN | Select | Select |
 | Y | START2 | (unmapped) | MIRROR, Button 3 (palette) |
 | L trigger | (unmapped) | (unmapped) | STRETCH, Button 1 |
-| R trigger | (unmapped) | (unmapped) | ROTATE, Button 2 |
-| X, ZL, ZR, Home | (unmapped) | (unmapped) | (unmapped) |
+| R trigger | (unmapped; ROTATE on the Feather) | (unmapped) | ROTATE, Button 2 |
+| X | (unmapped) | (unmapped) | hold for VOLUME: X + Up / Down, 3 dB steps |
+| ZL, ZR, Home | (unmapped) | (unmapped) | (unmapped) |
 
 On the Feather, the pad then replaces the on-board display buttons. A
-Game Boy build there needs no GPIO buttons at all. (The Game Boy is not
-yet ported to the Feather; this row is for when it is.)
+console build there needs no GPIO buttons at all. The Game Boy has no
+aspect mode, so L does nothing there, as Button 1 does nothing on the
+Fruit Jam's. R = ROTATE in the Feather's arcade games was added when they
+got the pad (2026-09-26): those sketches read the rotate button and
+nothing else uses R. X was chosen as the volume modifier because it is
+unmapped on the consoles and both first-party pads have it (the SNES
+Classic has no Home, ZL or ZR); while X is held, the D-pad goes to the
+volume and not to the game.
 
 **Test controllers:** first-party Wii Classic and SNES Classic now; clones
 later, which is when the knockoff format handling gets its real test.
@@ -369,10 +377,14 @@ the tree. If the Fruit Jam comes back to I2C, two fixes were considered:
 1. **Done.** A self-test sketch (`examples/SelfTest/wii_classic_test_fruitjam`)
    prints the identity, report format, raw bytes, decoded buttons and
    poll timing.
-2. **The Feather** (next, when the Feather comes up): a Feather self-test,
-   then the driver plus board input merging, measured in the Feather's
-   games. Check the I2C power pin and the shared TSC2007 touch
-   controller.
+2. **Done (2026-09-26, DEVNOTES #143).** `src/boards/feather_esp32/wii_input_feather_esp32`
+   polls the pad on the Feather's 1 kHz input task at 250 Hz and
+   `hal_input_read()` ORs it in; all nine Feather sketches call
+   `feather_wii_input_begin()` with the arcade or console map. The
+   sketches' own heartbeats did the self-test's job. **The Feather's bus
+   runs at 100 kHz:** at 400 kHz the Wii Classic's reports came back as
+   all 0xFF. Both first-party pads, and hot-plugging, checked on hardware
+   in Tetris, SMB and Galaga.
 3. The Fruit Jam: parked (above); USB gamepads come first there.
 
 ### USB gamepads on the Fruit Jam (planned 2026-09-25)
@@ -905,7 +917,7 @@ project's hardware-verified standard.
 | **1b. Game Boy, bank-switched carts** (**done** 2026-09-25: DEVNOTES #129, #130) | MBC1/3/5, ROMs in PSRAM, battery saves through the new storage write path. mooneye results recorded but not required (see [Why Peanut-GB, not SameBoy](#why-peanut-gb-not-sameboy)). | A save survives a power cycle on hardware. A compatibility list exists. |
 | **2. NES** (**done** 2026-09-26: SMB and SMB3 (MMC3, from PSRAM) in all four rotations, aspect correction, and Zelda's battery save surviving a power cycle; DEVNOTES #135-#138) | **Spike first:** a host harness running nofrendo and fixNES on blargg's test ROMs, with frame timing (`extras/tools/nes_test`), then nofrendo on the Fruit Jam with Super Mario Bros. against the 16.7 ms budget. Then port the chosen core onto the HAL (the first GPL core): PicoDVI video at 252 MHz, our audio and input, console geometry. The core brings its mappers with it (nofrendo: 59), so there's no mapper-by-mapper build-up. | blargg's NES CPU tests pass on the host harness. Super Mario Bros. (NROM) and an MMC3 game run at 60 fps on the Fruit Jam with sound, **in all four rotations**. The `nm` check passes on every arcade binary. |
 | **3. SMS / Game Gear** | Port SMS Plus **with its Z80 replaced by our `src/cpu/z80/`** | The license table shows no non-commercial files left. One title per system runs at 60 fps. |
-| **4. Feather ESP32** (**first half done** 2026-09-26: both consoles play at full speed on hardware, with volume set by ear; DEVNOTES #140-#142. Still to do: the Wii Classic controller, and saves) | Game Boy and NES on the second board, which is the part of our case PicoPlus doesn't cover | Both run on hardware, including a save over the shared SPI bus (see Risks) |
+| **4. Feather ESP32** (**mostly done** 2026-09-26: both consoles play at full speed on hardware, with volume set by ear, and the Wii Classic / SNES Classic controller works in every Feather sketch; DEVNOTES #140-#143. Still to do: saves) | Game Boy and NES on the second board, which is the part of our case PicoPlus doesn't cover | Both run on hardware, including a save over the shared SPI bus (see Risks) |
 | **5. Genesis** *(spike only)* | Swap Gwenesis's 68000 for MIT Musashi, then measure it at 252 MHz. If it doesn't fit, estimate the cost of an HSTX Fruit Jam backend at a higher clock. | A go/no-go number and a clock requirement, not a port |
 
 ## Game Boy compatibility list

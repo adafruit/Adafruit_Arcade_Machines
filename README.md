@@ -96,9 +96,16 @@ two boards.
 [`gameboy_featheresp32/`](examples/Consoles/gameboy_featheresp32/) (60Hz, as
 on the Fruit Jam) and [`nes_featheresp32/`](examples/Consoles/nes_featheresp32/)
 (60.1Hz). One microSD card can hold both, a `.gb` and a `.nes` in `/cart`:
-each sketch looks only for its own. For now they use the Feather's own
-buttons (no palette button) and keep no battery saves, because the card
-shares the SPI bus with the display. See `extras/DEVNOTES.md` #141-#142.
+each sketch looks only for its own. They keep no battery saves yet,
+because the card shares the SPI bus with the display. See
+`extras/DEVNOTES.md` #141-#142.
+
+**A Wii Classic or SNES Classic controller** works in every Feather
+sketch, arcade and console, on the STEMMA QT port through the Wii
+Nunchuck breakout, alongside the Feather's own buttons. On the consoles
+it adds what the Feather has no buttons for: L for 8:7 aspect (NES), Y for
+the palette, and X + Up/Down for the volume. See `extras/DEVNOTES.md` #143
+and the mapping table in `extras/CONSOLES_PLAN.md`.
 
 \* Lunar Rescue's is the one number here that is **not** a cabinet
 measurement. It shares Space Invaders' 8080bw board and 59.542Hz refresh, but
