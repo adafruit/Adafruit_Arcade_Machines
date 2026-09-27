@@ -35,6 +35,13 @@ static volatile hal_audio_fill_cb g_fill_cb = NULL;
 static bool s_running = false;
 static volatile uint32_t s_volume = 256;
 
+// The core the audio task is pinned to: 0 unless a sketch's build_opt.h
+// says otherwise. Galaga moves it to core 1, because on busy stages its
+// three Z80s need all of core 0 (DEVNOTES #146).
+#ifndef ARCADE_I2S_CORE
+#define ARCADE_I2S_CORE 0
+#endif
+
 void arch_i2s_set_volume(uint32_t volume) { s_volume = volume > 256 ? 256 : volume; }
 
 // CROSS-CORE CRITICAL SECTION, and a spinlock is the right primitive here
@@ -114,7 +121,7 @@ bool arch_i2s_init(uint32_t sample_rate, int bclk, int lrc, int din) {
     // not starved by a long frame, but below the drivers. 4KB of stack is
     // ample -- the mixers work from static state, not from the stack.
     BaseType_t ok = xTaskCreatePinnedToCore(i2s_task, "arcade_i2s", 4096,
-                                            NULL, 2, NULL, 0);
+                                            NULL, 2, NULL, ARCADE_I2S_CORE);
     if (ok != pdPASS) return false;
 
     s_running = true;

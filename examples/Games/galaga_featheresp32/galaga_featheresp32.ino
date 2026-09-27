@@ -40,6 +40,7 @@
 #include <machines/galaga/galaga_machine.h>
 #include <machines/galaga/galaga_video.h>
 #include <machines/galaga/galaga_input.h>
+#include <machines/galaga/galaga_audio.h>
 
 // Two emulated frames per painted frame -- see pacman_run_frames(). The
 // panel cannot reach 60Hz, so the game would otherwise run in slow motion.
@@ -98,11 +99,17 @@ static TaskHandle_t g_video_task = NULL;
 // this task always returns to a blocking wait and idle always runs. It
 // also gives core 1 a window in which the machine is provably quiescent,
 // which is where the sprite latch has to happen.
+// Time spent emulating, for the heartbeat: summed over each paint's two
+// frames by this task, read and cleared by core 1 while this task is idle.
+static volatile uint32_t g_emu_pair_us = 0;
+
 static void emulation_task(void *arg) {
     (void)arg;
     for (;;) {
         ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
+        const uint32_t t0 = micros();
         galaga_run_cpu_frames(&g_system, 1);
+        g_emu_pair_us = g_emu_pair_us + (micros() - t0);
         xTaskNotifyGive(g_video_task);   // "frame done"
     }
 }
@@ -110,6 +117,9 @@ static bool     g_assets_ok = false;
 static uint16_t g_error_color = 0;
 
 void setup() {
+    // A deep transmit buffer, so the heartbeat queues rather than blocking
+    // the paint loop (~17 ms at 115200 baud otherwise; DEVNOTES #146).
+    Serial.setTxBufferSize(2048);
     Serial.begin(115200);
     delay(1500);
     Serial.println("[galaga-esp32] boot: serial up");
@@ -257,8 +267,20 @@ void loop() {
     // core 0 emulates while core 1 renders and transmits.
     // 1. Wait until core 0 has finished everything asked of it. The machine
     //    is now quiescent -- nothing is mutating sprite registers.
+    static uint32_t wait_sum = 0, wait_max = 0, emu_sum = 0, emu_max = 0,
+                    paint_sum = 0, paint_max = 0;
+    const uint32_t tw = micros();
     for (uint32_t f = 0; f < EMULATED_FRAMES_PER_PAINT; f++) {
         ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
+    }
+    {
+        // Core 0 is idle now: how long core 1 waited for it, and how long
+        // it took for the pair just finished.
+        const uint32_t w = micros() - tw;
+        wait_sum += w; if (w > wait_max) wait_max = w;
+        const uint32_t e = g_emu_pair_us;
+        g_emu_pair_us = 0;
+        emu_sum += e; if (e > emu_max) emu_max = e;
     }
 
     // 2. Latch this frame's sprites from that quiescent state. Short -- the
@@ -274,7 +296,12 @@ void loop() {
     // 4. Paint. Reads video_ram live, which is safe: tiles change rarely
     //    and by whole character cells, and this renderer already accepts
     //    intra-frame staleness as authentic CRT behaviour.
-    galaga_render_frame(&g_system);
+    {
+        const uint32_t tp = micros();
+        galaga_render_frame(&g_system);
+        const uint32_t p = micros() - tp;
+        paint_sum += p; if (p > paint_max) paint_max = p;
+    }
 
     // WALL-CLOCK LIMITER. Without it the game runs at whatever rate the
     // panel happens to allow, which measured 61.4 emulated fps against a
@@ -323,6 +350,11 @@ void loop() {
         // printed "18% of 60.6Hz", which reads like a fault. Prime the
         // clock and skip it.
         if (t_prev == 0) { t_prev = now; emul_us = 0; push_us = 0; return; }
+        // Audio mixing time on core 0 (galaga_audio.cpp's own counters),
+        // per second of wall time: it preempts the emulation task there.
+        uint32_t a_us, a_calls, a_max;
+        galaga_audio_debug_take_isr_stats(&a_us, &a_calls, &a_max);
+        const uint32_t t_prev_a = t_prev;
         float fps = 30000.0f / (float)(now - t_prev);
         t_prev = now;
         // Rotation is in the heartbeat because it is not otherwise
@@ -333,12 +365,17 @@ void loop() {
         // an unwired or floating button line cycles this silently.
         Serial.printf("[galaga-esp32] frame %lu  %.1f fps display  "
                       "%.1f fps emulated (%.0f%% of 60.6Hz)  frame %lu us  "
-                      "rot %u\n",
+                      "rot %u  emu %lu/%lu  paint %lu/%lu  wait %lu/%lu us  audio %lu us/s (max %lu)\n",
                       (unsigned long)frame, fps,
                       fps * EMULATED_FRAMES_PER_PAINT,
                       100.0f * fps * EMULATED_FRAMES_PER_PAINT / 60.606f,
                       (unsigned long)(emul_us / 30u),
-                      (unsigned)g_system.rotation);
+                      (unsigned)g_system.rotation,
+                      (unsigned long)(emu_sum / 30u), (unsigned long)emu_max,
+                      (unsigned long)(paint_sum / 30u), (unsigned long)paint_max,
+                      (unsigned long)(wait_sum / 30u), (unsigned long)wait_max,
+                      (unsigned long)(a_us * 1000u / (now - t_prev_a)), (unsigned long)a_max);
         emul_us = 0; push_us = 0;
+        wait_sum = wait_max = emu_sum = emu_max = paint_sum = paint_max = 0;
     }
 }

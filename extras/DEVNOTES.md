@@ -8014,3 +8014,62 @@ weren't tuned individually.
 
 Played on hardware: Galaga, with the volume combo working. The other six
 arcade sketches build; not run with this change.
+
+### 146. Galaga on the Feather: from 92% to 99% in play, by freeing core 0
+
+#145 found Galaga at 87-92% of its speed on busy stages, as it had been
+since the Feather port. This entry finds where the time went and gets
+most of it back. Every number below is from real play by the user, several
+minutes per build, one recorder logging every one-second window. Play
+doesn't repeat, so compare the bands, not single windows; session-to-session
+variation looked like about ±2%.
+
+**First, which core?** Galaga's status line gained three timings:
+emulation per paint (core 0's two frames), paint (core 1's render and
+send), and how long core 1 waits for core 0.
+
+- **Painting was flat** at 31.5 ms, whatever was on screen.
+- **Emulation grew** from 14.4 ms per pair in attract to 38 ms on the
+  busiest screens, against a 33 ms budget, and core 1's wait grew with it.
+- **So it's core 0**, not the renderer.
+- **Not the audio:** the audio task on core 0 took 1.2-1.9% of it
+  (`galaga_audio_debug_take_isr_stats()`, now in the status line).
+
+**Three changes, measured in turn:**
+
+| Build | Gameplay windows | Mean | 97-100% | below 90% | Emulation per pair |
+|---|---|---|---|---|---|
+| As released | 190 | 91.7% | 50 | 83 | 35.9 ms |
+| 1. Memory callbacks and interleave loop in IRAM | 208 | 95.7% | 116 | 25 | 34.3 ms |
+| 1 + tile/sprite caches in internal RAM | 247 | 93.4% | 80 | 61 | 35.2 ms (reverted) |
+| **1 + audio and input tasks on core 1** | **523** | **99.2%** | **466** | **2** | **32.5 ms** |
+
+1. **A missing ESP32 branch.** `galaga_ports.cpp` and `galaga_machine.cpp`
+   already mark the three CPUs' memory callbacks, the shared address
+   decode and `interleave_to_target()` for fast RAM (`GALAGA_RAMFUNC`,
+   `GALAGA_M_RAMFUNC`), but only on the RP2040; on the ESP32 the macros
+   were empty, so all of it ran from flash. Each now has an ESP32 branch
+   to `IRAM_ATTR`, +3 KB of IRAM. A modest gain, and a bug fix either way.
+   The Z80 interpreter itself was already in IRAM (`Z80_RAMFUNC`).
+2. **The decoded caches in internal RAM** (`hal_mem_fast_alloc()` instead
+   of `ps_malloc()`). The theory was that the renderer's PSRAM reads on
+   busy stages contend with core 0 for the bus flash and PSRAM share.
+   They fit (48 KB), and bought nothing measurable, so they stay in PSRAM
+   and keep that on-chip RAM free.
+3. **The audio and input tasks moved to core 1**, for Galaga only.
+   `ARCADE_I2S_CORE` and `FEATHER_INPUT_CORE` are new build settings,
+   default 0 (unchanged for the other eight Feather sketches), and
+   Galaga's `build_opt.h` sets both to 1. The gain is larger than the two
+   tasks' own ~2.5% of core 0 would suggest. A likely reason, not proven:
+   the input task woke 1,000 times a second on core 0, interrupting the
+   Z80 emulation each time. Core 1 absorbed them: paint 31.7 ms mean,
+   32.3 ms max, still under the 33 ms budget. The user heard clean sound
+   and found the controls as responsive as before.
+
+Galaga's status line also got `Serial.setTxBufferSize(2048)`, so the
+heartbeat queues rather than blocking the paint loop (#143).
+
+The Fruit Jam is untouched: its branch of the two macros is unchanged,
+and Galaga on the Fruit Jam still builds. The other Feather games keep
+their tasks on core 0. The Game Boy (8% margin) might gain from the same
+move, but that's unmeasured.

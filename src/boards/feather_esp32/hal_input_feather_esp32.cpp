@@ -63,6 +63,13 @@ static const int8_t s_pin[HAL_BTN_COUNT] = {
 // for a misdiagnosis -- Galaga is played by tapping, and 150ms caps that at
 // about 5 shots/second.
 #define RELEASE_HOLD_US 25000u
+
+// The core the input task (and the Wii controller's I2C polling) is pinned
+// to: 0 unless a sketch's build_opt.h says otherwise. Galaga moves it to
+// core 1 (DEVNOTES #146).
+#ifndef FEATHER_INPUT_CORE
+#define FEATHER_INPUT_CORE 0
+#endif
 #define POLL_INTERVAL_MS 1
 
 typedef struct {
@@ -141,7 +148,8 @@ void hal_input_init(void) {
     if (!started) {
         // Priority above the Arduino loop task so a long frame cannot delay
         // sampling -- the point of this task is a steady interval.
-        xTaskCreatePinnedToCore(input_task, "arcade_input", 4096, NULL, 2, NULL, 0);
+        xTaskCreatePinnedToCore(input_task, "arcade_input", 4096, NULL, 2, NULL,
+                                FEATHER_INPUT_CORE);
         started = true;
     }
 }

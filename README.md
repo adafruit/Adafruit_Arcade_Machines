@@ -78,11 +78,10 @@ USB stack (see the build steps).
 ### A second board: Feather ESP32 V2
 
 **All seven games run here too**, each at 100% of its own machine's refresh
-rate, with one exception, on a Feather ESP32 V2 + 2.4" TFT FeatherWing
-(ILI9341) + a MAX98357A. **The exception is Galaga:** 100% on quiet
-screens, but about 87-92% while a stage is full of enemies. That's
-measured in play, and it has been so since the port (v2.10.1 measures the
-same; see `extras/DEVNOTES.md` #145). Not one line of `src/cpu/` or
+rate, on a Feather ESP32 V2 + 2.4" TFT FeatherWing (ILI9341) + a
+MAX98357A. Galaga, the heaviest, averages 99% in play with brief dips on
+its busiest stages; releases up to v2.13.1 fell to 87-92% there (see
+`extras/DEVNOTES.md` #145-#146). Not one line of `src/cpu/` or
 `src/machines/` differs between the two boards.
 
 | Game | Sketch | Emulated rate | On screen |
@@ -90,7 +89,7 @@ same; see `extras/DEVNOTES.md` #145). Not one line of `src/cpu/` or
 | Space Invaders | [`invaders_featheresp32/`](examples/Games/invaders_featheresp32/) | 59.542Hz | 29.8fps |
 | Lunar Rescue | [`lrescue_featheresp32/`](examples/Games/lrescue_featheresp32/) | 60.037Hz \* | 30.0fps |
 | Pac-Man | [`pacman_featheresp32/`](examples/Games/pacman_featheresp32/) | 60.606Hz | 30.3fps |
-| Galaga | [`galaga_featheresp32/`](examples/Games/galaga_featheresp32/) | 60.606Hz (87-92% on busy stages) | 30.3fps |
+| Galaga | [`galaga_featheresp32/`](examples/Games/galaga_featheresp32/) | 60.606Hz (99% mean in play) | 30.3fps |
 | Ms. Pac-Man | [`mspacman_featheresp32/`](examples/Games/mspacman_featheresp32/) | 60.606Hz | 30.3fps |
 | Donkey Kong | [`dkong_featheresp32/`](examples/Games/dkong_featheresp32/) | 60.606Hz | 30.3fps |
 | Burger Time | [`btime_featheresp32/`](examples/Games/btime_featheresp32/) | 57.445Hz | 28.7fps |
