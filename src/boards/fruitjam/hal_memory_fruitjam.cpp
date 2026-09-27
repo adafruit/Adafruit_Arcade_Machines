@@ -6,6 +6,7 @@
 // through arduino-pico's PSRAM heap (pmalloc). See hal/arcade_hal_memory.h.
 #if defined(ARDUINO_ADAFRUIT_FRUITJAM_RP2350)
 
+#include "hardware/vreg.h"
 #include <Arduino.h>
 #include <psram.h>
 #include "hal/arcade_hal_memory.h"
@@ -49,6 +50,12 @@ void *hal_mem_fast_alloc(size_t size) {
 // waiting for a scanline buffer. So the other core is parked and interrupts
 // are off for the duration, as arduino-pico does around flash writes.
 void fruitjam_set_sys_clock_khz(uint32_t khz) {
+#if defined(ARCADE_FRUITJAM_HSTX)
+    // pico_hdmi's setting for its 252 MHz HSTX timing, raised before the
+    // clock (extras/HDMI_AUDIO_PLAN.md). PicoDVI runs at the default.
+    vreg_set_voltage(VREG_VOLTAGE_1_15);
+    delay(10);
+#endif
     rp2040.idleOtherCore();
     noInterrupts();
     set_sys_clock_khz(khz, true);
