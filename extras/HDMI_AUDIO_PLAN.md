@@ -81,9 +81,9 @@ thin MIT wrapper around [fliperama86/pico_hdmi](https://github.com/fliperama86/p
 3. **An HDMI audio backend**, with the machines' fill callbacks unchanged
    and the pump on core 1, feeding the DAC too. **Working 2026-09-27,
    DEVNOTES #149:** an audio tap in the I2S driver feeds a ring that core 1
-   pumps to HDMI at 44.1 kHz. Pac-Man and Burger Time are clean and in sync
+   pumps to HDMI at 44.1 kHz. Pac-Man, Burger Time and Donkey Kong are clean and in sync
    from the TV and the jack together. Burger Time, the heaviest game, runs
-   14.97 ms against PicoDVI's 15.06. Still to check: the other seven with
+   14.97 ms against PicoDVI's 15.06. Still to check: the other six with
    HDMI audio, and a mid-game battery save.
 4. **Docs, `depends=`, release**, once the library is in Library Manager.
    Expose pico_hdmi's DVI-only mode for displays that don't sync with data

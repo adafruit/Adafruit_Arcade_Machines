@@ -8256,5 +8256,6 @@ the loop fixed, HDMI audio costs less than the old loop did.
 registered no background task, but pico_hdmi's core 1 loop still spun
 flat out checking for one. So its 10% was this same cost, not the
 line-doubling copy guessed there. HDMI audio in Donkey Kong: 44.1 kHz, no
-drops after the ring fills.
+drops after the ring fills; the user heard it clean and in sync from the TV
+and the jack, and the picture right.
 
