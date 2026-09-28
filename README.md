@@ -5,8 +5,11 @@ SPDX-License-Identifier: MIT
 
 # Adafruit Arcade Machines
 
-Classic arcade games and consoles for the [Adafruit Fruit Jam](https://www.adafruit.com/product/6200)
-(RP2350B) and the [Feather ESP32 V2](https://www.adafruit.com/product/5438), running under the Arduino framework instead of the raw Pico SDK.
+Classic arcade machines and consoles (Game Boy, NES) emulated on the
+[Fruit Jam](https://www.adafruit.com/product/6200) w/ HDMI display and
+[Feather ESP32](https://www.adafruit.com/product/5438) w/ TFT in Arduino.
+Built on a framework separating CPU core, game machine, and board so each is
+reusable for a different core, game, or board.
 
 This started as an Arduino port of [adafruit/invaders_pico](https://github.com/adafruit/invaders_pico)
 (itself a Pico SDK port of Space Invaders), restructured as **SAMP** —
