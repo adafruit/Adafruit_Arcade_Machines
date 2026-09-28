@@ -81,10 +81,9 @@ thin MIT wrapper around [fliperama86/pico_hdmi](https://github.com/fliperama86/p
 3. **An HDMI audio backend**, with the machines' fill callbacks unchanged
    and the pump on core 1, feeding the DAC too. **Working 2026-09-27,
    DEVNOTES #149:** an audio tap in the I2S driver feeds a ring that core 1
-   pumps to HDMI at 44.1 kHz. Eight of the nine sketches (all but Galaga) are clean and in sync
-   from the TV and the jack together, checked by ear (DEVNOTES #151). Burger Time, the heaviest game, runs
-   14.97 ms against PicoDVI's 15.06. Still to check: Galaga with HDMI audio.
-   A mid-game battery save on HSTX works (#150). PSRAM games need
+   pumps to HDMI at 44.1 kHz. All nine sketches are clean and in sync from the TV and the jack
+   together, checked by ear (DEVNOTES #151). Burger Time, the heaviest game, runs
+   14.97 ms against PicoDVI's 15.06. A mid-game battery save on HSTX works (#150). PSRAM games need
    mikeysklar/Adafruit_DVI_Audio#1 (the encoder in RAM) to reach
    full speed.
 4. **Docs, `depends=`, release**, once the library is in Library Manager.

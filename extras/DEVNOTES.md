@@ -8307,7 +8307,7 @@ took 34 frames", no errors), the open item from #148.
 core 1 runs often must be in RAM, not only what runs in the interrupt.
 The flash cache is shared by both cores and by PSRAM.
 
-### 151. HDMI audio in eight of the nine Fruit Jam sketches, and a start-up delay to skip
+### 151. HDMI audio in all nine Fruit Jam sketches, and a start-up delay to skip
 
 With #150's encoder in RAM (the library change proposed as
 mikeysklar/Adafruit_DVI_Audio#1), each sketch was run with HDMI audio,
@@ -8325,8 +8325,10 @@ the user on the TV and the 3.5 mm jack:
 | Game Boy (Link's Awakening, PSRAM) | 9,294 us | 8,740 us | clean, in sync |
 | NES (Zelda, PSRAM) | 9,802 us | 9,571 us (#150) | clean, in sync |
 
-Galaga hasn't been run with HDMI audio yet. All eight deliver 44,100 Hz,
-with no drops once running and no DAC underruns in the consoles.
+Galaga, run the next day: 12,120 us on PicoDVI, **11,868 us** with HDMI
+audio; the user heard it clean and in sync. So all nine are done. All nine
+deliver 44,100 Hz, with no drops once running and no DAC underruns in the
+consoles.
 
 **Audio that starts before the video is a delay, not a buffer.** Space
 Invaders and Lunar Rescue start their audio long before the display, so
