@@ -8259,3 +8259,50 @@ line-doubling copy guessed there. HDMI audio in Donkey Kong: 44.1 kHz, no
 drops after the ring fills; the user heard it clean and in sync from the TV
 and the jack, and the picture right.
 
+
+### 150. HDMI audio's encoder must run from RAM: PSRAM shares the flash cache
+
+**The NES was the exception.** With HDMI audio (#149) Pac-Man, Burger
+Time and Donkey Kong ran at parity with PicoDVI, but the NES (Zelda,
+same frames) was 10.5% slower: 10,833 us against 9,802.
+
+**The difference is where the ROM lives.** The NES keeps its cartridge
+in PSRAM, and on the RP2350 PSRAM goes through the same XIP cache as
+flash. pico_hdmi's packet encoder (`hstx_packet_set_audio_samples_cs_rate`,
+`hstx_encode_data_island`, their helpers and three tables) runs from flash
+on core 1, about 11,000 times a second. Every miss there evicts the ROM
+data core 0 reads constantly. #149's pre-encoded-packet test found no
+effect in Pac-Man because Pac-Man's ROMs are in SRAM.
+
+The same test on the NES isolated it: with one packet encoded once and
+then copied, 9,527 us.
+
+**Fix, in two places:**
+
+1. **In the Adafruit DVI Audio library** (tested in a local copy, not yet
+   upstream). `dvi_hstx_packet.c` declares the encoder's non-inline
+   functions `__not_in_flash_func` and its three tables (`ter_c4`,
+   `bch_table`, `parity_table`, 320 bytes) in `.data` before including
+   `hstx_packet.c.inc`. `dvi_hstx_data_island_queue.c` does the same for
+   `hstx_di_queue_push` and `hstx_di_queue_get_level`. This is the
+   library's own technique, the one `dvi_video_output.c` already uses for
+   `build_line_with_di`, and the vendored pico_hdmi files are unedited.
+2. **Here:** the HSTX backend's `hdmi_audio_pump()` is
+   `__not_in_flash_func`.
+
+**The NES, same frames:**
+
+| Build | Work mean | vs PicoDVI |
+|---|---|---|
+| PicoDVI | 9,802 us | -- |
+| HDMI audio, encoder in flash | 10,833 us | +10.5% |
+| Encoder and tables in RAM | 10,032 us | +2.4% |
+| **+ pump and queue functions in RAM** | **9,571 us** | **-2.4%** |
+
+HDMI audio is unchanged: 44,100 Hz, no drops after the ring fills. On the
+same run the NES wrote a battery save on the HSTX path ("saves 1, last
+took 34 frames", no errors), the open item from #148.
+
+**The rule for this backend, now twice learned (#148, #150):** anything
+core 1 runs often must be in RAM, not only what runs in the interrupt.
+The flash cache is shared by both cores and by PSRAM.

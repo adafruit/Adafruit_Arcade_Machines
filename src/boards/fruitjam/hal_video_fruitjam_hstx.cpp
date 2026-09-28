@@ -177,7 +177,7 @@ static void __not_in_flash_func(hdmi_tap)(const int32_t *block, int count) {
     s_ring_head = head;
 }
 
-static void hdmi_audio_pump(void) {
+static void __not_in_flash_func(hdmi_audio_pump)(void) {
     uint32_t level = s_ring_head - s_ring_tail;
     if (level < s_hdmi_ring_min) s_hdmi_ring_min = level;
     uint32_t budget = 32;   // packets per call: ~11 are due each millisecond
