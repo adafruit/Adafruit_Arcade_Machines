@@ -8279,8 +8279,8 @@ then copied, 9,527 us.
 
 **Fix, in two places:**
 
-1. **In the Adafruit DVI Audio library** (tested in a local copy, not yet
-   upstream). `dvi_hstx_packet.c` declares the encoder's non-inline
+1. **In the Adafruit DVI Audio library** (proposed upstream as
+   mikeysklar/Adafruit_DVI_Audio#1). `dvi_hstx_packet.c` declares the encoder's non-inline
    functions `__not_in_flash_func` and its three tables (`ter_c4`,
    `bch_table`, `parity_table`, 320 bytes) in `.data` before including
    `hstx_packet.c.inc`. `dvi_hstx_data_island_queue.c` does the same for
