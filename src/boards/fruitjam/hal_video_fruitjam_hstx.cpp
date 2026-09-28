@@ -155,7 +155,9 @@ static void __not_in_flash_func(scanline_cb)(uint32_t v_scanline, uint32_t activ
 #include "arch/rp2040/arch_audio_i2s.h"
 
 #define HDMI_RING       2048u   // mono samples, power of two
-#define HDMI_RING_HIGH  1024u   // above: drop one sample
+#define HDMI_RING_JUMP  1024u   // above: skip straight to HDMI_RING_TARGET
+#define HDMI_RING_TARGET 384u   // ~17 ms of delay behind the DAC
+#define HDMI_RING_HIGH   640u   // above: drop one sample
 #define HDMI_RING_LOW    256u   // below: repeat one sample
 #define HDMI_DI_TARGET   200u   // queued packets, as pico_hdmi's example keeps
 
@@ -163,7 +165,7 @@ static int16_t           s_ring[HDMI_RING];
 static volatile uint32_t s_ring_head = 0;   // I2S interrupt (core 0)
 static volatile uint32_t s_ring_tail = 0;   // pump (core 1)
 static volatile uint32_t s_hdmi_packets = 0, s_hdmi_drops = 0, s_hdmi_repeats = 0,
-                         s_hdmi_overflow = 0, s_hdmi_ring_min = 0xFFFFFFFFu;
+                         s_hdmi_overflow = 0, s_hdmi_jumps = 0, s_hdmi_ring_min = 0xFFFFFFFFu;
 static int s_channel_frame = 0;
 
 static void __not_in_flash_func(hdmi_tap)(const int32_t *block, int count) {
@@ -186,6 +188,14 @@ static void __not_in_flash_func(hdmi_audio_pump)(void) {
         if (level < 2) break;
         __dmb();
         uint32_t tail = s_ring_tail;
+        // Far too full -- audio that started long before the video did (Space
+        // Invaders) -- is a delay behind the picture, not a buffer: skip it
+        // in one step instead of trimming a sample per packet (#151).
+        if (level > HDMI_RING_JUMP) {
+            tail = s_ring_head - HDMI_RING_TARGET;
+            level = HDMI_RING_TARGET;
+            s_hdmi_jumps = s_hdmi_jumps + 1;
+        }
         const int16_t a = s_ring[tail & (HDMI_RING - 1u)];
         const int16_t b = s_ring[(tail + 1) & (HDMI_RING - 1u)];
         if (level > HDMI_RING_HIGH)     { tail += 3; s_hdmi_drops = s_hdmi_drops + 1; }
@@ -323,8 +333,9 @@ uint32_t hal_video_take_starve_count(void) {
     if (t_now - t_last >= 10000000u) {
         const uint32_t pk = s_hdmi_packets;
         const uint32_t ms = (t_now - t_last) / 1000u;
-        Serial.printf("[hstx] hdmi audio: %lu Hz, drops %lu, repeats %lu, overflow %lu, ring min %lu\n",
+        Serial.printf("[hstx] hdmi audio: %lu Hz, jumps %lu, drops %lu, repeats %lu, overflow %lu, ring min %lu\n",
                       (unsigned long)(t_last ? (uint64_t)(pk - pk0) * 4000u / ms : 0),
+                      (unsigned long)s_hdmi_jumps,
                       (unsigned long)s_hdmi_drops, (unsigned long)s_hdmi_repeats,
                       (unsigned long)s_hdmi_overflow, (unsigned long)s_hdmi_ring_min);
         t_last = t_now;
