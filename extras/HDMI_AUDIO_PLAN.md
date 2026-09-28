@@ -75,7 +75,7 @@ thin MIT wrapper around [fliperama86/pico_hdmi](https://github.com/fliperama86/p
    sketches for frame time and starvation. **Done 2026-09-27, DEVNOTES
    #148:** `src/boards/fruitjam/hal_video_fruitjam_hstx.cpp`, selected by
    `-DARCADE_FRUITJAM_HSTX`. All nine match PicoDVI on the same frames
-   (Donkey Kong +10% work, still inside budget), and all nine look right on
+   (Donkey Kong +10% work at first; +0.7% once core 1's loop sleeps, #149), and all nine look right on
    the TV. There's a desync watchdog for pico_hdmi's intermittent stream
    loss.
 3. **An HDMI audio backend**, with the machines' fill callbacks unchanged

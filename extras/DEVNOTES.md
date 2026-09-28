@@ -8192,9 +8192,9 @@ the default back made no difference to Donkey Kong (14,457 us against
 | NES (Zelda) | 9,803 us | 9,855 us | 15 -> 15 | 0 -> 0 |
 
 - **Donkey Kong is the one real cost,** +10% work, still inside the
-  16.7 ms budget. Memory contention with core 1's line-doubling copy is
-  the likely reason, unproven. pico_hdmi's hardware pixel doubling would
-  remove that copy.
+  16.7 ms budget. Memory contention with core 1's line-doubling copy was
+  the guess here. **It was wrong (#149):** the cost was core 1's
+  background loop spinning, and it's gone now that the loop sleeps.
 - **Audio:** the consoles had no audio underruns on either backend.
 - **SD:** the NES loaded its save over SD. A save written mid-game on HSTX
   hasn't been exercised yet.
@@ -8249,3 +8249,12 @@ same frames:
 without audio (#148, spinning loop) 15,317 us; **HSTX with HDMI audio
 14,965 us.** Starvation events drop from 200 to 40, min queue 17/32. With
 the loop fixed, HDMI audio costs less than the old loop did.
+
+**Donkey Kong, re-measured afterwards on the same frames:** PicoDVI
+13,093 us; HSTX in #148 14,463 us (+10.5%); **HSTX now, with HDMI audio,
+13,186 us (+0.7%)**, min queue 17/32, no starvation. #148's build
+registered no background task, but pico_hdmi's core 1 loop still spun
+flat out checking for one. So its 10% was this same cost, not the
+line-doubling copy guessed there. HDMI audio in Donkey Kong: 44.1 kHz, no
+drops after the ring fills.
+
