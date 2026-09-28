@@ -8306,3 +8306,37 @@ took 34 frames", no errors), the open item from #148.
 **The rule for this backend, now twice learned (#148, #150):** anything
 core 1 runs often must be in RAM, not only what runs in the interrupt.
 The flash cache is shared by both cores and by PSRAM.
+
+### 151. HDMI audio in eight of the nine Fruit Jam sketches, and a start-up delay to skip
+
+With #150's encoder in RAM (the library change proposed as
+mikeysklar/Adafruit_DVI_Audio#1), each sketch was run with HDMI audio,
+measured on the same attract frames as #148's PicoDVI runs, and heard by
+the user on the TV and the 3.5 mm jack:
+
+| Sketch | PicoDVI work | HSTX + HDMI audio | By ear |
+|---|---|---|---|
+| Space Invaders | 5,787 us | 5,850 us | clean, in sync |
+| Lunar Rescue | 5,386 us | 5,522 us | clean, in sync |
+| Pac-Man | 8,851 us | 9,240 us (#149) | clean, in sync |
+| Ms. Pac-Man | 9,643 us | 9,524 us | clean, in sync |
+| Donkey Kong | 13,093 us | 13,186 us (#149) | clean, in sync |
+| Burger Time | 15,058 us | 14,965 us (#149) | clean, in sync |
+| Game Boy (Link's Awakening, PSRAM) | 9,294 us | 8,740 us | clean, in sync |
+| NES (Zelda, PSRAM) | 9,802 us | 9,571 us (#150) | clean, in sync |
+
+Galaga hasn't been run with HDMI audio yet. All eight deliver 44,100 Hz,
+with no drops once running and no DAC underruns in the consoles.
+
+**Audio that starts before the video is a delay, not a buffer.** Space
+Invaders and Lunar Rescue start their audio long before the display, so
+the HDMI ring filled during boot. Lunar Rescue even overflowed it 91
+times, all before the TV had a picture; the count never moved after.
+
+The one-sample trim then held the ring just under 1,024 samples, about
+46 ms behind the jack. That is harmless for dropouts but late against
+the picture. Now a ring above 1,024 jumps straight to 384 in one step,
+and the one-sample corrections work between 256 and 640. Each of those
+two games makes one jump at start-up, and then the ring settles near
+275, like the rest (~12 ms behind the DAC). The status line counts the
+jumps.
