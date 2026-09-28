@@ -8074,10 +8074,10 @@ and Galaga on the Fruit Jam still builds. The other Feather games keep
 their tasks on core 0. The Game Boy (8% margin) might gain from the same
 move, but that's unmeasured.
 
-### 147. HDMI audio spike: pico_hdmi on the Fruit Jam's HSTX, from our kind of line queue
+### 147. DVI audio spike: pico_hdmi on the Fruit Jam's HSTX, from our kind of line queue
 
-`extras/HDMI_AUDIO_PLAN.md` has the plan. This is step 1: a spike before
-anything replaces PicoDVI. `examples/SelfTest/hdmi_audio_test_fruitjam`
+`extras/DVI_AUDIO_PLAN.md` has the plan. This is step 1: a spike before
+anything replaces PicoDVI. `examples/SelfTest/dvi_audio_test_fruitjam`
 uses pico_hdmi's C API through the Adafruit DVI Audio library (a local
 copy, not yet in Library Manager):
 
@@ -8089,7 +8089,7 @@ copy, not yet in Library Manager):
   repeats each sample to make 44.1 kHz, encodes 4-frame packets and keeps
   pico_hdmi's queue at 200.
 
-**On hardware (Fruit Jam, HDMI to the user's TV), steady every second:**
+**On hardware (Fruit Jam, DVI to the user's TV), steady every second:**
 
 | Measure | Result |
 |---|---|
@@ -8119,7 +8119,7 @@ and saw the colour bars with the sweeping line correct.
 ### 148. The Fruit Jam's HSTX video backend: three failures, then parity with PicoDVI
 
 `src/boards/fruitjam/hal_video_fruitjam_hstx.cpp` implements `hal_video` on
-pico_hdmi (step 2 of `extras/HDMI_AUDIO_PLAN.md`), selected at build time
+pico_hdmi (step 2 of `extras/DVI_AUDIO_PLAN.md`), selected at build time
 by `-DARCADE_FRUITJAM_HSTX`; PicoDVI stays the default.
 
 - **Same design as PicoDVI's backend:** the same 32 buffers, free and valid
@@ -8200,9 +8200,9 @@ the default back made no difference to Donkey Kong (14,457 us against
   hasn't been exercised yet.
 - **On the TV:** the user checked all nine and all look right.
 
-### 149. HDMI audio on the Fruit Jam, and what core 1's background loop costs core 0
+### 149. DVI audio on the Fruit Jam, and what core 1's background loop costs core 0
 
-Step 3 of `extras/HDMI_AUDIO_PLAN.md`. The machines are untouched.
+Step 3 of `extras/DVI_AUDIO_PLAN.md`. The machines are untouched.
 
 - **The tap:** the RP2040 I2S driver gains `arch_i2s_set_tap()`, called in
   its interrupt with each block right after the machine's fill callback
@@ -8229,7 +8229,7 @@ same frames:
 | PicoDVI | 8,851 us |
 | HSTX, no background loop (#148's first A/B) | 8,625 us |
 | + watchdog loop spinning, no audio | 9,011 us |
-| + HDMI audio, pump flat out | 9,752 us |
+| + DVI audio, pump flat out | 9,752 us |
 | Experiment: one pre-encoded packet queued repeatedly | 9,989 us |
 | Pump once a millisecond | 9,387 us |
 | **+ `__wfe()` after each pass** | **9,240 us** |
@@ -8246,23 +8246,23 @@ same frames:
   and 250 ms watchdog need.
 
 **Burger Time, the heaviest game, same frames:** PicoDVI 15,058 us; HSTX
-without audio (#148, spinning loop) 15,317 us; **HSTX with HDMI audio
+without audio (#148, spinning loop) 15,317 us; **HSTX with DVI audio
 14,965 us.** Starvation events drop from 200 to 40, min queue 17/32. With
-the loop fixed, HDMI audio costs less than the old loop did.
+the loop fixed, DVI audio costs less than the old loop did.
 
 **Donkey Kong, re-measured afterwards on the same frames:** PicoDVI
-13,093 us; HSTX in #148 14,463 us (+10.5%); **HSTX now, with HDMI audio,
+13,093 us; HSTX in #148 14,463 us (+10.5%); **HSTX now, with DVI audio,
 13,186 us (+0.7%)**, min queue 17/32, no starvation. #148's build
 registered no background task, but pico_hdmi's core 1 loop still spun
 flat out checking for one. So its 10% was this same cost, not the
-line-doubling copy guessed there. HDMI audio in Donkey Kong: 44.1 kHz, no
+line-doubling copy guessed there. DVI audio in Donkey Kong: 44.1 kHz, no
 drops after the ring fills; the user heard it clean and in sync from the TV
 and the jack, and the picture right.
 
 
-### 150. HDMI audio's encoder must run from RAM: PSRAM shares the flash cache
+### 150. DVI audio's encoder must run from RAM: PSRAM shares the flash cache
 
-**The NES was the exception.** With HDMI audio (#149) Pac-Man, Burger
+**The NES was the exception.** With DVI audio (#149) Pac-Man, Burger
 Time and Donkey Kong ran at parity with PicoDVI, but the NES (Zelda,
 same frames) was 10.5% slower: 10,833 us against 9,802.
 
@@ -8287,7 +8287,7 @@ then copied, 9,527 us.
    `hstx_di_queue_push` and `hstx_di_queue_get_level`. This is the
    library's own technique, the one `dvi_video_output.c` already uses for
    `build_line_with_di`, and the vendored pico_hdmi files are unedited.
-2. **Here:** the HSTX backend's `hdmi_audio_pump()` is
+2. **Here:** the HSTX backend's `dvi_audio_pump()` is
    `__not_in_flash_func`.
 
 **The NES, same frames:**
@@ -8295,11 +8295,11 @@ then copied, 9,527 us.
 | Build | Work mean | vs PicoDVI |
 |---|---|---|
 | PicoDVI | 9,802 us | -- |
-| HDMI audio, encoder in flash | 10,833 us | +10.5% |
+| DVI audio, encoder in flash | 10,833 us | +10.5% |
 | Encoder and tables in RAM | 10,032 us | +2.4% |
 | **+ pump and queue functions in RAM** | **9,571 us** | **-2.4%** |
 
-HDMI audio is unchanged: 44,100 Hz, no drops after the ring fills. On the
+DVI audio is unchanged: 44,100 Hz, no drops after the ring fills. On the
 same run the NES wrote a battery save on the HSTX path ("saves 1, last
 took 34 frames", no errors), the open item from #148.
 
@@ -8307,14 +8307,14 @@ took 34 frames", no errors), the open item from #148.
 core 1 runs often must be in RAM, not only what runs in the interrupt.
 The flash cache is shared by both cores and by PSRAM.
 
-### 151. HDMI audio in all nine Fruit Jam sketches, and a start-up delay to skip
+### 151. DVI audio in all nine Fruit Jam sketches, and a start-up delay to skip
 
 With #150's encoder in RAM (the library change proposed as
-mikeysklar/Adafruit_DVI_Audio#1), each sketch was run with HDMI audio,
+mikeysklar/Adafruit_DVI_Audio#1), each sketch was run with DVI audio,
 measured on the same attract frames as #148's PicoDVI runs, and heard by
 the user on the TV and the 3.5 mm jack:
 
-| Sketch | PicoDVI work | HSTX + HDMI audio | By ear |
+| Sketch | PicoDVI work | HSTX + DVI audio | By ear |
 |---|---|---|---|
 | Space Invaders | 5,787 us | 5,850 us | clean, in sync |
 | Lunar Rescue | 5,386 us | 5,522 us | clean, in sync |
@@ -8325,14 +8325,14 @@ the user on the TV and the 3.5 mm jack:
 | Game Boy (Link's Awakening, PSRAM) | 9,294 us | 8,740 us | clean, in sync |
 | NES (Zelda, PSRAM) | 9,802 us | 9,571 us (#150) | clean, in sync |
 
-Galaga, run the next day: 12,120 us on PicoDVI, **11,868 us** with HDMI
+Galaga, run the next day: 12,120 us on PicoDVI, **11,868 us** with DVI
 audio; the user heard it clean and in sync. So all nine are done. All nine
 deliver 44,100 Hz, with no drops once running and no DAC underruns in the
 consoles.
 
 **Audio that starts before the video is a delay, not a buffer.** Space
 Invaders and Lunar Rescue start their audio long before the display, so
-the HDMI ring filled during boot. Lunar Rescue even overflowed it 91
+the audio ring filled during boot. Lunar Rescue even overflowed it 91
 times, all before the TV had a picture; the count never moved after.
 
 The one-sample trim then held the ring just under 1,024 samples, about

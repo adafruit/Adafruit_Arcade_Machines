@@ -5,8 +5,8 @@
 // hal_video.h for the Adafruit Fruit Jam on the RP2350's HSTX, through
 // pico_hdmi (via the Adafruit DVI Audio library). The alternative to
 // hal_video_fruitjam.cpp's PicoDVI (PIO) backend, chosen at build time with
-// -DARCADE_FRUITJAM_HSTX; see extras/HDMI_AUDIO_PLAN.md, step 2. It exists
-// so the display can carry HDMI audio (step 3), and it frees PIO 0 and most
+// -DARCADE_FRUITJAM_HSTX; see extras/DVI_AUDIO_PLAN.md, step 2. It exists
+// so the display can carry DVI audio (step 3), and it frees PIO 0 and most
 // of core 1, since HSTX encodes TMDS in hardware.
 //
 // SAME CONTRACT, SAME QUEUE. The machines render 320-pixel lines through
@@ -46,7 +46,7 @@ const uint32_t HAL_VIDEO_WIDTH  = 320;
 const uint32_t HAL_VIDEO_HEIGHT = 240;
 
 #define N_SCANBUF 32          // the same runway as PicoDVI's (DEVNOTES #85)
-#define HDMI_AUDIO_RATE 44100 // twice the machines' 22,050 Hz (step 3)
+#define DVI_AUDIO_RATE 44100 // twice the machines' 22,050 Hz (step 3)
 
 static uint16_t s_buf[N_SCANBUF][320];
 static uint16_t s_row[N_SCANBUF];     // the canvas row each buffer holds
@@ -141,49 +141,49 @@ static void __not_in_flash_func(scanline_cb)(uint32_t v_scanline, uint32_t activ
     if (active_line == MODE_V_ACTIVE_LINES - 1u) release_cur();
 }
 
-// --- HDMI audio: the DAC's samples, sent over HDMI too ----------------------
+// --- DVI audio: the DAC's samples, sent over DVI too ----------------------
 //
-// Step 3 of extras/HDMI_AUDIO_PLAN.md. The I2S interrupt (core 0) hands
-// each block it has just made for the DAC to hdmi_tap(), which copies the
+// Step 3 of extras/DVI_AUDIO_PLAN.md. The I2S interrupt (core 0) hands
+// each block it has just made for the DAC to dvi_audio_tap(), which copies the
 // mono samples into a ring. The pump, in core 1's background task, takes
 // two at a time, repeats each (44.1 kHz is exactly twice the machines'
 // 22,050 Hz), encodes a 4-frame packet and keeps pico_hdmi's queue topped
-// up. The DAC and HDMI run from the same crystal but not the same divider,
+// up. The DAC and DVI run from the same crystal but not the same divider,
 // so the ring is held near its middle by dropping or repeating one sample
 // when it drifts.
 
 #include "arch/rp2040/arch_audio_i2s.h"
 
-#define HDMI_RING       2048u   // mono samples, power of two
-#define HDMI_RING_JUMP  1024u   // above: skip straight to HDMI_RING_TARGET
-#define HDMI_RING_TARGET 384u   // ~17 ms of delay behind the DAC
-#define HDMI_RING_HIGH   640u   // above: drop one sample
-#define HDMI_RING_LOW    256u   // below: repeat one sample
-#define HDMI_DI_TARGET   200u   // queued packets, as pico_hdmi's example keeps
+#define DVI_RING       2048u   // mono samples, power of two
+#define DVI_RING_JUMP  1024u   // above: skip straight to DVI_RING_TARGET
+#define DVI_RING_TARGET 384u   // ~17 ms of delay behind the DAC
+#define DVI_RING_HIGH   640u   // above: drop one sample
+#define DVI_RING_LOW    256u   // below: repeat one sample
+#define DVI_DI_TARGET   200u   // queued packets, as pico_hdmi's example keeps
 
-static int16_t           s_ring[HDMI_RING];
+static int16_t           s_ring[DVI_RING];
 static volatile uint32_t s_ring_head = 0;   // I2S interrupt (core 0)
 static volatile uint32_t s_ring_tail = 0;   // pump (core 1)
-static volatile uint32_t s_hdmi_packets = 0, s_hdmi_drops = 0, s_hdmi_repeats = 0,
-                         s_hdmi_overflow = 0, s_hdmi_jumps = 0, s_hdmi_ring_min = 0xFFFFFFFFu;
+static volatile uint32_t s_dvi_packets = 0, s_dvi_drops = 0, s_dvi_repeats = 0,
+                         s_dvi_overflow = 0, s_dvi_jumps = 0, s_dvi_ring_min = 0xFFFFFFFFu;
 static int s_channel_frame = 0;
 
-static void __not_in_flash_func(hdmi_tap)(const int32_t *block, int count) {
+static void __not_in_flash_func(dvi_audio_tap)(const int32_t *block, int count) {
     uint32_t head = s_ring_head;
     for (int i = 0; i < count; i++) {
-        if (head - s_ring_tail >= HDMI_RING) { s_hdmi_overflow = s_hdmi_overflow + 1; break; }
-        s_ring[head & (HDMI_RING - 1u)] = (int16_t)(block[i] & 0xFFFF);
+        if (head - s_ring_tail >= DVI_RING) { s_dvi_overflow = s_dvi_overflow + 1; break; }
+        s_ring[head & (DVI_RING - 1u)] = (int16_t)(block[i] & 0xFFFF);
         head++;
     }
     __dmb();
     s_ring_head = head;
 }
 
-static void __not_in_flash_func(hdmi_audio_pump)(void) {
+static void __not_in_flash_func(dvi_audio_pump)(void) {
     uint32_t level = s_ring_head - s_ring_tail;
-    if (level < s_hdmi_ring_min) s_hdmi_ring_min = level;
+    if (level < s_dvi_ring_min) s_dvi_ring_min = level;
     uint32_t budget = 32;   // packets per call: ~11 are due each millisecond
-    while (budget-- && hstx_di_queue_get_level() < HDMI_DI_TARGET) {
+    while (budget-- && hstx_di_queue_get_level() < DVI_DI_TARGET) {
         level = s_ring_head - s_ring_tail;
         if (level < 2) break;
         __dmb();
@@ -191,28 +191,28 @@ static void __not_in_flash_func(hdmi_audio_pump)(void) {
         // Far too full -- audio that started long before the video did (Space
         // Invaders) -- is a delay behind the picture, not a buffer: skip it
         // in one step instead of trimming a sample per packet (#151).
-        if (level > HDMI_RING_JUMP) {
-            tail = s_ring_head - HDMI_RING_TARGET;
-            level = HDMI_RING_TARGET;
-            s_hdmi_jumps = s_hdmi_jumps + 1;
+        if (level > DVI_RING_JUMP) {
+            tail = s_ring_head - DVI_RING_TARGET;
+            level = DVI_RING_TARGET;
+            s_dvi_jumps = s_dvi_jumps + 1;
         }
-        const int16_t a = s_ring[tail & (HDMI_RING - 1u)];
-        const int16_t b = s_ring[(tail + 1) & (HDMI_RING - 1u)];
-        if (level > HDMI_RING_HIGH)     { tail += 3; s_hdmi_drops = s_hdmi_drops + 1; }
-        else if (level < HDMI_RING_LOW) { tail += 1; s_hdmi_repeats = s_hdmi_repeats + 1; }
+        const int16_t a = s_ring[tail & (DVI_RING - 1u)];
+        const int16_t b = s_ring[(tail + 1) & (DVI_RING - 1u)];
+        if (level > DVI_RING_HIGH)     { tail += 3; s_dvi_drops = s_dvi_drops + 1; }
+        else if (level < DVI_RING_LOW) { tail += 1; s_dvi_repeats = s_dvi_repeats + 1; }
         else                            { tail += 2; }
         audio_sample_t f[4];
         f[0].left = f[0].right = a; f[1].left = f[1].right = a;
         f[2].left = f[2].right = b; f[3].left = f[3].right = b;
         hstx_packet_t packet;
         const int next = hstx_packet_set_audio_samples_cs_rate(&packet, f, 4, s_channel_frame,
-                                                               HDMI_AUDIO_RATE);
+                                                               DVI_AUDIO_RATE);
         hstx_data_island_t island;
         hstx_encode_data_island(&island, &packet, false, DI_HSYNC_ACTIVE);
         if (!hstx_di_queue_push(&island)) break;
         s_channel_frame = next;
         s_ring_tail = tail;
-        s_hdmi_packets = s_hdmi_packets + 1;
+        s_dvi_packets = s_dvi_packets + 1;
     }
 }
 
@@ -238,7 +238,7 @@ static void __not_in_flash_func(background_task)(void) {
     static uint32_t last_pump = 0;
     if (now - last_pump >= 1000u) {
         last_pump = now;
-        hdmi_audio_pump();
+        dvi_audio_pump();
     }
     static uint32_t t0 = 0, f0 = 0;
     if (now - t0 < 250000u) return;
@@ -276,10 +276,10 @@ bool hal_video_init(void) {
     // requires (video_output_core1_run() enables HSTX and the DMA).
     hstx_di_queue_init();
     video_output_init(MODE_H_ACTIVE_PIXELS, MODE_V_ACTIVE_LINES);
-    pico_hdmi_set_audio_sample_rate(HDMI_AUDIO_RATE);
+    pico_hdmi_set_audio_sample_rate(DVI_AUDIO_RATE);
     video_output_set_scanline_callback(scanline_cb);
     video_output_set_background_task(background_task_sleepy);
-    arch_i2s_set_tap(hdmi_tap);   // HDMI audio: a copy of the DAC's samples
+    arch_i2s_set_tap(dvi_audio_tap);   // DVI audio: a copy of the DAC's samples
     return true;
 }
 
@@ -327,20 +327,20 @@ uint32_t hal_video_take_starve_count(void) {
         reported = s_resyncs;
         Serial.printf("[hstx] video resynced (%lu so far)\n", (unsigned long)reported);
     }
-    // HDMI audio, at most every 10 s (sketches call this at different rates).
+    // DVI audio, at most every 10 s (sketches call this at different rates).
     static uint32_t t_last = 0, pk0 = 0;
     const uint32_t t_now = time_us_32();
     if (t_now - t_last >= 10000000u) {
-        const uint32_t pk = s_hdmi_packets;
+        const uint32_t pk = s_dvi_packets;
         const uint32_t ms = (t_now - t_last) / 1000u;
-        Serial.printf("[hstx] hdmi audio: %lu Hz, jumps %lu, drops %lu, repeats %lu, overflow %lu, ring min %lu\n",
+        Serial.printf("[hstx] dvi audio: %lu Hz, jumps %lu, drops %lu, repeats %lu, overflow %lu, ring min %lu\n",
                       (unsigned long)(t_last ? (uint64_t)(pk - pk0) * 4000u / ms : 0),
-                      (unsigned long)s_hdmi_jumps,
-                      (unsigned long)s_hdmi_drops, (unsigned long)s_hdmi_repeats,
-                      (unsigned long)s_hdmi_overflow, (unsigned long)s_hdmi_ring_min);
+                      (unsigned long)s_dvi_jumps,
+                      (unsigned long)s_dvi_drops, (unsigned long)s_dvi_repeats,
+                      (unsigned long)s_dvi_overflow, (unsigned long)s_dvi_ring_min);
         t_last = t_now;
         pk0 = pk;
-        s_hdmi_ring_min = 0xFFFFFFFFu;
+        s_dvi_ring_min = 0xFFFFFFFFu;
     }
     const uint32_t v = s_starve_events;
     s_starve_events = 0;

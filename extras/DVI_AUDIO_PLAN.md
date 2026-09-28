@@ -3,9 +3,9 @@ SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
 SPDX-License-Identifier: MIT
 -->
 
-# HDMI audio on the Fruit Jam
+# DVI audio on the Fruit Jam
 
-Sound through the HDMI cable to the TV's speakers, using
+Sound through the DVI cable to the TV's speakers, using
 [Adafruit DVI Audio](https://github.com/mikeysklar/Adafruit_DVI_Audio), a
 thin MIT wrapper around [fliperama86/pico_hdmi](https://github.com/fliperama86/pico_hdmi)
 (The Unlicense). Started 2026-09-27.
@@ -13,7 +13,7 @@ thin MIT wrapper around [fliperama86/pico_hdmi](https://github.com/fliperama86/p
 ## What the library is
 
 - **A complete video stack on the RP2350's HSTX peripheral**, not an add-on
-  to PicoDVI. It outputs 640x480 at 60 Hz and puts HDMI audio packets ("data
+  to PicoDVI. It outputs 640x480 at 60 Hz and puts DVI audio packets ("data
   islands") in the blanking intervals.
 - **Video is pulled:** core 1's per-line interrupt calls a scanline callback
   for each 640-pixel line.
@@ -50,18 +50,18 @@ thin MIT wrapper around [fliperama86/pico_hdmi](https://github.com/fliperama86/p
 
 ## Decisions (2026-09-27)
 
-1. **Sound goes to both** the TV over HDMI and the headphone jack/DAC, the
+1. **Sound goes to both** the TV over DVI and the headphone jack/DAC, the
    same samples to each.
 2. **Develop now, depend on publication.** Build against a local copy of the
    library; add it to `depends=` once it is in Library Manager (Limor's
    rule: dependencies come from Library Manager, not vendored). No release
-   ships the HDMI path before then.
+   ships the DVI audio path before then.
 3. **Spike first, then decide** on replacing the video backend, with
    numbers.
 
 ## Steps
 
-1. **Spike** (`examples/SelfTest/hdmi_audio_test_fruitjam`): a test pattern
+1. **Spike** (`examples/SelfTest/dvi_audio_test_fruitjam`): a test pattern
    through our kind of line queue, and a 44.1 kHz tone made by doubling a
    22,050 Hz stream. Check that the TV plays it; measure missed lines, the
    callback's cost on core 1, and the encode cost per audio packet.
@@ -78,10 +78,10 @@ thin MIT wrapper around [fliperama86/pico_hdmi](https://github.com/fliperama86/p
    (Donkey Kong +10% work at first; +0.7% once core 1's loop sleeps, #149), and all nine look right on
    the TV. There's a desync watchdog for pico_hdmi's intermittent stream
    loss.
-3. **An HDMI audio backend**, with the machines' fill callbacks unchanged
+3. **An DVI audio backend**, with the machines' fill callbacks unchanged
    and the pump on core 1, feeding the DAC too. **Working 2026-09-27,
    DEVNOTES #149:** an audio tap in the I2S driver feeds a ring that core 1
-   pumps to HDMI at 44.1 kHz. All nine sketches are clean and in sync from the TV and the jack
+   pumps to the display at 44.1 kHz. All nine sketches are clean and in sync from the TV and the jack
    together, checked by ear (DEVNOTES #151). Burger Time, the heaviest game, runs
    14.97 ms against PicoDVI's 15.06. A mid-game battery save on HSTX works (#150). PSRAM games need
    mikeysklar/Adafruit_DVI_Audio#1 (the encoder in RAM) to reach

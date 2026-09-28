@@ -27,7 +27,7 @@
 // The board macro rather than ARDUINO_ARCH_RP2040 because a Feather RP2350
 // would share the arch and still need its own backend. See PORTING.md.
 // -DARCADE_FRUITJAM_HSTX selects the HSTX backend instead
-// (hal_video_fruitjam_hstx.cpp, extras/HDMI_AUDIO_PLAN.md).
+// (hal_video_fruitjam_hstx.cpp, extras/DVI_AUDIO_PLAN.md).
 #if defined(ARDUINO_ADAFRUIT_FRUITJAM_RP2350) && !defined(ARCADE_FRUITJAM_HSTX)
 
 #include "pico/sync.h"     // next_striped_spin_lock_num()

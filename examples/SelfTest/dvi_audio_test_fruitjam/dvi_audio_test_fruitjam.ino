@@ -2,10 +2,10 @@
 //
 // SPDX-License-Identifier: MIT
 
-// hdmi_audio_test_fruitjam -- the spike for HDMI audio on the Fruit Jam
-// (extras/HDMI_AUDIO_PLAN.md, step 1). Needs the Adafruit DVI Audio library
+// dvi_audio_test_fruitjam -- the spike for DVI audio on the Fruit Jam
+// (extras/DVI_AUDIO_PLAN.md, step 1). Needs the Adafruit DVI Audio library
 // (github.com/mikeysklar/Adafruit_DVI_Audio), which wraps pico_hdmi on the
-// RP2350's HSTX, and a TV or HDMI monitor that plays sound from the cable.
+// RP2350's HSTX, and a TV or monitor that plays sound from the cable.
 //
 // It answers the questions the backend swap depends on, before any game is
 // touched:
@@ -164,7 +164,7 @@ void loop() {
     if (now - last_ms >= 1000) {
         last_ms = now;
         const uint32_t pk = s_packets, enc = s_enc_us_sum;
-        Serial.printf("[hdmi-audio] %lu fps, missed %lu, out of order %lu; callback %lu us/s "
+        Serial.printf("[dvi-audio] %lu fps, missed %lu, out of order %lu; callback %lu us/s "
                       "(max %lu us/line); audio %lu packets/s (%lu Hz), encode %lu us/s "
                       "(max %lu us/packet), queue min %lu\n",
                       (unsigned long)frames_1s, (unsigned long)s_missed,
