@@ -59,6 +59,19 @@ thin MIT wrapper around [fliperama86/pico_hdmi](https://github.com/fliperama86/p
 3. **Spike first, then decide** on replacing the video backend, with
    numbers.
 
+## Building the DVI path
+
+Until the library is in Library Manager, build against a local clone,
+kept next to this repo at `../Adafruit_DVI_Audio` (the `encoder-in-ram`
+branch of the fork, i.e. mikeysklar/Adafruit_DVI_Audio#1, which PSRAM games
+need for full speed):
+
+```bash
+arduino-cli compile --library . --library ../Adafruit_DVI_Audio \
+  --build-property "compiler.cpp.extra_flags=-DARCADE_FRUITJAM_HSTX" \
+  examples/Games/pacman_fruitjam
+```
+
 ## Steps
 
 1. **Spike** (`examples/SelfTest/dvi_audio_test_fruitjam`): a test pattern
