@@ -964,6 +964,45 @@ records the SameBoy commit it came from. The colours are shown uncorrected
 washed out, so on a modern display these look more saturated than the
 games did. A colour-correction curve is a possible later refinement.
 
+### Later: a bigger Game Boy picture, integer scaling only (noted 2026-09-28)
+
+**Game Boy only; the NES already fills the height on both boards (256x240).**
+Today the 160x144 picture is drawn 1x on the 320x240 canvas
+(`gameboy_video.h`): 320x288 on the Fruit Jam's 640x480 output (each Game
+Boy pixel a 2x2 block), 160x144 on the Feather's TFT. Both fill about half
+the width and 60% of the height.
+
+**The user wants integer scaling only.** Every scale that fits through the
+320x240 canvas is non-integer (1.5x, 1.67x) and would size Game Boy pixels
+unevenly, so these are the two to try:
+
+1. **Fruit Jam, 3x on the HSTX video (`extras/HDMI_AUDIO_PLAN.md`):**
+   - **The picture:** each Game Boy pixel becomes an exact 3x3 block at the
+     full 640x480: 480x432 upright, or 432x480 rotated, the full height.
+   - **Why only HSTX:** the scaling has to happen at the output's real
+     resolution, not on the canvas. PicoDVI's 640-pixel mode fails on this
+     board (`hal_video_fruitjam.cpp`).
+   - **How:** pico_hdmi pulls each line with a callback, so that callback
+     can read the Game Boy's finished frame directly: 3 output lines per
+     Game Boy row, 3 pixels per Game Boy pixel. Core 0 then stops rendering
+     Game Boy lines at all.
+   - **What it needs:** an optional video HAL capability, something like
+     "scan out this frame buffer at scale N", offered only by the HSTX
+     backend, and a frame swap aligned to the video frame (pico_hdmi has a
+     vsync callback).
+   - **Cost:** about what today's line doubling costs core 1.
+2. **Feather, 2x with lines cut off:** 2x is 320x288, the full 320-pixel
+   width but 48 lines too tall for the 240-line screen. Try it to see what
+   it looks like with 48 lines cropped, top and bottom or chosen per game.
+   A game's status bar or score area may land in the cut; Link's
+   Awakening, for one, has its item bar at the bottom. Drawing more pixels
+   doesn't slow the Feather: every paint already sends all 320x240.
+
+**The button:** both would be selected by the Game Boy's unused STRETCH
+button (Button 1 on the Fruit Jam, L on the Feather's Wii pad), toggling
+between 1x and the big mode. This is the "scaled modes on STRETCH" that
+`gameboy_video.h` already mentions.
+
 ## What changes in how the project works
 
 Every arcade port is one program, confirmed on hardware title by title. A
