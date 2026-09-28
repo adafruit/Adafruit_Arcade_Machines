@@ -6,7 +6,7 @@ SPDX-License-Identifier: MIT
 # Adafruit Arcade Machines
 
 Classic arcade machines and consoles (Game Boy, NES) emulated on the
-[Fruit Jam](https://www.adafruit.com/product/6200) w/ HDMI display and
+[Fruit Jam](https://www.adafruit.com/product/6200) w/ DVI display and
 [Feather ESP32](https://www.adafruit.com/product/5438) w/ TFT in Arduino.
 Built on a framework separating CPU core, game machine, and board so each is
 reusable for a different core, game, or board.
