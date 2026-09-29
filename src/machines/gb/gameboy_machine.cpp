@@ -175,9 +175,13 @@ static uint32_t g_line = 0;
 static bool g_swap_pending = false;
 
 static void emit_line(const gameboy_system *sys) {
-    if (g_line == 0 && g_swap_pending) {
-        gameboy_core_swap();
-        g_swap_pending = false;
+    if (g_line == 0) {
+        if (g_swap_pending) {
+            gameboy_core_swap();
+            g_swap_pending = false;
+        }
+        // For a board scanning the picture out itself at 3x (gameboy_video.h).
+        gameboy_video_publish(gameboy_core_front(), sys->rotation, sys->mirror_x);
     }
     uint16_t *buf = hal_video_acquire_scanline();
     gameboy_video_render_scanline(g_line, buf, gameboy_core_front(),

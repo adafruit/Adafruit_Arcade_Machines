@@ -966,6 +966,11 @@ games did. A colour-correction curve is a possible later refinement.
 
 ### Later: a bigger Game Boy picture, integer scaling only (noted 2026-09-28)
 
+> **Fruit Jam 3x: DONE (2026-09-29, DEVNOTES #153).** Button 1 switches
+> between 3x (the default) and 1x, scanned out by core 1 through
+> `fruitjam_video_set_line_source()`. It was confirmed on hardware. The
+> Feather's 2x crop, item 2 below, is still to try.
+
 **Game Boy only; the NES already fills the height on both boards (256x240).**
 Today the 160x144 picture is drawn 1x on the 320x240 canvas
 (`gameboy_video.h`): 320x288 on the Fruit Jam's 640x480 output (each Game

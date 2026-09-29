@@ -68,6 +68,18 @@ void fruitjam_set_sys_clock_khz(uint32_t khz);
 // host task (usb_input_fruitjam.cpp); null for none.
 void fruitjam_video_set_idle_hook(void (*hook)(void));
 
+// DIRECT SCAN-OUT, HSTX video only (hal_video_fruitjam_hstx.cpp): `src` is
+// called on core 1, inside the video interrupt, for every 640x480 output
+// line, and fills it itself -- `line` 0..479, `dst` 640 RGB565 pixels
+// packed two to a word, the first pixel in the low half. The canvas queue
+// keeps running underneath (it still paces the machine) but is not shown.
+// For pictures the 320x240 canvas cannot hold at an integer scale, such as
+// the Game Boy at 3x. `src` and everything it reads must be in RAM, and it
+// must not call anything in flash. Null returns to the canvas. Returns false
+// on the PicoDVI fallback, which has no such mode.
+typedef void (*fruitjam_line_source_t)(uint32_t line, uint32_t *dst);
+bool fruitjam_video_set_line_source(fruitjam_line_source_t src);
+
 // Undebounced button level, bypassing hal_input_read()'s filter (see
 // hal_input_fruitjam.cpp). Board-specific and diagnostic-only -- games use
 // the ArcadeHAL contract's hal_input_read() instead.
