@@ -8342,3 +8342,44 @@ and the one-sample corrections work between 256 and 640. Each of those
 two games makes one jump at start-up, and then the ring settles near
 275, like the rest (~12 ms behind the DAC). The status line counts the
 jumps.
+
+### 152. DVI video with audio is the Fruit Jam's default
+
+The Adafruit DVI Audio library now carries this project's encoder-in-RAM
+change (#150). It was merged as adafruit/Adafruit_DVI_Audio#1, after
+review:
+
+- the tables' sections renamed `.data.dvi_*`;
+- `hstx_packet_init()` moved to RAM, as the reviewer asked;
+- `compute_parity3`'s compiler clone moved too, found on the same check.
+
+The repository moved to the Adafruit organization, and 1.0.0 is in
+Library Manager. That removes the one blocker the plan had for shipping
+(Library Manager dependencies only, never vendored).
+
+**HSTX becomes the default** and PicoDVI the fallback.
+
+- **Why not keep it opt-in:** the Arduino IDE gives a sketch no way to pass
+  compiler flags to a library. An opt-in `-DARCADE_FRUITJAM_HSTX` would
+  have meant almost nobody got the feature.
+- **The switch:** `hal_video_fruitjam_hstx.cpp` builds unless
+  `-DARCADE_FRUITJAM_PICODVI` is set, which builds `hal_video_fruitjam.cpp`
+  instead.
+- **The core voltage:** `fruitjam_set_sys_clock_khz()` raises it to 1.15 V
+  unless the PicoDVI fallback is chosen.
+- **`depends=`** adds "Adafruit DVI Audio". PicoDVI stays in the list for
+  the fallback.
+
+**Checked, all against the INSTALLED library** (the build's dependency
+files point at `~/Documents/Arduino/libraries/Adafruit_DVI_Audio`, not the
+local clone):
+
+- **Builds:** all nine Fruit Jam sketches with no flags. The PicoDVI
+  fallback builds, at exactly its old size (153,452 bytes for Galaga). A
+  Feather sketch builds, with no DVI library pulled in.
+- **Lint:** `arduino-lint --library-manager submit` on a clean export: 0
+  errors, 1 warning, 28 examples.
+- **Burger Time on hardware,** the heaviest game: work 14,896 us, against
+  PicoDVI's 15,058 us and 14,965 us with the local clone (#149). DVI audio
+  is at 44.1 kHz, its only corrections were in the first 10 s, and the
+  user confirmed picture and sound on the TV and the jack.
