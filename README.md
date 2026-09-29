@@ -26,8 +26,10 @@ to one game or one board are reusable for the next port:
   ...): that game's own port wiring, VRAM renderer, sound, and ROM/asset
   manifest. Board-agnostic — talks only to the HAL.
 - **`src/boards/fruitjam/`** — the Fruit Jam's implementation of those
-  contracts: PicoDVI video, TLV320DAC3100 + I2S audio, GPIO input, SD card
-  storage on SdFat.
+  contracts: DVI video on the RP2350's HSTX (Adafruit DVI Audio), with the
+  sound sent over the display cable as well as to the TLV320DAC3100 + I2S
+  headphone/speaker output, GPIO and USB gamepad input, and SD card storage
+  on SdFat. PicoDVI (PIO) video remains as a build-time fallback.
 - **`src/boards/feather_esp32/`** — a second board, proving the split is
   real: Feather ESP32 V2 + 2.4" TFT FeatherWing (SPI ILI9341) + a
   MAX98357A. Entirely different silicon, display technology and audio
@@ -77,6 +79,18 @@ any known quirks. They all share the building steps below.
 **USB gamepads** work in every Fruit Jam game and both consoles, plugged
 into either Type-A port, when the sketch is built with the Adafruit TinyUSB
 USB stack (see the build steps).
+
+**Sound plays through the display cable too** on the Fruit Jam (from
+v2.14.0): a TV or monitor with speakers plays it, at the same time as the
+headphone jack/speaker output. The video is driven by the RP2350's HSTX
+through the [Adafruit DVI Audio](https://github.com/adafruit/Adafruit_DVI_Audio)
+library. Every Fruit Jam game and console was measured against the
+previous PicoDVI video and runs at the same speed or faster
+(`extras/DEVNOTES.md` #148-#151). A display that won't show a picture with
+the audio packets can use the old PicoDVI video instead, built with
+`-DARCADE_FRUITJAM_PICODVI`. That needs arduino-cli
+(`--build-property "compiler.cpp.extra_flags=-DARCADE_FRUITJAM_PICODVI"`),
+since the Arduino IDE can't pass compiler flags to a library.
 
 ### A second board: Feather ESP32 V2
 
@@ -236,9 +250,9 @@ way of setting the optimisation level, so they are split here.
    as an additional board URL first).
 2. Install this library. Either **Sketch → Include Library → Add .ZIP
    Library** on a download of this repo, or clone it into your sketchbook's
-   `libraries/` folder. Its one dependency, `PicoDVI - Adafruit Fork`, comes
-   from Library Manager (it is listed in `library.properties`, so the IDE
-   offers to install it for you).
+   `libraries/` folder. Its dependencies (among them `Adafruit DVI Audio`
+   for the Fruit Jam's video) come from Library Manager: they are listed in
+   `library.properties`, so the IDE offers to install them for you.
 
    > **Upgrading from an earlier checkout? Undo the old sketchbook setting.**
    > This repo used to be an Arduino *sketchbook*, and the old instructions
@@ -394,7 +408,7 @@ a wiring problem from a performance one.
 ```bash
 arduino-cli core install rp2040:rp2040 \
   --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
-arduino-cli lib install "PicoDVI - Adafruit Fork"
+arduino-cli lib install "Adafruit DVI Audio" "PicoDVI - Adafruit Fork"
 
 # --library points the builder at this checkout, since the repo IS the
 # library rather than something installed under your sketchbook.
@@ -433,7 +447,7 @@ instead, so edits are live in the IDE with no copying:
 ```bash
 ln -s "$PWD" ~/Documents/Arduino/libraries/Adafruit_Arcade_Machines
 # into that same sketchbook -- both boards' dependencies
-arduino-cli lib install "PicoDVI - Adafruit Fork" \
+arduino-cli lib install "Adafruit DVI Audio" "PicoDVI - Adafruit Fork" \
   "SdFat - Adafruit Fork" "Adafruit ILI9341"
 ```
 
@@ -554,12 +568,12 @@ and the IDE ignores entirely. Root is `src/`, `examples/`, `extras/`,
 Submission itself is a separate decision: a PR to
 [`arduino/library-registry`](https://github.com/arduino/library-registry)
 adding this repo's URL to `repositories.txt`. The release tags already line
-up (`v2.10.2` matches `version=2.10.2` in `library.properties`), and all four
-dependencies — `PicoDVI - Adafruit Fork`, `SdFat - Adafruit Fork`,
-`Adafruit TLV320 I2S` and `Adafruit ILI9341` — are themselves in Library
-Manager. Two of the four are per-board rather than universal: PicoDVI is
-Fruit Jam only and ILI9341 is Feather ESP32 V2 only, but `depends` has no way
-to say so, so both are declared.
+up (`v2.10.2` matches `version=2.10.2` in `library.properties`), and every
+dependency in `depends` is itself in Library Manager. Several are per-board
+rather than universal: Adafruit DVI Audio, PicoDVI (the fallback video),
+Adafruit TinyUSB and Pico PIO USB are Fruit Jam only, and ILI9341 is
+Feather ESP32 V2 only. `depends` has no way to say so, so all are
+declared.
 
 ## Host test harnesses
 
@@ -671,10 +685,10 @@ audio-clock lesson)
 are non-obvious and worth reading before touching `src/boards/fruitjam/`,
 `src/cpu/i8080/`, or adding a new synthesized-audio channel to any game.
 
-`extras/HDMI_AUDIO_NOTES.md` is a possible future feature rather than a
-record of the present: audio over the HDMI cable on the Fruit Jam, which
-would mean replacing the PIO-bitbanged DVI backend with an HSTX one. Nothing
-is implemented; the file exists so the research does not have to be repeated.
+`extras/DVI_AUDIO_PLAN.md` covers the Fruit Jam's HSTX video and the sound
+over the display cable: the plan, the decisions, and how the work went
+(`extras/DEVNOTES.md` #147-#152). An earlier feasibility study from before
+any code was written is kept in `extras/HDMI_AUDIO_NOTES.md`.
 
 ## Credits
 
@@ -755,7 +769,12 @@ is implemented; the file exists so the research does not have to be repeated.
 - The Pico SDK original this project was ported to Arduino from:
   [adafruit/invaders_pico](https://github.com/adafruit/invaders_pico) — Space
   Invaders on the same Fruit Jam hardware, built against the raw Pico SDK
-- DVI output: [PicoDVI](https://github.com/Wren6991/PicoDVI) by Luke Wren, via [Adafruit's fork](https://github.com/adafruit/PicoDVI)
+- DVI video and audio on the Fruit Jam: [Adafruit DVI Audio](https://github.com/adafruit/Adafruit_DVI_Audio)
+  (MIT), a wrapper around [fliperama86/pico_hdmi](https://github.com/fliperama86/pico_hdmi)
+  (The Unlicense), whose video output derives from Raspberry Pi's
+  BSD-3-Clause HSTX example. This project contributed its encoder-in-RAM
+  change (adafruit/Adafruit_DVI_Audio#1).
+- DVI output, the fallback: [PicoDVI](https://github.com/Wren6991/PicoDVI) by Luke Wren, via [Adafruit's fork](https://github.com/adafruit/PicoDVI)
 - I2S PIO program: Raspberry Pi's [pico-extras](https://github.com/raspberrypi/pico-extras)
   (`pico_audio_i2s/audio_i2s.pio`, BSD-3-Clause), reached via pico-infoNES —
   see `src/boards/fruitjam/audio_i2s.pio`'s own header for the

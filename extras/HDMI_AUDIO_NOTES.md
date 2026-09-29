@@ -5,6 +5,12 @@ SPDX-License-Identifier: MIT
 
 # Audio over HDMI on the Fruit Jam — feasibility notes
 
+> **Superseded (2026-09-29).** This was the feasibility study before any code
+> was written. The feature now exists: the Fruit Jam's default video is the
+> HSTX backend with sound over the display cable (v2.14.0). See
+> `extras/DVI_AUDIO_PLAN.md` and `extras/DEVNOTES.md` #147-#152. Kept as the
+> research record; nothing below describes the current code.
+
 **Status: investigated, NOT implemented. No code has been written.** This is a
 record of what was found on 2026-09-16 so that the question does not have to be
 re-researched from scratch, and so that anyone picking it up starts from the

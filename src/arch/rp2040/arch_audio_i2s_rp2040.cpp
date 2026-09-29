@@ -55,12 +55,16 @@
 static int32_t audio_buf[2][BUFFER_SAMPLES];
 static int dma_ch_a, dma_ch_b;
 static volatile hal_audio_fill_cb g_fill_cb = NULL;
+static volatile arch_i2s_tap_cb g_tap = NULL;
+
+void arch_i2s_set_tap(arch_i2s_tap_cb tap) { g_tap = tap; }
 
 static void ARCADE_FAST_FUNC(audio_dma_irq_handler)(void) {
     if (dma_irqn_get_channel_status(1, dma_ch_a)) {
         dma_irqn_acknowledge_channel(1, dma_ch_a);
         if (g_fill_cb) g_fill_cb(audio_buf[0], BUFFER_SAMPLES);
         else memset(audio_buf[0], 0, sizeof(audio_buf[0]));
+        if (arch_i2s_tap_cb tap = g_tap) tap(audio_buf[0], BUFFER_SAMPLES);
         dma_channel_set_read_addr(dma_ch_a, audio_buf[0], false);
         dma_channel_set_trans_count(dma_ch_a, BUFFER_SAMPLES, false);
     }
@@ -68,6 +72,7 @@ static void ARCADE_FAST_FUNC(audio_dma_irq_handler)(void) {
         dma_irqn_acknowledge_channel(1, dma_ch_b);
         if (g_fill_cb) g_fill_cb(audio_buf[1], BUFFER_SAMPLES);
         else memset(audio_buf[1], 0, sizeof(audio_buf[1]));
+        if (arch_i2s_tap_cb tap = g_tap) tap(audio_buf[1], BUFFER_SAMPLES);
         dma_channel_set_read_addr(dma_ch_b, audio_buf[1], false);
         dma_channel_set_trans_count(dma_ch_b, BUFFER_SAMPLES, false);
     }

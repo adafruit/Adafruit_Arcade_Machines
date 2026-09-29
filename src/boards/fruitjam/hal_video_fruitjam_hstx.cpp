@@ -1,0 +1,358 @@
+// SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
+//
+// SPDX-License-Identifier: MIT
+
+// hal_video.h for the Adafruit Fruit Jam on the RP2350's HSTX, through
+// pico_hdmi (via the Adafruit DVI Audio library). THE FRUIT JAM'S DEFAULT
+// VIDEO since v2.14.0; hal_video_fruitjam.cpp's PicoDVI (PIO) backend is the
+// fallback, built instead with -DARCADE_FRUITJAM_PICODVI. See
+// extras/DVI_AUDIO_PLAN.md. It carries the sound over the display cable
+// too, and it frees PIO 0 and most of core 1, since HSTX encodes TMDS in
+// hardware.
+//
+// SAME CONTRACT, SAME QUEUE. The machines render 320-pixel lines through
+// acquire/submit into 32 buffers cycled through a free and a valid queue,
+// exactly as with PicoDVI, so frame pacing, the statistics and the USB idle
+// hook behave the same. What differs is the consumer: pico_hdmi's per-line
+// interrupt on core 1 PULLS, calling scanline_cb() once per 640x480 output
+// line. It takes a buffer from the valid queue for every second output line,
+// doubles each pixel into the 640-pixel line, and after the second use puts
+// the buffer back on the free queue.
+//
+// NOTHING THE CALLBACK TOUCHES MAY LIVE IN FLASH. The first version used
+// the Pico SDK's queue_t, whose functions are in flash and take spin locks.
+// With a game running from flash on core 0, a cache miss inside the video
+// interrupt made it late, one HSTX command word went out wrong, and the
+// stream desynchronised for good: a blank TV, with lines "completing" at
+// bus speed (pico_hdmi's own video_output_force_resync() comment describes
+// exactly this). So the two queues are lock-free single-producer rings,
+// fully inlined, as in the spike that worked (DEVNOTES #147, #148).
+//
+// THE LINE ORDER HEALS ITSELF. The consumer cannot block the way PicoDVI's
+// pump does, so a late line cannot simply be waited for. Each buffer
+// carries the row it was submitted for; a stale row is dropped, a row that
+// is early waits, and a row with nothing ready shows RED -- the same
+// starvation signal as PicoDVI's -- so one missed line never shifts the
+// rest of the picture. Measured in the spike first (DEVNOTES #147).
+#if defined(ARDUINO_ADAFRUIT_FRUITJAM_RP2350) && !defined(ARCADE_FRUITJAM_PICODVI)
+
+#include <Adafruit_DVI_Audio.h>   // pico_hdmi: video_output.h, the audio queue
+#include "pico/platform.h"
+#include "pico/time.h"
+#include "hardware/vreg.h"
+#include "hal/arcade_hal_video.h"
+#include "boards/fruitjam/board_config_fruitjam.h"
+
+const uint32_t HAL_VIDEO_WIDTH  = 320;
+const uint32_t HAL_VIDEO_HEIGHT = 240;
+
+#define N_SCANBUF 32          // the same runway as PicoDVI's (DEVNOTES #85)
+#define DVI_AUDIO_RATE 44100 // twice the machines' 22,050 Hz (step 3)
+
+static uint16_t s_buf[N_SCANBUF][320];
+static uint16_t s_row[N_SCANBUF];     // the canvas row each buffer holds
+
+// A single-producer, single-consumer ring of buffer pointers, big enough
+// for every buffer. `valid`: core 0 pushes, core 1's callback pops. `free`:
+// the callback pushes, core 0 pops. No locks; a barrier orders each slot
+// write before the index that publishes it.
+typedef struct {
+    uint16_t *slot[N_SCANBUF];
+    volatile uint32_t head;   // written by the producer only
+    volatile uint32_t tail;   // written by the consumer only
+} ring_t;
+
+static ring_t s_free, s_valid;
+
+static __force_inline void ring_init(ring_t *r) { r->head = r->tail = 0; }
+static __force_inline uint32_t ring_level(const ring_t *r) { return r->head - r->tail; }
+static __force_inline bool ring_push(ring_t *r, uint16_t *b) {
+    if (r->head - r->tail >= N_SCANBUF) return false;
+    r->slot[r->head & (N_SCANBUF - 1u)] = b;
+    __dmb();
+    r->head = r->head + 1;
+    return true;
+}
+static __force_inline bool ring_peek(const ring_t *r, uint16_t **b) {
+    if (r->tail == r->head) return false;
+    __dmb();
+    *b = r->slot[r->tail & (N_SCANBUF - 1u)];
+    return true;
+}
+static __force_inline void ring_drop(ring_t *r) {
+    __dmb();
+    r->tail = r->tail + 1;
+}
+static uint32_t s_next_row = 0;       // producer: the row the next submit is
+
+static volatile uint32_t s_blocked_us = 0;
+static volatile uint32_t s_starve_events = 0;
+static volatile uint32_t s_min_valid = 0xFFFFFFFFu;
+static void (*volatile s_idle_hook)(void) = nullptr;
+
+void fruitjam_video_set_idle_hook(void (*hook)(void)) { s_idle_hook = hook; }
+
+static inline uint32_t buf_index(const uint16_t *b) {
+    return (uint32_t)(b - s_buf[0]) / 320u;
+}
+
+// --- Consumer: core 1, inside pico_hdmi's per-line interrupt ---------------
+
+static uint16_t *s_cur = nullptr;     // the buffer being shown, or null
+static bool      s_cur_owned = false; // it must go back to the free queue
+
+static void __not_in_flash_func(release_cur)(void) {
+    if (s_cur_owned) {
+        (void)ring_push(&s_free, s_cur);
+        s_cur_owned = false;
+    }
+    s_cur = nullptr;
+}
+
+static void __not_in_flash_func(scanline_cb)(uint32_t v_scanline, uint32_t active_line,
+                                             uint32_t *dst) {
+    (void)v_scanline;
+    const uint32_t row = active_line >> 1;
+    if ((active_line & 1u) == 0) {
+        release_cur();
+        // Take the buffer for this row: drop stale ones, leave an early one.
+        uint16_t *b;
+        while (ring_peek(&s_valid, &b)) {
+            const uint32_t r = s_row[buf_index(b)];
+            const uint32_t ahead = (r + HAL_VIDEO_HEIGHT - row) % HAL_VIDEO_HEIGHT;
+            if (ahead == 0) {                          // this row
+                ring_drop(&s_valid);
+                s_cur = b; s_cur_owned = true;
+                break;
+            }
+            if (ahead < HAL_VIDEO_HEIGHT / 2) break;   // early: keep it
+            ring_drop(&s_valid);                       // stale: drop it
+            (void)ring_push(&s_free, b);
+        }
+    }
+    if (s_cur) {
+        const uint16_t *src = s_cur;
+        for (int i = 0; i < 320; i++) {
+            const uint32_t p = src[i];
+            dst[i] = p | (p << 16);
+        }
+    } else {
+        for (int i = 0; i < 320; i++) dst[i] = 0xF800F800u;   // red: starved
+    }
+    if (active_line == MODE_V_ACTIVE_LINES - 1u) release_cur();
+}
+
+// --- DVI audio: the DAC's samples, sent over DVI too ----------------------
+//
+// Step 3 of extras/DVI_AUDIO_PLAN.md. The I2S interrupt (core 0) hands
+// each block it has just made for the DAC to dvi_audio_tap(), which copies the
+// mono samples into a ring. The pump, in core 1's background task, takes
+// two at a time, repeats each (44.1 kHz is exactly twice the machines'
+// 22,050 Hz), encodes a 4-frame packet and keeps pico_hdmi's queue topped
+// up. The DAC and DVI run from the same crystal but not the same divider,
+// so the ring is held near its middle by dropping or repeating one sample
+// when it drifts.
+
+#include "arch/rp2040/arch_audio_i2s.h"
+
+#define DVI_RING       2048u   // mono samples, power of two
+#define DVI_RING_JUMP  1024u   // above: skip straight to DVI_RING_TARGET
+#define DVI_RING_TARGET 384u   // ~17 ms of delay behind the DAC
+#define DVI_RING_HIGH   640u   // above: drop one sample
+#define DVI_RING_LOW    256u   // below: repeat one sample
+#define DVI_DI_TARGET   200u   // queued packets, as pico_hdmi's example keeps
+
+static int16_t           s_ring[DVI_RING];
+static volatile uint32_t s_ring_head = 0;   // I2S interrupt (core 0)
+static volatile uint32_t s_ring_tail = 0;   // pump (core 1)
+static volatile uint32_t s_dvi_packets = 0, s_dvi_drops = 0, s_dvi_repeats = 0,
+                         s_dvi_overflow = 0, s_dvi_jumps = 0, s_dvi_ring_min = 0xFFFFFFFFu;
+static int s_channel_frame = 0;
+
+static void __not_in_flash_func(dvi_audio_tap)(const int32_t *block, int count) {
+    uint32_t head = s_ring_head;
+    for (int i = 0; i < count; i++) {
+        if (head - s_ring_tail >= DVI_RING) { s_dvi_overflow = s_dvi_overflow + 1; break; }
+        s_ring[head & (DVI_RING - 1u)] = (int16_t)(block[i] & 0xFFFF);
+        head++;
+    }
+    __dmb();
+    s_ring_head = head;
+}
+
+static void __not_in_flash_func(dvi_audio_pump)(void) {
+    uint32_t level = s_ring_head - s_ring_tail;
+    if (level < s_dvi_ring_min) s_dvi_ring_min = level;
+    uint32_t budget = 32;   // packets per call: ~11 are due each millisecond
+    while (budget-- && hstx_di_queue_get_level() < DVI_DI_TARGET) {
+        level = s_ring_head - s_ring_tail;
+        if (level < 2) break;
+        __dmb();
+        uint32_t tail = s_ring_tail;
+        // Far too full -- audio that started long before the video did (Space
+        // Invaders) -- is a delay behind the picture, not a buffer: skip it
+        // in one step instead of trimming a sample per packet (#151).
+        if (level > DVI_RING_JUMP) {
+            tail = s_ring_head - DVI_RING_TARGET;
+            level = DVI_RING_TARGET;
+            s_dvi_jumps = s_dvi_jumps + 1;
+        }
+        const int16_t a = s_ring[tail & (DVI_RING - 1u)];
+        const int16_t b = s_ring[(tail + 1) & (DVI_RING - 1u)];
+        if (level > DVI_RING_HIGH)     { tail += 3; s_dvi_drops = s_dvi_drops + 1; }
+        else if (level < DVI_RING_LOW) { tail += 1; s_dvi_repeats = s_dvi_repeats + 1; }
+        else                            { tail += 2; }
+        audio_sample_t f[4];
+        f[0].left = f[0].right = a; f[1].left = f[1].right = a;
+        f[2].left = f[2].right = b; f[3].left = f[3].right = b;
+        hstx_packet_t packet;
+        const int next = hstx_packet_set_audio_samples_cs_rate(&packet, f, 4, s_channel_frame,
+                                                               DVI_AUDIO_RATE);
+        hstx_data_island_t island;
+        hstx_encode_data_island(&island, &packet, false, DI_HSYNC_ACTIVE);
+        if (!hstx_di_queue_push(&island)) break;
+        s_channel_frame = next;
+        s_ring_tail = tail;
+        s_dvi_packets = s_dvi_packets + 1;
+    }
+}
+
+// --- Desync watchdog: core 1's background loop -----------------------------
+//
+// pico_hdmi's stream can still desynchronise now and then with a game
+// running (DEVNOTES #148): the TV loses lock and frames "complete" far
+// faster than 60 a second. pico_hdmi ships the recovery for exactly this,
+// video_output_force_resync() (not in its header), "safe to call from
+// Core 1 thread context". So: every 250 ms, more than 20 frames (15
+// expected) means a runaway stream, and it is restarted and counted.
+
+extern "C" void video_output_force_resync(void);
+
+static volatile uint32_t s_resyncs = 0;
+
+static void __not_in_flash_func(background_task)(void) {
+    const uint32_t now = time_us_32();
+    // The pump runs once a millisecond, not flat out: the queue holds
+    // ~18 ms of audio, and a loop that polls the ring and pico_hdmi's queue
+    // continuously is SRAM traffic core 0's emulation competes with
+    // (DEVNOTES #149).
+    static uint32_t last_pump = 0;
+    if (now - last_pump >= 1000u) {
+        last_pump = now;
+        dvi_audio_pump();
+    }
+    static uint32_t t0 = 0, f0 = 0;
+    if (now - t0 < 250000u) return;
+    const uint32_t frames = video_frame_count - f0;
+    if (t0 != 0 && frames > 20u) {
+        video_output_force_resync();
+        s_resyncs = s_resyncs + 1;
+    }
+    t0 = now;
+    f0 = video_frame_count;
+}
+
+// pico_hdmi calls this in a tight loop. Sleeping until the next interrupt
+// (the video interrupt comes every scanline, ~31,000 times a second) keeps
+// core 1 off the bus between passes; spinning cost core 0's emulation
+// ~0.4 ms a frame in Pac-Man (DEVNOTES #149).
+static void __not_in_flash_func(background_task_sleepy)(void) {
+    background_task();
+    __wfe();
+}
+
+// --- The HAL ---------------------------------------------------------------
+
+bool hal_video_init(void) {
+    ring_init(&s_free);
+    ring_init(&s_valid);
+    for (int i = 0; i < N_SCANBUF; i++) (void)ring_push(&s_free, s_buf[i]);
+    s_next_row = 0;
+    // pico_hdmi's core voltage for 252 MHz HSTX. Here, not only in
+    // fruitjam_set_sys_clock_khz(), because some sketches set the clock with
+    // a bare set_sys_clock_khz() (galaga_fruitjam does).
+    vreg_set_voltage(VREG_VOLTAGE_1_15);
+    sleep_ms(10);
+    // Configure only: the signal starts in hal_video_run(), as the HAL
+    // requires (video_output_core1_run() enables HSTX and the DMA).
+    hstx_di_queue_init();
+    video_output_init(MODE_H_ACTIVE_PIXELS, MODE_V_ACTIVE_LINES);
+    pico_hdmi_set_audio_sample_rate(DVI_AUDIO_RATE);
+    video_output_set_scanline_callback(scanline_cb);
+    video_output_set_background_task(background_task_sleepy);
+    arch_i2s_set_tap(dvi_audio_tap);   // DVI audio: a copy of the DAC's samples
+    return true;
+}
+
+uint16_t *hal_video_acquire_scanline(void) {
+    uint16_t *b;
+    const uint32_t t0 = time_us_32();
+    void (*hook)(void) = s_idle_hook;
+    while (!ring_peek(&s_free, &b)) {
+        if (hook) hook(); else tight_loop_contents();
+    }
+    ring_drop(&s_free);
+    s_blocked_us += time_us_32() - t0;
+    return b;
+}
+
+void hal_video_submit_scanline(uint16_t *buf) {
+    s_row[buf_index(buf)] = (uint16_t)s_next_row;
+    if (++s_next_row == HAL_VIDEO_HEIGHT) s_next_row = 0;
+    while (!ring_push(&s_valid, buf)) tight_loop_contents();   // cannot fill: 32 slots
+    const uint32_t lvl = ring_level(&s_valid);
+    if (lvl <= 1u) s_starve_events++;
+    if (lvl < s_min_valid) s_min_valid = lvl;
+}
+
+uint32_t hal_video_take_blocked_us(void) {
+    const uint32_t v = s_blocked_us;
+    s_blocked_us = 0;
+    return v;
+}
+
+uint32_t hal_video_valid_level(void) { return ring_level(&s_valid); }
+
+uint32_t hal_video_take_min_valid_level(void) {
+    const uint32_t v = s_min_valid;
+    s_min_valid = 0xFFFFFFFFu;
+    return (v == 0xFFFFFFFFu) ? 0u : v;
+}
+
+uint32_t hal_video_scanbuf_count(void) { return (uint32_t)N_SCANBUF; }
+
+uint32_t hal_video_take_starve_count(void) {
+    // Report a watchdog resync once, from the sketch's status call.
+    static uint32_t reported = 0;
+    if (s_resyncs != reported) {
+        reported = s_resyncs;
+        Serial.printf("[hstx] video resynced (%lu so far)\n", (unsigned long)reported);
+    }
+    // DVI audio, at most every 10 s (sketches call this at different rates).
+    static uint32_t t_last = 0, pk0 = 0;
+    const uint32_t t_now = time_us_32();
+    if (t_now - t_last >= 10000000u) {
+        const uint32_t pk = s_dvi_packets;
+        const uint32_t ms = (t_now - t_last) / 1000u;
+        Serial.printf("[hstx] dvi audio: %lu Hz, jumps %lu, drops %lu, repeats %lu, overflow %lu, ring min %lu\n",
+                      (unsigned long)(t_last ? (uint64_t)(pk - pk0) * 4000u / ms : 0),
+                      (unsigned long)s_dvi_jumps,
+                      (unsigned long)s_dvi_drops, (unsigned long)s_dvi_repeats,
+                      (unsigned long)s_dvi_overflow, (unsigned long)s_dvi_ring_min);
+        t_last = t_now;
+        pk0 = pk;
+        s_dvi_ring_min = 0xFFFFFFFFu;
+    }
+    const uint32_t v = s_starve_events;
+    s_starve_events = 0;
+    return v;
+}
+
+void hal_video_probe_readback(void) {}
+
+void hal_video_run(void) {
+    video_output_core1_run();   // never returns
+    __builtin_unreachable();
+}
+
+#endif // ARDUINO_ADAFRUIT_FRUITJAM_RP2350 && !ARCADE_FRUITJAM_PICODVI

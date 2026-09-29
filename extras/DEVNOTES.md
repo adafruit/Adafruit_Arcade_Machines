@@ -8073,3 +8073,313 @@ The Fruit Jam is untouched: its branch of the two macros is unchanged,
 and Galaga on the Fruit Jam still builds. The other Feather games keep
 their tasks on core 0. The Game Boy (8% margin) might gain from the same
 move, but that's unmeasured.
+
+### 147. DVI audio spike: pico_hdmi on the Fruit Jam's HSTX, from our kind of line queue
+
+`extras/DVI_AUDIO_PLAN.md` has the plan. This is step 1: a spike before
+anything replaces PicoDVI. `examples/SelfTest/dvi_audio_test_fruitjam`
+uses pico_hdmi's C API through the Adafruit DVI Audio library (a local
+copy, not yet in Library Manager):
+
+- **The clock stays ours:** 1.15 V, then `fruitjam_set_sys_clock_khz()`.
+- **Video:** core 0 renders 320-pixel test lines into a 16-line queue, the
+  way the machines feed `hal_video`. pico_hdmi's per-line callback on
+  core 1 pops one line per two output lines and doubles it to 640.
+- **Audio:** a core 1 background task makes a 440 Hz tone at 22,050 Hz,
+  repeats each sample to make 44.1 kHz, encodes 4-frame packets and keeps
+  pico_hdmi's queue at 200.
+
+**On hardware (Fruit Jam, DVI to the user's TV), steady every second:**
+
+| Measure | Result |
+|---|---|
+| Frame rate | 60 fps |
+| Missed / out-of-order lines | 0 / 0 |
+| Audio delivered | 11,023 packets/s = 44,092 Hz (one-second window, nominal 44,100) |
+| Audio queue | never below 199 of 200 |
+| Core 1: line callback | 313 ms/s (31%), 10.9 us per line, max 11 us |
+| Core 1: audio encoding | ~100 ms/s (10%), ~9 us per packet, max 37 us |
+
+The user heard the tone from the TV's speakers with no clicks or dropouts,
+and saw the colour bars with the sweeping line correct.
+
+**What it shows:**
+
+- Our push-model line queue drives pico_hdmi's pull-model callback with no
+  missed lines.
+- 44.1 kHz made by repeating a 22,050 Hz stream plays correctly, so the
+  machines' audio needs no real resampling.
+- Video and audio together take about 41% of core 1, where PicoDVI's
+  software TMDS encoding takes all of it today.
+- The line-doubling copy is the biggest share, and pico_hdmi's hardware
+  pixel doubling ("native pixel mode") could remove it. That needs a build
+  option the wrapper fixes (`PICO_HDMI_PRECOMPOSED_ACTIVE_LINES`), so it's a
+  later question.
+
+### 148. The Fruit Jam's HSTX video backend: three failures, then parity with PicoDVI
+
+`src/boards/fruitjam/hal_video_fruitjam_hstx.cpp` implements `hal_video` on
+pico_hdmi (step 2 of `extras/DVI_AUDIO_PLAN.md`), selected at build time
+by `-DARCADE_FRUITJAM_HSTX`; PicoDVI stays the default.
+
+- **Same design as PicoDVI's backend:** the same 32 buffers, free and valid
+  queues, statistics and USB idle hook.
+- **pico_hdmi's per-line callback** on core 1 takes a buffer per two
+  output lines and doubles it to 640 pixels.
+- **Each buffer carries its row,** so a late line shows red and can't shift
+  the picture.
+
+It took three fixes to get there, and each looked like the last.
+
+**1. Blank screen, 73 fps: the voltage? No.** The first Galaga run showed a
+blank TV, the game running at 73 fps, and the valid queue at zero. pico_hdmi
+runs 252 MHz at 1.15 V; Galaga sets its clock with a bare
+`set_sys_clock_khz()`, so the core stayed at 1.10 V. Raising it in
+`hal_video_init()` gave a clean 60 fps boot. The 1.15 V stays, as pico_hdmi's
+tested setting, but that boot was luck: Pac-Man failed the same way
+straight after.
+
+**2. The real bug: flash code in the video interrupt.** A diagnostic
+counted 66,000 line callbacks a second against 28,800, all on core 1, with
+the HSTX clock correct (126 MHz). pico_hdmi's own comment on
+`video_output_force_resync()` names the symptom: "one corrupted/mis-sized
+command word makes the expander misinterpret everything after it,
+permanently -- symptom: sink loses lock while scanlines 'complete' at bus
+speed". The callback called the Pico SDK's `queue_try_peek/remove/add`,
+which live in flash and take spin locks. With a game running from flash on
+core 0 (the XIP cache is shared by both cores), a miss made the interrupt
+late. Replaced with two inlined, lock-free single-producer rings; the
+disassembly shows the callback in SRAM making no calls. Pac-Man then
+matched PicoDVI.
+
+Checked on the way and ruled out, by measurement or by reading:
+
+- **DMA IRQ 0 shared with core 0:** the callback never ran on core 0, and
+  the interrupt was off there.
+- **The core's SPI:** its DMA interrupt is used only by `transferAsync()`,
+  which SdFat never calls; blocking transfers use no DMA.
+- **The USB host:** Galaga without TinyUSB failed the same way.
+- **pico_hdmi's own interrupt path** (`dma_irq_handler` and its callees)
+  is all in scratch RAM. Its one flash call, a compiler-generated
+  `memset`, is on the no-callback path, which we never take.
+
+**3. Still intermittent: a watchdog.** One later Donkey Kong boot desynced
+again, with the same signature. pico_hdmi ships the recovery,
+`video_output_force_resync()`, "safe to call from Core 1 thread context".
+The backend's core-1 background task counts frames every 250 ms; more
+than 20 (15 expected) means a runaway stream, so it resyncs and counts
+it, and the backend prints `[hstx] video resynced (N so far)` once from
+the sketch's status call. In the seven HSTX runs after it went in, it
+never fired. So the root cause of the residual desync is still unknown,
+and so is how often it happens.
+
+Also measured: pico_hdmi sets DMA ahead of both CPUs on the bus; putting
+the default back made no difference to Donkey Kong (14,457 us against
+14,463 us).
+
+**All nine Fruit Jam sketches, attract mode, same frames:**
+
+| Game | PicoDVI work | HSTX work | Min queue | Starvation events |
+|---|---|---|---|---|
+| Space Invaders | 5,795 us | 5,817 us | 29 -> 28 | 0 -> 0 |
+| Lunar Rescue | 5,390 us | 5,480 us | 14 -> 15 | 0 -> 0 |
+| Pac-Man | 8,834 us | 8,625 us | 27 -> 28 | 0 -> 0 |
+| Ms. Pac-Man | 9,644 us | 9,518 us | 27 -> 28 | 0 -> 0 |
+| Galaga | 12,111 us | 11,993 us | 22 -> 22 | 0 -> 0 |
+| Donkey Kong | 13,090 us | 14,463 us | 23 -> 13 (24 on a later boot) | 0 -> 0 |
+| Burger Time | 15,058 us | 15,317 us | 21 -> 17 | 200 -> 40 |
+| Game Boy (Link's Awakening) | 9,251 us | 9,247 us | 12 -> 12 | 0 -> 0 |
+| NES (Zelda) | 9,803 us | 9,855 us | 15 -> 15 | 0 -> 0 |
+
+- **Donkey Kong is the one real cost,** +10% work, still inside the
+  16.7 ms budget. Memory contention with core 1's line-doubling copy was
+  the guess here. **It was wrong (#149):** the cost was core 1's
+  background loop spinning, and it's gone now that the loop sleeps.
+- **Audio:** the consoles had no audio underruns on either backend.
+- **SD:** the NES loaded its save over SD. A save written mid-game on HSTX
+  hasn't been exercised yet.
+- **On the TV:** the user checked all nine and all look right.
+
+### 149. DVI audio on the Fruit Jam, and what core 1's background loop costs core 0
+
+Step 3 of `extras/DVI_AUDIO_PLAN.md`. The machines are untouched.
+
+- **The tap:** the RP2040 I2S driver gains `arch_i2s_set_tap()`, called in
+  its interrupt with each block right after the machine's fill callback
+  made it for the DAC.
+- **The ring:** the HSTX backend's tap copies the mono samples into a
+  2,048-sample lock-free ring, core 0 to core 1.
+- **The pump:** in core 1's background task, it takes two samples at a
+  time, repeats each (44.1 kHz = 2 x 22,050 Hz), encodes a 4-frame packet
+  and keeps pico_hdmi's queue at 200. When the ring drifts it drops or
+  repeats one sample to stay between 256 and 1,024.
+- **The DAC** gets exactly what it did before, so sound goes to both
+  outputs, as decided.
+
+**On hardware:** Pac-Man and Burger Time are clean and in sync from the
+TV and the 3.5 mm jack at once (checked by the user). Delivery is
+44,100 Hz. Repeats happen only while the ring first fills (~650), and
+then there are no drops or overflows, with the ring steady.
+
+**The cost was core 1's loop, not the encoding.** Pac-Man's core 0 work,
+same frames:
+
+| Build | Work mean |
+|---|---|
+| PicoDVI | 8,851 us |
+| HSTX, no background loop (#148's first A/B) | 8,625 us |
+| + watchdog loop spinning, no audio | 9,011 us |
+| + DVI audio, pump flat out | 9,752 us |
+| Experiment: one pre-encoded packet queued repeatedly | 9,989 us |
+| Pump once a millisecond | 9,387 us |
+| **+ `__wfe()` after each pass** | **9,240 us** |
+
+- **Encoding isn't the cost.** Queueing copies of a single pre-encoded
+  packet cost the same as encoding every one, so pico_hdmi's flash-resident
+  encoder (and the shared flash cache) is ruled out.
+- **Core 1 spinning was.** pico_hdmi calls the background task in a tight
+  loop, and one that polls SRAM and the timer millions of times a second
+  slows core 0's emulation.
+- **The fix, both parts:** the pump runs once a millisecond, and each pass
+  ends in `__wfe()`. Core 1 then sleeps until the next scanline interrupt,
+  about 31,000 a second, which is still far more often than the 1 ms pump
+  and 250 ms watchdog need.
+
+**Burger Time, the heaviest game, same frames:** PicoDVI 15,058 us; HSTX
+without audio (#148, spinning loop) 15,317 us; **HSTX with DVI audio
+14,965 us.** Starvation events drop from 200 to 40, min queue 17/32. With
+the loop fixed, DVI audio costs less than the old loop did.
+
+**Donkey Kong, re-measured afterwards on the same frames:** PicoDVI
+13,093 us; HSTX in #148 14,463 us (+10.5%); **HSTX now, with DVI audio,
+13,186 us (+0.7%)**, min queue 17/32, no starvation. #148's build
+registered no background task, but pico_hdmi's core 1 loop still spun
+flat out checking for one. So its 10% was this same cost, not the
+line-doubling copy guessed there. DVI audio in Donkey Kong: 44.1 kHz, no
+drops after the ring fills; the user heard it clean and in sync from the TV
+and the jack, and the picture right.
+
+
+### 150. DVI audio's encoder must run from RAM: PSRAM shares the flash cache
+
+**The NES was the exception.** With DVI audio (#149) Pac-Man, Burger
+Time and Donkey Kong ran at parity with PicoDVI, but the NES (Zelda,
+same frames) was 10.5% slower: 10,833 us against 9,802.
+
+**The difference is where the ROM lives.** The NES keeps its cartridge
+in PSRAM, and on the RP2350 PSRAM goes through the same XIP cache as
+flash. pico_hdmi's packet encoder (`hstx_packet_set_audio_samples_cs_rate`,
+`hstx_encode_data_island`, their helpers and three tables) runs from flash
+on core 1, about 11,000 times a second. Every miss there evicts the ROM
+data core 0 reads constantly. #149's pre-encoded-packet test found no
+effect in Pac-Man because Pac-Man's ROMs are in SRAM.
+
+The same test on the NES isolated it: with one packet encoded once and
+then copied, 9,527 us.
+
+**Fix, in two places:**
+
+1. **In the Adafruit DVI Audio library** (proposed upstream as
+   mikeysklar/Adafruit_DVI_Audio#1). `dvi_hstx_packet.c` declares the encoder's non-inline
+   functions `__not_in_flash_func` and its three tables (`ter_c4`,
+   `bch_table`, `parity_table`, 320 bytes) in `.data` before including
+   `hstx_packet.c.inc`. `dvi_hstx_data_island_queue.c` does the same for
+   `hstx_di_queue_push` and `hstx_di_queue_get_level`. This is the
+   library's own technique, the one `dvi_video_output.c` already uses for
+   `build_line_with_di`, and the vendored pico_hdmi files are unedited.
+2. **Here:** the HSTX backend's `dvi_audio_pump()` is
+   `__not_in_flash_func`.
+
+**The NES, same frames:**
+
+| Build | Work mean | vs PicoDVI |
+|---|---|---|
+| PicoDVI | 9,802 us | -- |
+| DVI audio, encoder in flash | 10,833 us | +10.5% |
+| Encoder and tables in RAM | 10,032 us | +2.4% |
+| **+ pump and queue functions in RAM** | **9,571 us** | **-2.4%** |
+
+DVI audio is unchanged: 44,100 Hz, no drops after the ring fills. On the
+same run the NES wrote a battery save on the HSTX path ("saves 1, last
+took 34 frames", no errors), the open item from #148.
+
+**The rule for this backend, now twice learned (#148, #150):** anything
+core 1 runs often must be in RAM, not only what runs in the interrupt.
+The flash cache is shared by both cores and by PSRAM.
+
+### 151. DVI audio in all nine Fruit Jam sketches, and a start-up delay to skip
+
+With #150's encoder in RAM (the library change proposed as
+mikeysklar/Adafruit_DVI_Audio#1), each sketch was run with DVI audio,
+measured on the same attract frames as #148's PicoDVI runs, and heard by
+the user on the TV and the 3.5 mm jack:
+
+| Sketch | PicoDVI work | HSTX + DVI audio | By ear |
+|---|---|---|---|
+| Space Invaders | 5,787 us | 5,850 us | clean, in sync |
+| Lunar Rescue | 5,386 us | 5,522 us | clean, in sync |
+| Pac-Man | 8,851 us | 9,240 us (#149) | clean, in sync |
+| Ms. Pac-Man | 9,643 us | 9,524 us | clean, in sync |
+| Donkey Kong | 13,093 us | 13,186 us (#149) | clean, in sync |
+| Burger Time | 15,058 us | 14,965 us (#149) | clean, in sync |
+| Game Boy (Link's Awakening, PSRAM) | 9,294 us | 8,740 us | clean, in sync |
+| NES (Zelda, PSRAM) | 9,802 us | 9,571 us (#150) | clean, in sync |
+
+Galaga, run the next day: 12,120 us on PicoDVI, **11,868 us** with DVI
+audio; the user heard it clean and in sync. So all nine are done. All nine
+deliver 44,100 Hz, with no drops once running and no DAC underruns in the
+consoles.
+
+**Audio that starts before the video is a delay, not a buffer.** Space
+Invaders and Lunar Rescue start their audio long before the display, so
+the audio ring filled during boot. Lunar Rescue even overflowed it 91
+times, all before the TV had a picture; the count never moved after.
+
+The one-sample trim then held the ring just under 1,024 samples, about
+46 ms behind the jack. That is harmless for dropouts but late against
+the picture. Now a ring above 1,024 jumps straight to 384 in one step,
+and the one-sample corrections work between 256 and 640. Each of those
+two games makes one jump at start-up, and then the ring settles near
+275, like the rest (~12 ms behind the DAC). The status line counts the
+jumps.
+
+### 152. DVI video with audio is the Fruit Jam's default
+
+The Adafruit DVI Audio library now carries this project's encoder-in-RAM
+change (#150). It was merged as adafruit/Adafruit_DVI_Audio#1, after
+review:
+
+- the tables' sections renamed `.data.dvi_*`;
+- `hstx_packet_init()` moved to RAM, as the reviewer asked;
+- `compute_parity3`'s compiler clone moved too, found on the same check.
+
+The repository moved to the Adafruit organization, and 1.0.0 is in
+Library Manager. That removes the one blocker the plan had for shipping
+(Library Manager dependencies only, never vendored).
+
+**HSTX becomes the default** and PicoDVI the fallback.
+
+- **Why not keep it opt-in:** the Arduino IDE gives a sketch no way to pass
+  compiler flags to a library. An opt-in `-DARCADE_FRUITJAM_HSTX` would
+  have meant almost nobody got the feature.
+- **The switch:** `hal_video_fruitjam_hstx.cpp` builds unless
+  `-DARCADE_FRUITJAM_PICODVI` is set, which builds `hal_video_fruitjam.cpp`
+  instead.
+- **The core voltage:** `fruitjam_set_sys_clock_khz()` raises it to 1.15 V
+  unless the PicoDVI fallback is chosen.
+- **`depends=`** adds "Adafruit DVI Audio". PicoDVI stays in the list for
+  the fallback.
+
+**Checked, all against the INSTALLED library** (the build's dependency
+files point at `~/Documents/Arduino/libraries/Adafruit_DVI_Audio`, not the
+local clone):
+
+- **Builds:** all nine Fruit Jam sketches with no flags. The PicoDVI
+  fallback builds, at exactly its old size (153,452 bytes for Galaga). A
+  Feather sketch builds, with no DVI library pulled in.
+- **Lint:** `arduino-lint --library-manager submit` on a clean export: 0
+  errors, 1 warning, 28 examples.
+- **Burger Time on hardware,** the heaviest game: work 14,896 us, against
+  PicoDVI's 15,058 us and 14,965 us with the local clone (#149). DVI audio
+  is at 44.1 kHz, its only corrections were in the first 10 s, and the
+  user confirmed picture and sound on the TV and the jack.

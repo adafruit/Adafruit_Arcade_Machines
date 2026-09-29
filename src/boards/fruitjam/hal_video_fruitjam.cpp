@@ -26,7 +26,10 @@
 // backend would otherwise collide with this one on all 21 HAL functions.
 // The board macro rather than ARDUINO_ARCH_RP2040 because a Feather RP2350
 // would share the arch and still need its own backend. See PORTING.md.
-#if defined(ARDUINO_ADAFRUIT_FRUITJAM_RP2350)
+// THE FALLBACK. The Fruit Jam's default video is the HSTX backend
+// (hal_video_fruitjam_hstx.cpp, with DVI audio; extras/DVI_AUDIO_PLAN.md).
+// This PicoDVI (PIO) backend is built only with -DARCADE_FRUITJAM_PICODVI.
+#if defined(ARDUINO_ADAFRUIT_FRUITJAM_RP2350) && defined(ARCADE_FRUITJAM_PICODVI)
 
 #include "pico/sync.h"     // next_striped_spin_lock_num()
 #include "pico/platform.h" // __not_in_flash()
@@ -233,4 +236,4 @@ void __not_in_flash("dvi") hal_video_run(void) {
     __builtin_unreachable();
 }
 
-#endif // ARDUINO_ADAFRUIT_FRUITJAM_RP2350
+#endif // ARDUINO_ADAFRUIT_FRUITJAM_RP2350 && ARCADE_FRUITJAM_PICODVI

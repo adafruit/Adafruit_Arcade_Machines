@@ -37,6 +37,15 @@ bool arch_i2s_init(uint32_t sample_rate, uint32_t pin_din, uint32_t pin_bclk);
 // extras/DEVNOTES.md).
 void arch_i2s_set_fill_callback(hal_audio_fill_cb cb);
 
+// A second listener for the finished audio: called from the I2S interrupt
+// with each block right after the fill callback produced it for the DAC
+// (the same packed samples, (s << 16) | (uint16_t)s). The Fruit Jam's HSTX
+// video backend uses it to send the sound over DVI too
+// (extras/DVI_AUDIO_PLAN.md). Runs in the interrupt: it must be quick and
+// in RAM. NULL (the default) disables it.
+typedef void (*arch_i2s_tap_cb)(const int32_t *block, int count);
+void arch_i2s_set_tap(arch_i2s_tap_cb tap);
+
 // Block and restore the audio IRQ around state the fill callback also
 // touches.
 uint32_t arch_i2s_enter_critical(void);
