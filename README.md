@@ -5,8 +5,11 @@ SPDX-License-Identifier: MIT
 
 # Adafruit Arcade Machines
 
-Classic arcade games and consoles for the [Adafruit Fruit Jam](https://www.adafruit.com/product/6200)
-(RP2350B) and the [Feather ESP32 V2](https://www.adafruit.com/product/5438), running under the Arduino framework instead of the raw Pico SDK.
+Classic arcade machines and consoles (Game Boy, NES) emulated on the
+[Fruit Jam](https://www.adafruit.com/product/6200) w/ DVI display and
+[Feather ESP32](https://www.adafruit.com/product/5438) w/ TFT in Arduino.
+Built on a framework separating CPU core, game machine, and board so each is
+reusable for a different core, game, or board.
 
 This started as an Arduino port of [adafruit/invaders_pico](https://github.com/adafruit/invaders_pico)
 (itself a Pico SDK port of Space Invaders), restructured as **SAMP** —
@@ -770,3 +773,39 @@ is implemented; the file exists so the research does not have to be repeated.
   against the same project's `dkong` driver (`dkong.cpp`, `dkong_v.cpp`)
   plus `i8257.cpp` and `resnet.cpp` — see `src/machines/dkong/`'s own
   file-header comments.
+
+**Consoles and controllers**
+
+- Game Boy core: [Peanut-GB](https://github.com/deltabeard/Peanut-GB) by
+  Mahyar Koshkouei (MIT), vendored with one documented patch (the "halt
+  yield"); parts of it are marked in its own header as taken from SameBoy.
+  See `src/machines/gb/core/VENDORED.md`.
+- Game Boy sound: [minigb_apu](https://github.com/deltabeard/minigb_apu) by
+  Mahyar Koshkouei, based on [MiniGBS](https://github.com/baines/MiniGBS) by
+  Alex Baines (MIT), vendored byte-identical.
+- Game Boy Color palettes: generated from
+  [SameBoy](https://github.com/LIJI32/SameBoy)'s `BootROMs/cgb_boot.asm` by
+  Lior Halphon (Expat) — see `extras/tools/gb_palettes/` and
+  `src/machines/gb/gameboy_palette_gbc.h`.
+- NES core: **nofrendo** by Matthew Conte and others, as maintained in
+  [retro-go](https://github.com/ducalex/retro-go), vendored with three
+  documented patches. **GPL-2.0-only** here, linked only into the NES
+  sketches — see `src/machines/nes/core/VENDORED.md` for the licence
+  reasoning and the patches.
+- USB gamepads on the Fruit Jam: the
+  [Adafruit TinyUSB Library](https://github.com/adafruit/Adafruit_TinyUSB_Arduino)
+  and [Pico PIO USB](https://github.com/sekigon-gonnoc/Pico-PIO-USB) by
+  sekigon-gonnoc, as Library Manager dependencies. The gamepad layer on top
+  (`src/input/usb_gamepad*`) is this project's own.
+- Wii Classic / SNES Classic controller driver (`src/input/wii_classic`):
+  written from the public protocol on WiiBrew ("Wiimote/Extension
+  Controllers");
+  [NintendoExtensionCtrl](https://github.com/dmadison/NintendoExtensionCtrl)
+  by Dave Madison and
+  [pico-infonesPlus](https://github.com/PicoPlus-devel/pico-infonesPlus)'s
+  `wiipad.cpp` were read for behaviour, not copied.
+- Test ROMs used by the host harnesses, downloaded by their fetch scripts
+  and never bundled: blargg's Game Boy and NES test ROMs (via
+  [retrio/gb-test-roms](https://github.com/retrio/gb-test-roms) and
+  [christopherpow/nes-test-roms](https://github.com/christopherpow/nes-test-roms)),
+  and Matt Currie's [dmg-acid2](https://github.com/mattcurrie/dmg-acid2).
