@@ -792,7 +792,10 @@ with the HAL almost point for point (as vendored in `pico-peanutGB`):
   `GB_INIT_INVALID_CHECKSUM` or `GB_INIT_CARTRIDGE_UNSUPPORTED`, which maps
   straight onto the magenta "wrong cartridge" screen.
 - **Game Boy Color support** is a compile-time switch
-  (`PEANUT_FULL_GBC_SUPPORT`).
+  (`PEANUT_FULL_GBC_SUPPORT`) **in `pico-peanutGB`'s modified copy only.**
+  Corrected 2026-09-29: upstream `master`, which we vendor, has no Game Boy
+  Color code; it lives on upstream's unmerged `cgb` branch. See "Later:
+  Game Boy Color games" below.
 - **It already runs at full speed on RP2040 and RP2350** (RP2040-GB,
   `pico-peanutGB`).
 
@@ -977,6 +980,38 @@ games did. A colour-correction curve is a possible later refinement.
 > centred / top kept / bottom kept) for players to choose per game, with
 > smooth fit the default. This goes against the "integer only" rule above,
 > by the user's choice after seeing it.
+
+### Later: Game Boy Color games (noted 2026-09-29)
+
+A possible future development, not planned yet. Today the Game Boy plays
+original (DMG) cartridges only; the "Game Boy Color" palette colours DMG
+games and is not Game Boy Color emulation.
+
+- **Where the code is:** upstream Peanut-GB's `cgb` branch (MIT;
+  froggestspirit's "CGB Support", 2022; last merge 2023-09). It is 13
+  commits ahead of `master` and 142 behind, and was never merged. The
+  vendored `master` (`d0bcca7`) has none of it. PicoPlus's `pico-peanutGB`
+  runs Game Boy Color games on the RP2350 with that code merged into an
+  older copy, but the repo is GPL-3.0, so we don't vendor from it
+  (`src/machines/gb/core/VENDORED.md`).
+- **The work:**
+  1. Merge `cgb` onto current `master`, keeping our halt patch, or ask the
+     maintainer about the branch's plans first.
+  2. Frame buffer: 8 background and 8 sprite palettes of 4 colours still
+     fit a byte per pixel, but games change palettes mid-frame, so the
+     renderer needs each line's palettes. The alternative is 16-bit pixels,
+     which doubles the frame buffers from about 45 KB to 90 KB.
+  3. Memory: 32 KB work RAM and 16 KB video RAM, against 8 KB each. Small
+     on both boards.
+- **The risk is speed on the Feather.** Many Game Boy Color games run in
+  double-speed mode. The Fruit Jam has room (8.7 ms of 16.7), and PicoPlus
+  shows it works there; the Feather emulates two frames per paint and
+  needs measuring first.
+- **Unchanged:** the loader, saves (mostly MBC5, already supported), sound,
+  rotation and the picture sizes.
+- **How to start:** a spike in the host harness (`extras/tools/gb_host`)
+  with cgb-acid2 and blargg's Game Boy Color tests, then a double-speed
+  game timed on the Feather.
 
 ### Later: per-game settings saved next to the `.sav` (noted 2026-09-29)
 
