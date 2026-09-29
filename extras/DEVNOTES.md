@@ -8383,3 +8383,47 @@ local clone):
   PicoDVI's 15,058 us and 14,965 us with the local clone (#149). DVI audio
   is at 44.1 kHz, its only corrections were in the first 10 s, and the
   user confirmed picture and sound on the TV and the jack.
+
+### 153. The Game Boy at 3x on the Fruit Jam, scanned out by core 1
+
+The 160x144 picture used to be drawn 1x on the 320x240 canvas: 320x288 on
+the 640x480 output, about half the width. Every bigger scale that fits the
+canvas is non-integer, and the user wants integer scaling only
+(`CONSOLES_PLAN.md`, "a bigger Game Boy picture"). So 3x skips the canvas.
+
+- **The board capability:** `fruitjam_video_set_line_source()`, HSTX only.
+  When set, the video interrupt calls it for every 640x480 output line
+  instead of doubling a canvas line. The canvas queue keeps running
+  underneath, unseen, so the machine is paced exactly as before. The
+  PicoDVI fallback returns false, since its 640-pixel mode fails on this
+  board.
+- **The Game Boy side:** `gameboy_video_scanout_3x()` reads the finished
+  front frame directly, 3 output lines per Game Boy row and 3 pixels per
+  pixel: 480x432 upright, 432x480 rotated, all four rotations and the
+  mirror.
+- **No tearing:** the machine publishes the front frame each time it
+  reaches canvas line 0 (`gameboy_video_publish()`), and the scan-out
+  latches it at output line 0. The machine is a queue's depth (16-28 canvas
+  lines) ahead, so it publishes while the display is in the previous
+  frame's bottom rows. The core then redraws that buffer from row 0, far
+  from the rows still being shown.
+- **Nothing in flash (#148):** the function is `ARCADE_FAST_FUNC`, has no
+  `switch`, since a jump table is read from flash, and is built with
+  `no-tree-loop-distribute-patterns`, so the zero-fill loops don't become
+  `memset` calls. Checked in the ELF: it is at `0x20000504` and has no
+  `bl`/`blx`. The frame buffer is SRAM (`hal_mem_fast_alloc`) and so is the
+  colour table.
+- **The button:** Button 1 (STRETCH), which the Game Boy didn't use,
+  switches between 1x and 3x. After the hardware check below it boots at
+  3x, the user's choice; `-DTEST_GB_SCALE1` boots at 1x. The boot error
+  screens still go through the canvas.
+
+**On hardware (Link's Awakening, TV):**
+
+- **Timing:** 16.63 ms frames, `starve 0`, min queue 13/32, core 0's work
+  8.8-9.6 ms (1x was 8,740 us, #152's table), DVI audio at 44,098 Hz.
+  The extra drawing is core 1's.
+- **The user:** "even pixels, no tearing, item bar visible in game, all
+  rotations look right", and "the 3x is really helpful".
+
+The Feather half of the note (2x with 48 lines cropped) is still to try.

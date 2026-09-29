@@ -49,6 +49,8 @@ is the game that boots.
   (the IDE may not read it). With the default stack the console runs on
   the GPIO buttons alone. Tested: a Mantapad (SNES-style), a Retro-bit
   Genesis 8-button pad and a DualShock 4 (Circle is A, Cross is B).
+- **Button 1 (STRETCH)** switches the picture between 3x and 1x (see
+  below).
 - **Button 2 (ROTATE)** cycles the picture's rotation. The console boots
   in landscape.
 - **Button 3 (MIRROR)** cycles the colour palette:
@@ -60,8 +62,12 @@ is the game that boots.
 
 ## Picture and sound
 
-The 160×144 screen is shown 1:1 (320×288 on the 640×480 output), centred,
-in any of four rotations. Sound is the full four-channel Game Boy APU.
+The 160×144 screen boots at 3x: each Game Boy pixel an exact 3×3 block,
+480×432 upright or 432×480 rotated (the full height), centred on the
+640×480 output. **Button 1** switches to 1x, 320×288 with each pixel a 2×2
+block, and back. Either works in all four rotations. 3x needs the default
+HSTX video; on the PicoDVI fallback (`-DARCADE_FRUITJAM_PICODVI`) the
+picture is 1x and the button does nothing. Sound is the full four-channel Game Boy APU.
 
 ## Boot error screens
 

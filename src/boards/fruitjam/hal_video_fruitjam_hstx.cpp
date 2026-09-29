@@ -92,6 +92,15 @@ static void (*volatile s_idle_hook)(void) = nullptr;
 
 void fruitjam_video_set_idle_hook(void (*hook)(void)) { s_idle_hook = hook; }
 
+// Direct scan-out (board_config_fruitjam.h): when set, the callback fills
+// each output line itself and the canvas buffers are consumed unseen.
+static volatile fruitjam_line_source_t s_line_src = nullptr;
+
+bool fruitjam_video_set_line_source(fruitjam_line_source_t src) {
+    s_line_src = src;
+    return true;
+}
+
 static inline uint32_t buf_index(const uint16_t *b) {
     return (uint32_t)(b - s_buf[0]) / 320u;
 }
@@ -130,7 +139,10 @@ static void __not_in_flash_func(scanline_cb)(uint32_t v_scanline, uint32_t activ
             (void)ring_push(&s_free, b);
         }
     }
-    if (s_cur) {
+    const fruitjam_line_source_t line_src = s_line_src;
+    if (line_src) {
+        line_src(active_line, dst);
+    } else if (s_cur) {
         const uint16_t *src = s_cur;
         for (int i = 0; i < 320; i++) {
             const uint32_t p = src[i];

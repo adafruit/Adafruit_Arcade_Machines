@@ -20,6 +20,11 @@
 //   D-pad   UP A3, DOWN A4, LEFT D8, RIGHT D9
 //   A       D10 (SHOOT)        B       A2 (ACTION2)
 //   Start   D6  (START1)       Select  A5 (COIN)
+//   Button 1 STRETCH switches the picture between 3x (the default: 480x432
+//   on the 640x480 output, the full height rotated, each Game Boy pixel an
+//   exact 3x3 block) and 1x (320x288). 3x needs the default HSTX video; on
+//   the PicoDVI fallback the picture is always 1x and the button does
+//   nothing.
 //   Button 2 ROTATE cycles the picture's rotation.
 //   Button 3 MIRROR cycles the palette: DMG green (the default), Greys,
 //   Pocket, Game Boy Color (chosen by title, as a Game Boy Color would).
@@ -39,6 +44,7 @@
 #include <machines/gb/gameboy_core.h>
 #include <console/console_save.h>
 #include <machines/gb/gameboy_palette.h>
+#include <machines/gb/gameboy_video.h>
 #include <boards/fruitjam/board_config_fruitjam.h>
 #if defined(USE_TINYUSB)
 // USB gamepads on the Type-A ports (Tools > USB Stack > Adafruit TinyUSB,
@@ -53,6 +59,13 @@ static gameboy_system  g_system;
 static volatile bool   g_video_ready = false;
 static bool            g_cart_ok     = false;
 static uint16_t        g_error_color = 0;
+static bool            g_scale3      = false;
+
+static void set_scale3(bool on) {
+    if (!fruitjam_video_set_line_source(on ? gameboy_video_scanout_3x : nullptr)) on = false;
+    g_scale3 = on;
+    Serial.println(on ? "[gameboy] scale 3x" : "[gameboy] scale 1x");
+}
 
 static void print_cart(void) {
     Serial.print("[gameboy] cart /cart/");
@@ -100,6 +113,11 @@ void setup() {
     // at 252 MHz, before core 1 starts the display.
     fruitjam_usb_input_begin(FRUITJAM_USB_MAP_GAMEBOY);
 #endif
+    // 3x at power-up (-DTEST_GB_SCALE1 for 1x); not on the error screens,
+    // which are drawn through the canvas.
+#ifndef TEST_GB_SCALE1
+    if (g_cart_ok) set_scale3(true);
+#endif
     g_video_ready = true;
 }
 
@@ -135,6 +153,12 @@ void loop() {
     bool select = hal_input_read(HAL_BTN_COIN);
     bool rotate = hal_input_read(HAL_BTN_ROTATE);
     bool palette_next = hal_input_read(HAL_BTN_MIRROR);
+    {
+        static bool stretch_prev = false;
+        const bool stretch = hal_input_read(HAL_BTN_STRETCH);
+        if (stretch && !stretch_prev) set_scale3(!g_scale3);
+        stretch_prev = stretch;
+    }
 
 #ifdef TEST_AUTOSTART
     // Unattended bring-up: press Start on the title screen, then Start
@@ -192,6 +216,8 @@ void loop() {
         Serial.print((int)g_system.rotation);
         Serial.print(", palette ");
         Serial.print((int)g_system.palette);
+        Serial.print(", scale ");
+        Serial.print(g_scale3 ? 3 : 1);
 #if defined(USE_TINYUSB)
         Serial.print(", usb pads ");
         Serial.print(fruitjam_usb_input_pads());

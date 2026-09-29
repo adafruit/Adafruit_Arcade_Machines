@@ -181,6 +181,13 @@ static void (*volatile s_idle_hook)(void) = nullptr;
 
 void fruitjam_video_set_idle_hook(void (*hook)(void)) { s_idle_hook = hook; }
 
+// No direct scan-out here: PicoDVI's 640-pixel mode fails on this board, so
+// every picture goes through the 320x240 canvas (board_config_fruitjam.h).
+bool fruitjam_video_set_line_source(fruitjam_line_source_t src) {
+    (void)src;
+    return false;
+}
+
 uint16_t *hal_video_acquire_scanline(void) {
     uint16_t *buf;
     uint32_t t0 = time_us_32();
