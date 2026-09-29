@@ -688,7 +688,7 @@ are non-obvious and worth reading before touching `src/boards/fruitjam/`,
 `extras/DVI_AUDIO_PLAN.md` covers the Fruit Jam's HSTX video and the sound
 over the display cable: the plan, the decisions, and how the work went
 (`extras/DEVNOTES.md` #147-#152). An earlier feasibility study from before
-any code was written is kept in `extras/HDMI_AUDIO_NOTES.md`.
+any code was written is kept in `extras/DVI_AUDIO_NOTES.md`.
 
 ## Credits
 
@@ -822,7 +822,10 @@ any code was written is kept in `extras/HDMI_AUDIO_NOTES.md`.
   [NintendoExtensionCtrl](https://github.com/dmadison/NintendoExtensionCtrl)
   by Dave Madison and
   [pico-infonesPlus](https://github.com/PicoPlus-devel/pico-infonesPlus)'s
-  `wiipad.cpp` were read for behaviour, not copied.
+  `wiipad.cpp` were read for behaviour, not copied. Wii Classic support in
+  pico-infonesPlus was first written by Phillip Burgess
+  ([PaintYourDragon](https://github.com/PaintYourDragon)), whose driver
+  showed the way for this one.
 - Test ROMs used by the host harnesses, downloaded by their fetch scripts
   and never bundled: blargg's Game Boy and NES test ROMs (via
   [retrio/gb-test-roms](https://github.com/retrio/gb-test-roms) and
