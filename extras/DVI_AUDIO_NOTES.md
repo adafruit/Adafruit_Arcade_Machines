@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
 SPDX-License-Identifier: MIT
 -->
 
-# Audio over HDMI on the Fruit Jam — feasibility notes
+# Audio over the display cable on the Fruit Jam — feasibility notes
 
 > **Superseded (2026-09-29).** This was the feasibility study before any code
 > was written. The feature now exists: the Fruit Jam's default video is the
@@ -26,8 +26,8 @@ boards.
 
 Feasible, and the Fruit Jam hardware is already right for it, but it is a
 **video-backend replacement, not an audio feature**. Nothing in the current
-stack can emit HDMI audio, and no amount of work in `hal_audio_*` can change
-that.
+stack can send audio down the display cable, and no amount of work in
+`hal_audio_*` can change that.
 
 ## Why this is a video problem
 
@@ -126,7 +126,7 @@ is very likely riskier.
 
 The Fruit Jam already has working speaker **and** headphone output through the
 TLV320DAC3100, configured in `hal_audio_fruitjam.cpp` and verified on hardware
-for all seven games. **HDMI audio is a one-cable convenience for TVs, not a
+for all seven games. **DVI audio is a one-cable convenience for TVs, not a
 missing capability.** Nothing is broken today.
 
 Two questions that cannot be settled without hardware:

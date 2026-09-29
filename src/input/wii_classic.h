@@ -8,8 +8,9 @@
 // (extras/CONSOLES_PLAN.md, "I2C controllers").
 //
 // Written from the public protocol (WiiBrew, "Wiimote/Extension
-// Controllers"); pico-infonesPlus's wiipad.cpp and NintendoExtensionCtrl
-// were read for behaviour, not copied.
+// Controllers"); pico-infonesPlus's wiipad.cpp (by Phillip Burgess,
+// github.com/PaintYourDragon) and NintendoExtensionCtrl were read for
+// behaviour, not copied.
 //
 // THE PROTOCOL, briefly. The controller is I2C device 0x52. Writing 0x55 to
 // register 0xF0 and then 0x00 to 0xFB starts it unencrypted. Writing a
