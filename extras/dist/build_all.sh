@@ -20,7 +20,7 @@
 #    be; --library points the builder at the checkout. Everything else --
 #    the dependencies listed in library.properties -- comes from your
 #    normal sketchbook, so install them the usual way, e.g.:
-#        arduino-cli lib install "PicoDVI - Adafruit Fork" "Pico PIO USB"
+#        arduino-cli lib install "Adafruit DVI Audio" "PicoDVI - Adafruit Fork" "Pico PIO USB"
 #
 #    This script used to write a throwaway config pinning directories.user
 #    to $ROOT, which made sense only while the repo was itself a sketchbook
