@@ -968,8 +968,34 @@ games did. A colour-correction curve is a possible later refinement.
 
 > **Fruit Jam 3x: DONE (2026-09-29, DEVNOTES #153).** Button 1 switches
 > between 3x (the default) and 1x, scanned out by core 1 through
-> `fruitjam_video_set_line_source()`. It was confirmed on hardware. The
-> Feather's 2x crop, item 2 below, is still to try.
+> `fruitjam_video_set_line_source()`. It was confirmed on hardware.
+>
+> **Feather: DONE differently (2026-09-29, DEVNOTES #154).** 2x cropped,
+> item 2 below, works but loses too much of the screen. Two non-integer
+> full-height fits were tried alongside it and looked very good, so the
+> user kept all six modes on L (1x, fit nearest, fit smooth, and 2x
+> centred / top kept / bottom kept) for players to choose per game, with
+> smooth fit the default. This goes against the "integer only" rule above,
+> by the user's choice after seeing it.
+
+### Later: per-game settings saved next to the `.sav` (noted 2026-09-29)
+
+Today every choice a player makes resets at power-up. The idea is a small
+settings file per game, next to its `.sav` on the SD card, remembering:
+
+- the picture size (the Feather's six Game Boy modes, the Fruit Jam's
+  1x/3x);
+- the rotation;
+- the palette;
+- the volume.
+
+Not built yet. Things to settle first:
+
+- **The format:** plain text is the easy thing for a player to read or
+  edit.
+- **Which consoles:** the NES has rotation, 8:7 and volume too.
+- **When to write:** a change could be saved through the same background
+  sector writes the battery saves use (DEVNOTES #144 on the Feather).
 
 **Game Boy only; the NES already fills the height on both boards (256x240).**
 Today the 160x144 picture is drawn 1x on the 320x240 canvas

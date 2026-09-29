@@ -43,6 +43,37 @@ void gameboy_video_set_palette(const uint16_t colours[GAMEBOY_LAYERS][4]);
 // A whole canvas line of one colour, for the boot error screens.
 void gameboy_video_fill_scanline(uint16_t *buf, uint16_t colour);
 
+// --- Bigger pictures on the canvas (extras/CONSOLES_PLAN.md) -------------
+//
+// For the Feather's TFT, where the canvas is the screen; the Fruit Jam
+// shows 3x instead. All six are kept, for players to choose per game
+// (DEVNOTES #154):
+//
+// FIT: the whole picture at the full 240-line height, a non-integer scale
+// -- 5/3 upright (266x240), 3/2 rotated 90 (216x240). NEAREST takes each
+// canvas pixel from the nearest Game Boy pixel: sharp, but pixels come out
+// uneven (2,2,1 canvas pixels upright; 2,1 rotated). SMOOTH averages the
+// Game Boy pixels each canvas pixel covers, so pixels look even and only
+// the edges between them blend.
+//
+// 2X: each Game Boy pixel a 2x2 block. Upright that is 320x288, the full
+// width, 48 lines too tall for the canvas; rotated 90 it is 288x320, 80
+// too tall. The crop says which lines are kept.
+typedef enum {
+    GAMEBOY_SCALE_1X = 0,        // the whole picture, 1x (the renderer's default)
+    GAMEBOY_SCALE_FIT_NEAREST,   // full height, non-integer, nearest pixel
+    GAMEBOY_SCALE_FIT_SMOOTH,    // full height, non-integer, area-averaged
+                                 // (the Feather sketch's power-up choice)
+    GAMEBOY_SCALE_2X_CENTRE,     // 2x, cut equally top and bottom
+    GAMEBOY_SCALE_2X_TOP,        // 2x, the top kept, the bottom cut
+    GAMEBOY_SCALE_2X_BOTTOM,     // 2x, the bottom kept (a status bar there)
+    GAMEBOY_SCALE_COUNT
+} gameboy_scale_t;
+
+// Applies to gameboy_video_render_scanline() from the next line.
+void gameboy_video_set_scale(gameboy_scale_t scale);
+const char *gameboy_video_scale_name(gameboy_scale_t scale);
+
 // --- 3x, straight to a 640x480 output (extras/CONSOLES_PLAN.md) -----------
 //
 // Each Game Boy pixel an exact 3x3 block: 480x432 upright, 432x480 rotated

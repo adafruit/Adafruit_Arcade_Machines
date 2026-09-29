@@ -32,8 +32,11 @@
 //   Rotation     ROTATE (37)          R
 //   Palette      --                   Y   (DMG green, Greys, Pocket, GBC)
 //   Volume       --                   hold X, press Up / Down (3 dB steps)
-//   L does nothing on the Game Boy, as Button 1 does nothing on the Fruit
-//   Jam's.
+//   Scale        --                   L   (cycles the six below)
+//   The scales, for players to choose per game (gameboy_video.h): 1x;
+//   fit, nearest and fit, smooth (the default) (the full 240-line height at 5/3, or 3/2
+//   rotated); and 2x cropped, centred / top kept / bottom kept (2x is
+//   320x288 upright, 48 lines taller than the screen; 288x320 rotated, 80).
 //
 // Battery saves: a battery cartridge's save RAM is kept in a standard .sav
 // next to the ROM, the same file as the Fruit Jam's and PC emulators'. A
@@ -46,6 +49,11 @@
 #include <machines/gb/gameboy_machine.h>
 #include <machines/gb/gameboy_audio.h>
 #include <machines/gb/gameboy_palette.h>
+#include <machines/gb/gameboy_video.h>
+
+// The picture size at power-up; L cycles from here. Smooth fit, the
+// user's pick after comparing all six (DEVNOTES #154).
+static const gameboy_scale_t kDefaultScale = GAMEBOY_SCALE_FIT_SMOOTH;
 #include <console/console_audio.h>
 #include <console/console_save.h>
 #include <boards/feather_esp32/hal_storage_feather_esp32.h>
@@ -113,6 +121,7 @@ void setup() {
     Serial.println("[gameboy-esp32] boot");
 
     gameboy_init(&g_system);
+    gameboy_video_set_scale(kDefaultScale);
     g_cart_ok = gameboy_load_cart(&g_system, &g_error_color);
     if (g_cart_ok) print_cart();
     else Serial.printf("[gameboy-esp32] cart FAILED: %s\n",
@@ -168,6 +177,7 @@ void loop() {
     bool select = hal_input_read(HAL_BTN_COIN);
     bool rotate = hal_input_read(HAL_BTN_ROTATE);
     bool palette_next = hal_input_read(HAL_BTN_MIRROR); // the controller's Y
+    bool scale_next   = hal_input_read(HAL_BTN_STRETCH); // the controller's L
 
     // The controller's X + Up/Down. Counted on the input task, so a tap
     // between two paints still counts.
@@ -197,6 +207,19 @@ void loop() {
     gameboy_input_update(&g_system, up, down, left, right, a, b, start, select,
                          rotate, palette_next);
     gameboy_present(&g_system);
+    {
+        // L cycles the scale. Here, in the idle window, so a paint never
+        // changes scale halfway down the screen.
+        static bool scale_prev = false;
+        static uint8_t scale = kDefaultScale;
+        if (scale_next && !scale_prev) {
+            scale = (uint8_t)((scale + 1u) % GAMEBOY_SCALE_COUNT);
+            gameboy_video_set_scale((gameboy_scale_t)scale);
+            Serial.printf("[gameboy-esp32] scale %s\n",
+                          gameboy_video_scale_name((gameboy_scale_t)scale));
+        }
+        scale_prev = scale_next;
+    }
     static uint8_t palette_shown = 0xFF;
     if (g_system.palette != palette_shown) {
         palette_shown = g_system.palette;

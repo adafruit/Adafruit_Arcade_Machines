@@ -8427,3 +8427,60 @@ canvas is non-integer, and the user wants integer scaling only
   rotations look right", and "the 3x is really helpful".
 
 The Feather half of the note (2x with 48 lines cropped) is still to try.
+
+### 154. The Game Boy's picture sizes on the Feather: six, chosen with L
+
+The plan's Feather half (`CONSOLES_PLAN.md`) was 2x with the 48 extra lines
+cropped. It worked, but on hardware the user found "it is not great to
+lose so much of the screen in any of the 2x modes". Rotated is worse:
+288x320, so 80 lines are cut. So two non-integer fits were tried alongside,
+and after comparing all of them on Link's Awakening the user kept all six
+("players can decide what's best for them on a per-game basis").
+
+**The modes, in the order L cycles them** (`gameboy_scale_t`,
+`gameboy_video.h`):
+
+1. **1x.**
+2. **Fit, nearest:** the full 240-line height, at 5/3 upright (266x240) or
+   3/2 rotated (216x240). Each canvas pixel is the nearest Game Boy pixel,
+   so Game Boy pixels are 1 or 2 canvas pixels wide.
+3. **Fit, smooth, the default at power-up** (the user's pick): the same size, but each canvas pixel averages the Game
+   Boy pixels it covers, at most two per axis. Pixels look even and only
+   the edges between them blend (weights 21/32 and 10/32 at 5/3, 16/32 at
+   3/2).
+4. **2x, centred.**
+5. **2x, top kept.**
+6. **2x, bottom kept.**
+
+**How the fits work:**
+
+- **Tap tables:** a source index and a weight in 32nds, for each canvas
+  column and row. They are rebuilt only when the mode or rotation changes,
+  both of which happen between paints.
+- **Blending:** RGB565 blends all three channels at once, with the channels
+  spread apart in 32 bits (`0x07E0F81F`).
+- **Row fetch:** every scaled mode fetches picture rows through one
+  `fetch_row()`, which uses the 1x mapping, so all four rotations and the
+  mirror come free.
+- **Canvas only:** it all happens on the canvas, so no board code changed.
+  The Fruit Jam could offer the fits too, but it has 3x instead.
+
+**A host check caught a bug before flashing.** The column taps stepped by
+the picture's WIDTH over 240 instead of the same height ratio as the rows,
+so 266 columns covered 177 source pixels and the last 27 all showed pixel
+159. Now both axes step by height/240, and every source column appears:
+upright, 106 are 2 canvas pixels wide and 54 are 1.
+
+**On hardware** (Link's Awakening, 44 presses of L, upright and 90 CCW):
+
+- **Speed:** every mode ran at 59.9-60.0 emulated fps with no audio
+  underruns.
+- **Paint time:** the mean was 31.9 ms at 1x, 32.1 ms fit-nearest, 32.3 ms
+  fit-smooth and 31.9-32.1 ms at 2x, against a 33.3 ms budget.
+- **The user:** "the two fit modes look very good", and chose smooth fit
+  as the default.
+
+**Later: remember the choice per game.** The mode goes back to smooth fit
+at every power-up. The idea for later is a small per-game settings file
+next to the `.sav`, holding the scale, and maybe also the rotation, palette
+and volume. It is noted in `CONSOLES_PLAN.md`, not built.
