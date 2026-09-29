@@ -3,11 +3,12 @@
 // SPDX-License-Identifier: MIT
 
 // hal_video.h for the Adafruit Fruit Jam on the RP2350's HSTX, through
-// pico_hdmi (via the Adafruit DVI Audio library). The alternative to
-// hal_video_fruitjam.cpp's PicoDVI (PIO) backend, chosen at build time with
-// -DARCADE_FRUITJAM_HSTX; see extras/DVI_AUDIO_PLAN.md, step 2. It exists
-// so the display can carry DVI audio (step 3), and it frees PIO 0 and most
-// of core 1, since HSTX encodes TMDS in hardware.
+// pico_hdmi (via the Adafruit DVI Audio library). THE FRUIT JAM'S DEFAULT
+// VIDEO since v2.14.0; hal_video_fruitjam.cpp's PicoDVI (PIO) backend is the
+// fallback, built instead with -DARCADE_FRUITJAM_PICODVI. See
+// extras/DVI_AUDIO_PLAN.md. It carries the sound over the display cable
+// too, and it frees PIO 0 and most of core 1, since HSTX encodes TMDS in
+// hardware.
 //
 // SAME CONTRACT, SAME QUEUE. The machines render 320-pixel lines through
 // acquire/submit into 32 buffers cycled through a free and a valid queue,
@@ -33,7 +34,7 @@
 // is early waits, and a row with nothing ready shows RED -- the same
 // starvation signal as PicoDVI's -- so one missed line never shifts the
 // rest of the picture. Measured in the spike first (DEVNOTES #147).
-#if defined(ARDUINO_ADAFRUIT_FRUITJAM_RP2350) && defined(ARCADE_FRUITJAM_HSTX)
+#if defined(ARDUINO_ADAFRUIT_FRUITJAM_RP2350) && !defined(ARCADE_FRUITJAM_PICODVI)
 
 #include <Adafruit_DVI_Audio.h>   // pico_hdmi: video_output.h, the audio queue
 #include "pico/platform.h"
@@ -354,4 +355,4 @@ void hal_video_run(void) {
     __builtin_unreachable();
 }
 
-#endif // ARDUINO_ADAFRUIT_FRUITJAM_RP2350 && ARCADE_FRUITJAM_HSTX
+#endif // ARDUINO_ADAFRUIT_FRUITJAM_RP2350 && !ARCADE_FRUITJAM_PICODVI

@@ -50,7 +50,7 @@ void *hal_mem_fast_alloc(size_t size) {
 // waiting for a scanline buffer. So the other core is parked and interrupts
 // are off for the duration, as arduino-pico does around flash writes.
 void fruitjam_set_sys_clock_khz(uint32_t khz) {
-#if defined(ARCADE_FRUITJAM_HSTX)
+#if !defined(ARCADE_FRUITJAM_PICODVI)
     // pico_hdmi's setting for its 252 MHz HSTX timing, raised before the
     // clock (extras/DVI_AUDIO_PLAN.md). PicoDVI runs at the default.
     vreg_set_voltage(VREG_VOLTAGE_1_15);
