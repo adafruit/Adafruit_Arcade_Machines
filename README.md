@@ -534,7 +534,7 @@ flashing it.
 `arduino-lint` is what Library Manager submissions are checked against. This
 library **passes**: 0 errors, 1 warning, exit 0, with all 28 examples clean —
 fourteen games (seven per board), the Game Boy and NES consoles on both
-boards, and ten SelfTest sketches (checked for v2.15.0).
+boards, and ten SelfTest sketches (checked for v2.15.1).
 
 ```bash
 # lint what the registry would actually clone, NOT the working tree
