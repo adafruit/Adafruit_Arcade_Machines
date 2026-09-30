@@ -333,6 +333,11 @@ void galaga_debug_take_frame_costs(uint32_t *main_us, uint32_t *sub_us, uint32_t
 
 void galaga_debug_take_starvation(uint32_t *render_max_us, uint32_t *noblock_run_max);
 
+// Cycles the sub and sub2 CPUs spent in their idle loops that were skipped
+// rather than stepped since the last call (then reset). Zeros with
+// -DGALAGA_NO_IDLE_SKIP. See galaga_machine.cpp's idle-loop skip.
+void galaga_debug_take_idle_skips(uint32_t *sub_cycles, uint32_t *sub2_cycles);
+
 #ifdef __cplusplus
 }
 #endif

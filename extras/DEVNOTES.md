@@ -8789,3 +8789,95 @@ out:
 - **Measuring this in future:** compare emulation cost per pair alongside
   the speed. A speed difference with the same emulation cost is the code;
   one with different emulation cost is the play.
+
+### 160. Galaga's sub CPUs idle-loop skipped: full speed on the Feather in play
+
+#159 left Galaga on the Feather at about 94% on the busiest stages, with
+emulation just over its 33.0 ms budget per pair of frames.
+
+**Where the time went.** The Feather got the per-CPU frame trace
+(`-DGALAGA_FRAME_TRACE=1`), until then RP2040-only. It reads the CPU cycle
+counter, not `micros()`: the trace runs about 600 times a frame, and
+`micros()` there is a call into `esp_timer`, costly enough to distort what
+it measures. Over 506 play windows:
+
+| Emulation per paint | Total | Main | Sub | Sub2 |
+|---|---|---|---|---|
+| All play (94.8%) | 34.5 ms | 13.6 ms (39%) | 11.8 ms (34%) | 9.0 ms (26%) |
+| Busy windows (93.0%) | 35.3 ms | 14.1 | 12.0 | 9.1 |
+| Under budget (100%) | 32.1 ms | 12.1 | 11.3 | 8.6 |
+
+The two subs were 60% of the cost, and flat whether the screen was busy or
+not. That's the signature of a CPU doing the same thing all the time.
+
+**What they were doing.** A fetch-address histogram, in a scratch copy of
+`galaga_host` over 2,000 frames of play: the sub CPU spent 76% of its
+instruction fetches at `0x05B1`-`0x05B6`, and sub2 90% at `0x00B9`-`0x00BA`.
+From the ROMs:
+
+- **sub, `gg1-5b.3f`, 0x05B1:** `LD SP,9100h ; JP 05B1h`, 10 + 10 cycles.
+- **sub2, `gg1-7b.2c`, 0x00B9:** `JR $`, 12 cycles.
+
+Each CPU does its work in interrupt handlers and waits in a loop that
+touches no memory. The sub's only effect is re-setting SP to the same
+value.
+
+**The skip, `galaga_machine.cpp`:**
+
+- **The sub CPUs' slices** now run through `step_sub_slice()`. Before each
+  instruction it checks whether the CPU is at its loop. If so, it runs the
+  rest of the slice in one step.
+- **Why that's exact:** interrupts only arrive between slices
+  (`interleave_to_target()` raises them). So when nothing is pending (no
+  NMI, no enabled IRQ, no EI delay, not halted), nothing can happen before
+  the slice ends.
+- **The state is left exactly as stepping would leave it:**
+  - the cycle count, at the same instruction boundary: `ceil(left / 10)` or
+    `ceil(left / 12)` instructions;
+  - PC, including stopping between the sub's two instructions;
+  - SP;
+  - WZ, since `JP` sets it;
+  - the refresh register R, advanced once per instruction with bit 7 kept.
+- **The loops' bytes are checked in the loaded ROMs once;** another ROM
+  revision steps normally.
+- **`-DGALAGA_NO_IDLE_SKIP`** turns it off.
+- **`galaga_debug_take_idle_skips()`** reports the cycles skipped. The
+  Feather's trace line shows them as a share of each sub's cycles.
+
+**Proof that it changes nothing.** A scratch `galaga_host` printed an
+FNV-1a hash of the whole `galaga_system` every frame, with the Z80
+callback pointers zeroed because they differ between builds. It was built
+with and without the skip, and each ran 36,000 frames, four scripted games
+with random fire and movement:
+
+- **Through the Fruit Jam's per-scanline loop** (`galaga_run_frame()`):
+  every frame identical. Host run time 8.4 s → 6.0 s.
+- **Through the Feather's whole-frame loop** (`galaga_run_cpu_frames()`,
+  another random script): every frame identical. 6.8 s → 4.2 s.
+
+**On the Feather, in play, about 4 minutes each:**
+
+| | Skip off | Skip on |
+|---|---|---|
+| Play windows | 465 | 565 |
+| Mean speed | 94.4% | **100.0%** |
+| Lowest window | 88% | **96%** |
+| Windows below 95% | 285 | **0** |
+| Emulation per paint | 34.4 ms | **19.5 ms** |
+| Main / sub / sub2 | 13.8 / 11.6 / 8.8 ms | 12.8 / 5.0 / 1.6 ms |
+| Worst window's emulation | 37.5 ms | **28.1 ms** |
+
+- **The subs skipped** 75-86% (sub) and 91-92% (sub2) of their cycles in
+  play.
+- **Emulation fell 43%.** The busiest window now has about 5 ms to spare.
+- **No underruns or faults** in the log.
+- **The user:** "it looked, sounded, and played the same to me as usual."
+
+**The Fruit Jam gains too**, through its per-scanline loop. Over the same
+40 s of attract mode from boot, which runs the same frames each time,
+`work_MEAN` went from 11.9 ms to **8.7 ms (-27%)**, `starve 0` both ways.
+It already ran Galaga at full speed; this is headroom in its 16.7 ms frame.
+
+**The main CPU is untouched.** The Z80 read fast path, a page table for
+ROM and plain RAM reads, remains a possible further lever for all the Z80
+games. With this, Galaga doesn't need it.

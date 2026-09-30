@@ -113,6 +113,24 @@ static uint32_t g_ft_def;                          // running drawdown
         g_ft_def = (g_ft_def > _c) ? (g_ft_def - _c) : 0u;                 \
     }                                                                      \
 } while (0)
+#elif defined(GALAGA_FRAME_TRACE) && defined(ARDUINO_ARCH_ESP32)
+// The Feather: CPU cycles, not micros(). The per-CPU timers below run twice
+// per CPU per 512-cycle slice, ~600 times a frame, and micros() there is a
+// call into esp_timer costing enough to distort what it measures. The cycle
+// counter is one instruction; galaga_debug_take_frame_costs() converts to
+// microseconds. Only the per-CPU and cpu totals are kept here: the render
+// and deficit timers belong to the Fruit Jam's per-scanline path.
+#include "esp_cpu.h"
+#include <Arduino.h>  // getCpuFrequencyMhz()
+#define FT_NOW() ((uint32_t)esp_cpu_get_cycle_count())
+#define FT_ADD(acc, t0) do { (acc) += (uint32_t)esp_cpu_get_cycle_count() - (t0); } while (0)
+#define FT_SET(v, t0)  do { (v) = (uint32_t)esp_cpu_get_cycle_count() - (t0); } while (0)
+#define FT_ACC(acc, v) do { (acc) += (v); } while (0)
+static uint32_t g_ft_main, g_ft_sub, g_ft_sub2;   // CPU cycles, per window
+static uint32_t g_ft_cpu, g_ft_render, g_ft_begin;
+static uint32_t g_ft_defmax;
+#define FT_DEFICIT_RESET() do { } while (0)
+#define FT_DEFICIT_LINE(t_line) do { (void)(t_line); } while (0)
 #else
 #define FT_NOW() 0u
 #define FT_ADD(acc, t0) do { (void)(t0); } while (0)
@@ -137,10 +155,110 @@ void galaga_debug_take_frame_costs(uint32_t *main_us, uint32_t *sub_us, uint32_t
     g_ft_main = g_ft_sub = g_ft_sub2 = 0;
     g_ft_cpu = g_ft_render = g_ft_begin = 0;
     g_ft_defmax = 0;
+#elif defined(GALAGA_FRAME_TRACE) && defined(ARDUINO_ARCH_ESP32)
+    const uint32_t mhz = getCpuFrequencyMhz();
+    *main_us = g_ft_main / mhz; *sub_us = g_ft_sub / mhz; *sub2_us = g_ft_sub2 / mhz;
+    *cpu_us = g_ft_cpu / mhz; *render_us = g_ft_render / mhz; *begin_us = g_ft_begin / mhz;
+    *deficit_max_us = 0;
+    g_ft_main = g_ft_sub = g_ft_sub2 = 0;
+    g_ft_cpu = g_ft_render = g_ft_begin = 0;
+    g_ft_defmax = 0;
 #else
     *main_us = *sub_us = *sub2_us = 0;
     *cpu_us = *render_us = *begin_us = *deficit_max_us = 0;
 #endif
+}
+
+// --- Idle-loop skip for the two sub CPUs (DEVNOTES #160) ------------------
+//
+// Between interrupts each sub CPU spins in a loop that touches no memory:
+//   sub   0x05B1: LD SP,9100h ; JP 05B1h   (10 + 10 cycles)
+//   sub2  0x00B9: JR $                     (12 cycles)
+// In play that is ~76% and ~90% of their instructions, and on the Feather
+// the two subs were 60% of Galaga's emulation (#160's profile). Interrupts
+// only arrive between slices (interleave_to_target() raises them), so once
+// a sub is in its loop with nothing pending, nothing can change until its
+// slice ends. The skip jumps straight there, leaving exactly the state that
+// stepping every instruction would have: the cycle count at the same
+// instruction boundary, PC, SP, WZ (JP sets it) and the refresh register R.
+// Checked against stepping frame for frame in the host harness.
+//
+// The loops' bytes are checked in the loaded ROMs once; another ROM revision
+// just steps normally. -DGALAGA_NO_IDLE_SKIP turns it off, for A/B builds.
+#ifndef GALAGA_NO_IDLE_SKIP
+static int8_t g_idle_ok = -1;           // -1 not checked yet, 0 no, 1 yes
+static uint32_t g_idle_cyc_sub, g_idle_cyc_sub2;   // cycles skipped, for stats
+
+static void idle_check_roms(const galaga_system *sys) {
+    static const uint8_t kSub[]  = { 0x31, 0x00, 0x91, 0xC3, 0xB1, 0x05 }; // at 0x05B1
+    static const uint8_t kSub2[] = { 0x18, 0xFE };                         // at 0x00B9
+    g_idle_ok = (memcmp(&sys->rom_sub[0x05B1], kSub, sizeof kSub) == 0 &&
+                 memcmp(&sys->rom_sub2[0x00B9], kSub2, sizeof kSub2) == 0) ? 1 : 0;
+}
+
+// Nothing may happen between instructions: no NMI, no enabled interrupt
+// waiting, no EI delay counting down, not halted.
+static inline bool idle_quiet(const z80 *cpu) {
+    return !cpu->halted && cpu->iff_delay == 0 && !cpu->nmi_pending &&
+           !(cpu->int_pending && cpu->iff1);
+}
+
+static inline void idle_advance_r(z80 *cpu, uint32_t n) {
+    cpu->r = (uint8_t)((cpu->r & 0x80) | ((cpu->r + n) & 0x7F));
+}
+
+// If `cpu` is in its idle loop, run it to the end of the slice (`left`
+// cycles, > 0) in one step and return true.
+GALAGA_M_RAMFUNC static bool idle_skip(z80 *cpu, bool is_sub, uint32_t left) {
+    if (!idle_quiet(cpu)) return false;
+    if (is_sub) {
+        if (cpu->pc != 0x05B1 && cpu->pc != 0x05B4) return false;
+        const uint32_t n = (left + 9u) / 10u;          // instructions, 10 cycles each
+        const bool at_ld = (cpu->pc == 0x05B1);
+        const uint32_t lds = at_ld ? (n + 1u) / 2u : n / 2u;
+        const uint32_t jps = n - lds;
+        if (lds) cpu->sp = 0x9100;
+        if (jps) cpu->mem_ptr = 0x05B1;
+        if (n & 1u) cpu->pc = at_ld ? 0x05B4 : 0x05B1;
+        cpu->cyc += 10u * n;
+        idle_advance_r(cpu, n);
+        g_idle_cyc_sub += 10u * n;
+    } else {
+        if (cpu->pc != 0x00B9) return false;
+        const uint32_t n = (left + 11u) / 12u;
+        cpu->cyc += 12u * n;
+        idle_advance_r(cpu, n);
+        g_idle_cyc_sub2 += 12u * n;
+    }
+    return true;
+}
+#endif
+
+void galaga_debug_take_idle_skips(uint32_t *sub_cycles, uint32_t *sub2_cycles) {
+#ifndef GALAGA_NO_IDLE_SKIP
+    *sub_cycles = g_idle_cyc_sub; *sub2_cycles = g_idle_cyc_sub2;
+    g_idle_cyc_sub = g_idle_cyc_sub2 = 0;
+#else
+    *sub_cycles = *sub2_cycles = 0;
+#endif
+}
+
+// A sub CPU's slice: step_cpu_slice(), but checking for the idle loop
+// before each instruction. `is_sub` picks the sub's loop, else the sub2's.
+GALAGA_M_RAMFUNC static void step_sub_slice(z80 *cpu, bool is_sub, uint32_t start,
+                                            uint32_t target) {
+    uint32_t elapsed = (uint32_t)(cpu->cyc - start);
+    if (elapsed >= target) return;
+    uint32_t slice_end = elapsed + GALAGA_QUANTUM_CYCLES;
+    if (slice_end > target) slice_end = target;
+    while ((elapsed = (uint32_t)(cpu->cyc - start)) < slice_end) {
+#ifndef GALAGA_NO_IDLE_SKIP
+        if (g_idle_ok == 1 && idle_skip(cpu, is_sub, slice_end - elapsed)) return;
+#else
+        (void)is_sub;
+#endif
+        z80_step(cpu);
+    }
 }
 
 GALAGA_M_RAMFUNC static void step_cpu_slice(z80 *cpu, uint32_t start, uint32_t target) {
@@ -162,6 +280,9 @@ GALAGA_M_RAMFUNC static void interleave_to_target(galaga_system *sys, uint32_t s
                                   uint32_t start_sub, uint32_t start_sub2,
                                   uint32_t target,
                                   uint32_t nmi2_mark_a, uint32_t nmi2_mark_b) {
+#ifndef GALAGA_NO_IDLE_SKIP
+    if (g_idle_ok < 0) idle_check_roms(sys);   // once, with the ROMs loaded
+#endif
     for (;;) {
         bool main_more = (uint32_t)(sys->cpu_main.cyc - start_main) < target;
         // sub/sub2 are held in RESET (not executing at all -- see
@@ -243,12 +364,12 @@ GALAGA_M_RAMFUNC static void interleave_to_target(galaga_system *sys, uint32_t s
         }
         if (sub_more) {
             const uint32_t ft_s = FT_NOW();
-            step_cpu_slice(&sys->cpu_sub,  start_sub,  sub_target);
+            step_sub_slice(&sys->cpu_sub, true, start_sub, sub_target);
             FT_ADD(g_ft_sub, ft_s);
         }
         if (sub2_more) {
             const uint32_t ft_s2 = FT_NOW();
-            step_cpu_slice(&sys->cpu_sub2, start_sub2, sub_target);
+            step_sub_slice(&sys->cpu_sub2, false, start_sub2, sub_target);
             FT_ADD(g_ft_sub2, ft_s2);
             // Sub2's twice-per-frame NMI -- see galaga_machine.h's
             // nmi2_fired_a/_b field comment for the citation.
