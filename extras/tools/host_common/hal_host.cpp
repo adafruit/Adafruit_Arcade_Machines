@@ -256,6 +256,13 @@ hal_storage_result_t hal_storage_extent_write_begin(const hal_storage_extent_t *
     host_path_for(e->path, full, sizeof full);
     g_extent_fp = fopen(full, "r+b");
     g_extent_left = e->sectors;
+    // A host file's extent starts at sector 0 (make_contiguous() below), so
+    // first_sector is the offset into the file -- as a card sector number is
+    // on a board. A save that rewrites only part of a file starts past 0.
+    if (g_extent_fp && fseek(g_extent_fp, (long)e->first_sector * HAL_STORAGE_SECTOR, SEEK_SET) != 0) {
+        fclose(g_extent_fp);
+        g_extent_fp = NULL;
+    }
     return g_extent_fp ? HAL_STORAGE_OK : HAL_STORAGE_ERROR;
 }
 hal_storage_result_t hal_storage_extent_write_sector(const uint8_t *data) {

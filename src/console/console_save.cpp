@@ -19,10 +19,17 @@ namespace {
 
 uint8_t *g_ram = nullptr;       // the core's save RAM
 uint8_t *g_shadow = nullptr;    // what it held last frame (change detection)
-uint8_t *g_snapshot = nullptr;  // what is being written (padded to whole sectors)
+// What is on the card, sector for sector (padded to whole sectors): a save
+// compares the RAM with it, copies in only the sectors that differ, and
+// writes only those (see console_save_frame()). Left alone while a write is
+// streaming out, since the board may read it later (the Feather does).
+uint8_t *g_snapshot = nullptr;
 uint32_t g_snapshot_size = 0;
+bool     g_snapshot_unknown = false; // a write failed partway: rewrite all next time
 
-hal_storage_extent_t g_extent;
+hal_storage_extent_t g_extent;   // the whole .sav
+hal_storage_extent_t g_write;    // the part of it this save rewrites
+uint32_t g_write_last = 0;       // its last sector, as an index into g_extent
 console_save_stats_t g_stats;
 
 enum class Step { Idle, Begin, Sector, End };
@@ -72,6 +79,10 @@ bool console_save_init(const char *rom_name, uint8_t *ram, uint32_t size) {
     g_snapshot = (uint8_t *)malloc(g_snapshot_size < size ? size : g_snapshot_size);
     if (!g_shadow || !g_snapshot) { g_stats.state = CONSOLE_SAVE_UNAVAILABLE; return false; }
     memcpy(g_shadow, ram, size);
+    // The card now holds `ram` (just loaded from it, or just written to it).
+    memset(g_snapshot, 0xFF, g_snapshot_size);
+    memcpy(g_snapshot, ram, size);
+    g_snapshot_unknown = false;
     g_changes = g_seen_changes = 0;
     g_stats.state = CONSOLE_SAVE_READY;
     return true;
@@ -97,27 +108,58 @@ void console_save_frame(void) {
         if (g_changes != g_seen_changes &&
             g_frames - g_last_change_frame >= CONSOLE_SAVE_QUIET_FRAMES &&
             extent_lock_take(EXTENT_OWNER_SAVE)) {
-            memcpy(g_snapshot, g_ram, g_stats.size);
-            if (g_snapshot_size > g_stats.size)
-                memset(g_snapshot + g_stats.size, 0xFF, g_snapshot_size - g_stats.size);
+            // ONLY THE SECTORS THAT CHANGED (DEVNOTES #158). Zelda keeps a
+            // working buffer in its battery RAM and rewrites it on every
+            // screen change, so it saves every few seconds of play; the
+            // rest of the 8 KB, including the save slots themselves, is
+            // untouched. Rewriting all 16 sectors each time was wear, and a
+            // longer window for a power cut, for nothing.
+            uint32_t first = UINT32_MAX, last = 0;
+            for (uint32_t s = 0; s < g_extent.sectors; s++) {
+                const uint32_t off = s * HAL_STORAGE_SECTOR;
+                if (off >= g_stats.size) break;
+                const uint32_t len = g_stats.size - off < HAL_STORAGE_SECTOR
+                                   ? g_stats.size - off : HAL_STORAGE_SECTOR;
+                if (g_snapshot_unknown || memcmp(g_snapshot + off, g_ram + off, len) != 0) {
+                    memcpy(g_snapshot + off, g_ram + off, len);
+                    if (first == UINT32_MAX) first = s;
+                    last = s;
+                }
+            }
             g_seen_changes = g_changes; // later writes make it dirty again
+            if (first == UINT32_MAX) {  // changed and changed back: nothing to write
+                extent_lock_give(EXTENT_OWNER_SAVE);
+                break;
+            }
+            // One run, first to last changed sector. Sectors between them
+            // that didn't change are rewritten with what they already hold.
+            g_write = g_extent;
+            g_write.first_sector = g_extent.first_sector + first;
+            g_write.sectors = last - first + 1u;
+            g_sector = first;
+            g_write_last = last;
+            g_stats.last_save_sectors = g_write.sectors;
             g_step = Step::Begin;
             g_save_started_frame = g_frames;
             g_stats.state = CONSOLE_SAVE_WRITING;
         }
         break;
     case Step::Begin:
-        r = hal_storage_extent_write_begin(&g_extent);
-        if (r == HAL_STORAGE_OK) { g_step = Step::Sector; g_sector = 0; }
+        r = hal_storage_extent_write_begin(&g_write);
+        if (r == HAL_STORAGE_OK) g_step = Step::Sector;
         break;
     case Step::Sector:
         r = hal_storage_extent_write_sector(g_snapshot + g_sector * HAL_STORAGE_SECTOR);
-        if (r == HAL_STORAGE_OK && ++g_sector == g_extent.sectors) g_step = Step::End;
+        if (r == HAL_STORAGE_OK) {
+            g_stats.sectors_written++;
+            if (g_sector++ == g_write_last) g_step = Step::End;
+        }
         break;
     case Step::End:
         r = hal_storage_extent_write_end();
         if (r == HAL_STORAGE_OK) {
             extent_lock_give(EXTENT_OWNER_SAVE);
+            g_snapshot_unknown = false;
             g_step = Step::Idle;
             g_stats.state = CONSOLE_SAVE_READY;
             g_stats.saves++;
@@ -131,6 +173,7 @@ void console_save_frame(void) {
         // successful later save repairs a partly overwritten file.
         g_stats.errors++;
         extent_lock_give(EXTENT_OWNER_SAVE);
+        g_snapshot_unknown = true;  // the card may hold part of it: rewrite all
         g_step = Step::Idle;
         g_stats.state = CONSOLE_SAVE_READY;
         g_seen_changes = g_changes - 1u; // still dirty

@@ -346,10 +346,11 @@ void loop() {
             console_save_take_stats(&ss);
             if (ss.state != CONSOLE_SAVE_NONE) {
                 static const char *const kState[] = { "none", "UNAVAILABLE", "ready", "writing" };
-                Serial.printf("[gameboy-esp32] save %s %s: loaded %s, saves %lu, last %lu frames, "
-                              "busy %lu, errors %lu, bus step max %lu us\n",
+                Serial.printf("[gameboy-esp32] save %s %s: loaded %s, saves %lu, last %lu frames "
+                              "%lu sectors (%lu since boot), busy %lu, errors %lu, bus step max %lu us\n",
                               kState[ss.state], ss.path, ss.loaded ? "yes" : "no",
                               (unsigned long)ss.saves, (unsigned long)ss.last_save_frames,
+                              (unsigned long)ss.last_save_sectors, (unsigned long)ss.sectors_written,
                               (unsigned long)ss.busy_waits, (unsigned long)ss.errors,
                               (unsigned long)feather_storage_take_service_us_max());
             }
