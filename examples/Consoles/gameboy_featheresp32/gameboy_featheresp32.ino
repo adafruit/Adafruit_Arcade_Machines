@@ -31,8 +31,10 @@
 //   Select       COIN (26)            Select (-)
 //   Rotation     ROTATE (37)          R
 //   Palette      --                   Y   (DMG green, Greys, Pocket, GBC)
-//   Volume       --                   hold X, press Up / Down (3 dB steps,
-//                                        the lowest one mute)
+//   Volume       hold ROTATE,         hold X, press Up / Down (3 dB steps,
+//                press Up / Down      the lowest one mute)
+//   ROTATE on the GPIO panel rotates when released, and the GPIO buttons
+//   are ignored while a controller is connected (hal_input_feather_esp32.cpp).
 //   Scale        --                   L   (cycles the six below)
 //   The scales, for players to choose per game (gameboy_video.h): 1x;
 //   fit, nearest and fit, smooth (the default), the full 240-line height

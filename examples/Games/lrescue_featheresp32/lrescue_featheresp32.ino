@@ -280,8 +280,8 @@ void loop() {
     bool left   = hal_input_read(HAL_BTN_LEFT);
     bool right  = hal_input_read(HAL_BTN_RIGHT);
     bool rotate = hal_input_read(HAL_BTN_ROTATE);
-    // The controller's X + Up/Down: the master volume, in 3 dB steps down
-    // to mute.
+    // The master volume, in 3 dB steps down to mute: the controller's
+    // X + Up/Down, or ROTATE + Up/Down on the GPIO buttons.
     if (const int steps = feather_wii_input_take_volume_steps())
         Serial.printf("[lrescue-esp32] volume %lu\n", (unsigned long)feather_audio_volume_step(steps));
     // Settings: a change is saved 3 s after the last one, one storage step

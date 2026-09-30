@@ -54,8 +54,18 @@ void feather_wii_input_tick(uint32_t now_ms);
 // Whether the controller holds this HAL_BTN_* (hal_input_read() ORs it in).
 bool feather_wii_input_held(uint8_t hal_btn);
 
+// Whether feather_wii_input_begin() has run, and whether a controller is
+// connected and answering now. For the input task's GPIO gate
+// (hal_input_feather_esp32.cpp); call from that task.
+bool feather_wii_input_started(void);
+bool feather_wii_input_connected(void);
+
+// Adds volume steps from another source into the same count: the GPIO
+// panel's ROTATE + Up/Down (hal_input_feather_esp32.cpp). Input task only.
+void feather_wii_input_add_volume_steps(int steps);
+
 // Volume steps since the last call, from X+Up (+1 each press) and X+Down
-// (-1), in either map. Counted on the input task, so a quick tap between
+// (-1), in either map, and from the GPIO panel's ROTATE + Up/Down. Counted on the input task, so a quick tap between
 // two paints still counts. The sketch applies them: the consoles through
 // console_audio_volume_step(), the arcade games through
 // feather_audio_volume_step() (hal_audio_feather_esp32.h).
