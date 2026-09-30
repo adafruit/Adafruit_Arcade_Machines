@@ -8582,3 +8582,109 @@ every 2-3 s of play (19 saves in the session). `console_save` is
 unchanged apart from taking the lock. Zelda appears to change its battery
 RAM continuously, and every change followed by a quiet second is a save.
 Worth a look for card wear; it is separate from settings.
+
+### 157. Settings for the 14 arcade sketches, and two CPU cores that were running from flash
+
+The arcade half of the settings plan (#156; `CONSOLES_PLAN.md`, "Planned:
+settings saved to the SD card").
+
+- **The Fruit Jam** saves `rotation`, `mirror` and `stretch`; **the Feather**
+  saves `rotation` and `volume`.
+- **The files** are at the card's root: `/<game>.fruitjam.cfg` or
+  `/<game>.feather.cfg`, e.g. `/pacman.fruitjam.cfg`.
+- **The seven machines stop unmounting the card** after a successful load.
+- **The settings module gained** `settings_arcade_path()`,
+  `settings_status_line()`, `settings_take_saved()` and
+  `SETTINGS_ON_OFF_NAMES`, so each sketch needs only a few lines.
+- **On the Feather,** the load comes before `hal_video_run()`, which takes
+  the SPI bus the card shares, and the per-frame calls come after the
+  volume handling in the single loop.
+
+**The trap: Burger Time went from 15.4 to 19.4 ms, and the cause was code
+layout.** With settings wired in, its Fruit Jam frame overran and the
+display starved (`starve 175504, minq 1`). A series of A/B builds on the
+same card and board, each measured over 20 s:
+
+| Build | work_MEAN |
+|---|---|
+| `main` | 15.4 ms |
+| `main` + the card kept mounted, nothing else | 15.4 ms |
+| settings, unmounting right after the read | 15.4 ms |
+| settings, card left idle (`syncDevice()`) | 19.0 ms |
+| settings, `SPI.end()` with SdFat still mounted | 18.3 ms |
+| settings, per-frame calls compiled out | 15.4 ms |
+| settings, per-frame calls present but **skipped at run time** | 18.3 ms |
+
+The last line decides it. The code was never run, yet the build was slow,
+so the cost was where code landed, not what it did.
+
+- **What was exposed:** the ELF showed Burger Time's 6502 helpers in
+  flash: `m6502_rw`, `m6502_adc`, `m6502_sbc` and, in some builds,
+  `m6502_rb`, the read behind every emulated memory access. They are
+  `static inline`, but the compiler emitted out-of-line copies without the
+  core's RAM attribute. So the RAM-resident `m6502_step()` called into
+  flash, through the 16 KB XIP cache flash and PSRAM share.
+- **The fix, in `src/cpu/m6502/m6502.c`:** every `static inline` helper
+  now carries `M6502_RAMFUNC`, so any copy the compiler emits is in RAM.
+- **The result:** the settings build measures 15.2 ms, and so does the
+  run-time-skip layout that was 18.3 ms. Layout no longer matters.
+
+**The i8080 had the same exposure, worse.** `exec_opcode()`, the whole
+interpreter (18 KB in Lunar Rescue's build), ran from flash; my notes had
+it as a lever never applied.
+
+- **The symptom:** Lunar Rescue went from `main`'s 5.6 ms to 6.7 ms with
+  settings.
+- **The fix, in `src/cpu/i8080/i8080.c`:** every function is now
+  `ARCADE_FAST_FUNC`, one section each, so unused copies are still
+  discarded. Lunar Rescue measures 5.5 ms.
+- **The cost:** about 25 KB of SRAM in Lunar Rescue, whose Fruit Jam heap
+  drops from about 83 KB to 58 KB. Its samples are a static 240 KB buffer,
+  so nothing large is allocated at run time. Sound was checked by ear.
+- **The Feather:** both i8080 games still fit IRAM.
+- **The Z80 games were already fine.** Their core is in RAM, and only an
+  8-byte veneer into `z80_step` sits in flash.
+
+**Galaga on the Feather ran out of static RAM.** The settings module's
+buffers, two 512-byte sectors, a 513-byte read buffer and a 96-byte title
+copy, overflowed `dram0_0_seg` by 1,504 bytes.
+
+- **The fix:** they are allocated from the heap at `settings_begin()`, and
+  the title is kept as a pointer.
+- **The margin:** that freed about 1.6 KB, which leaves Galaga with
+  roughly 130 bytes of static RAM. Anything static added to a Galaga
+  Feather build will overflow it again.
+
+**On hardware, all 14:** the user changed each game's settings,
+power-cycled, and confirmed each came back that way. The log agreed (a
+save line, then `read 3` or `read 2` at the next boot).
+
+| Game | Fruit Jam work (before, #152) | Feather |
+|---|---|---|
+| Space Invaders | 5.7 ms (5.85) | 100% |
+| Lunar Rescue | 5.5 ms (5.52) | 100% |
+| Pac-Man | 8.5 ms (9.24) | 100% |
+| Ms. Pac-Man | 9.4 ms (9.52) | 100% |
+| Galaga | 12.5 ms (11.87; `main` today 12.6) | see below |
+| Donkey Kong | 12.9 ms (13.19) | 100% |
+| Burger Time | 15.2 ms (14.90; `main` today 15.4) | 100% |
+
+Every Fruit Jam game ran with `starve 0` or 1.
+
+**Galaga on the Feather, in play, A/B:**
+
+- **With settings:** 311 one-second windows, a mean of 94.6%, 2 below 90%.
+- **`main`:** 231 windows, a mean of 94.9%, 0 below 90%.
+
+The settings cost nothing measurable. **But `main` at 94.9% is below the
+99.2% of #146**, over similar play. Either Galaga on the Feather has
+slowed since v2.13.2, or these sessions were harder play. An A/B of
+v2.13.2 against `main` would tell. **Open.**
+
+**Also seen:**
+
+- **Donkey Kong on the Feather booted red** (card won't mount), on `main`
+  too, until the card was re-seated. It was the slot, not the code.
+- **Start-up underruns:** the Feather arcade games show one burst of audio
+  underruns in the first status line after boot, then none. This is the
+  start-up before the game's sound begins, as #141 found for the consoles.

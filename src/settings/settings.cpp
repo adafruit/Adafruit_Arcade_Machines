@@ -15,6 +15,7 @@
 #include "storage/extent_lock.h"
 
 const char *const SETTINGS_ROTATION_NAMES[4] = { "0", "90", "180", "270" };
+const char *const SETTINGS_ON_OFF_NAMES[2] = { "off", "on" };
 
 namespace {
 
@@ -29,16 +30,17 @@ struct setting_t {
 
 setting_t    g_keys[SETTINGS_MAX];
 uint32_t g_nkeys = 0;
-char     g_title[96] = "";
+const char *g_title = "Settings";   // the caller's string, not a copy
 
 settings_stats_t g_stats;
 hal_storage_extent_t g_extent;
 
 // The sector being written (left alone until it's done: on the Feather the
 // paint core reads it later), and the text last written, to skip saves
-// that would change nothing.
-uint8_t g_sector[SETTINGS_FILE_BYTES];
-uint8_t g_written[SETTINGS_FILE_BYTES];
+// that would change nothing. From the heap at settings_begin(), not static:
+// Galaga on the Feather has no static RAM to spare (it overflowed by 1.5 KB).
+uint8_t *g_sector = nullptr;
+uint8_t *g_written = nullptr;
 
 bool     g_dirty = false;
 uint64_t g_last_change_us = 0;
@@ -172,9 +174,17 @@ int settings_add_int(const char *key, int32_t lo, int32_t hi, int32_t def,
 bool settings_begin(const char *path, const char *title) {
     memset(&g_stats, 0, sizeof g_stats);
     snprintf(g_stats.path, sizeof g_stats.path, "%s", path);
-    snprintf(g_title, sizeof g_title, "%s", title ? title : "Settings");
+    g_title = title ? title : "Settings";
     g_step = Step::Idle;
     g_dirty = false;
+    if (!g_sector) g_sector = (uint8_t *)malloc(SETTINGS_FILE_BYTES);
+    if (!g_written) g_written = (uint8_t *)malloc(SETTINGS_FILE_BYTES);
+    char *text = (char *)malloc(SETTINGS_FILE_BYTES + 1);
+    if (!g_sector || !g_written || !text) {
+        free(text);
+        g_stats.state = SETTINGS_UNAVAILABLE;
+        return false;
+    }
 
     // Read it: the first sector's worth is parsed, and the rest only
     // counted, so a file edited past 512 bytes can be put back to size.
@@ -182,7 +192,6 @@ bool settings_begin(const char *path, const char *title) {
     bool exists = false;
     if (hal_file_t *f = hal_storage_open(path)) {
         exists = true;
-        static char text[SETTINGS_FILE_BYTES + 1];
         total = hal_storage_read(f, text, SETTINGS_FILE_BYTES);
         text[total] = 0;
         uint8_t scratch[64];
@@ -192,6 +201,7 @@ bool settings_begin(const char *path, const char *title) {
         g_stats.loaded = true;
         parse(text);
     }
+    free(text);
 
     // Exactly one sector, holding the values: hal_storage_make_contiguous()
     // leaves a big-enough file as it is, so one of the wrong size is
@@ -277,6 +287,27 @@ void settings_console_path(const char *rom_name, const char *board, char *out, s
     snprintf(stem, sizeof stem, "%s", rom_name);
     if (char *dot = strrchr(stem, '.')) *dot = 0;
     snprintf(out, n, "/cart/%s.%s.cfg", stem, board);
+}
+
+void settings_arcade_path(const char *game, const char *board, char *out, size_t n) {
+    snprintf(out, n, "/%s.%s.cfg", game, board);
+}
+
+void settings_status_line(const char *what, char *out, size_t n) {
+    static const char *const kState[] = { "none", "UNAVAILABLE", "ready", "writing" };
+    char values[128];
+    settings_describe(values, sizeof values);
+    snprintf(out, n, "settings %s %s (%s): %s; read %lu, ignored %lu%s, saves %lu, errors %lu",
+             what, g_stats.path, kState[g_stats.state], values, (unsigned long)g_stats.applied,
+             (unsigned long)g_stats.ignored, g_stats.truncated ? ", TRUNCATED" : "",
+             (unsigned long)g_stats.saves, (unsigned long)g_stats.errors);
+}
+
+bool settings_take_saved(void) {
+    static uint32_t shown = 0;
+    if (g_stats.saves == shown) return false;
+    shown = g_stats.saves;
+    return true;
 }
 
 void settings_describe(char *out, size_t n) {

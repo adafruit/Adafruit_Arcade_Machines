@@ -163,7 +163,8 @@ bool btime_load_assets(btime_system *system, uint16_t *out_error_color) {
     }
 
     btime_video_build_caches();
-    hal_storage_unmount();
+    // Storage stays mounted: the sketch reads its settings file next, and
+    // rewrites it when a setting changes (settings/settings.h).
 
     // Only now that the ROM is in place can either CPU be reset: a 6502
     // takes its initial PC from 0xFFFC/0xFFFD, so resetting an unloaded

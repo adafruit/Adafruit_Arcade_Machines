@@ -9,7 +9,17 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include "arch/arch.h"
 #include "i8080.h"
+
+// EVERY FUNCTION IN THIS FILE RUNS FROM RAM (ARCADE_FAST_FUNC), like the
+// other CPU cores' hot paths. exec_opcode() is the whole interpreter, run
+// for every emulated instruction, and it used to execute from flash through
+// the 16 KB XIP cache that flash and PSRAM share. That made Lunar Rescue's
+// frame time depend on where unrelated code happened to land: adding the
+// settings code (DEVNOTES #157) moved it from 5.6 to 6.7 ms. The helpers get
+// the attribute too, so a call the compiler doesn't inline stays in RAM;
+// one section per function, so copies nothing calls are still discarded.
 
 // Halt on an illegal or unimplemented opcode. This used to spin on
 // tight_loop_contents() from "pico/stdlib.h", which was the only thing in
@@ -26,7 +36,7 @@ static inline void cpu_panic(void) {
     for (volatile int spin = 1; spin;) { }
 }
 
-uint8_t check_parity(uint8_t res, int bits) {
+uint8_t ARCADE_FAST_FUNC(check_parity)(uint8_t res, int bits) {
     int p = 0;
     for (int i = 0; i < bits; i++) {
         if ((res >> i) & 0x01) p++;
@@ -34,26 +44,26 @@ uint8_t check_parity(uint8_t res, int bits) {
     return ((p & 0x1) == 0);
 }
 
-void set_zsp(Cpu_state *state, uint8_t res) {
+void ARCADE_FAST_FUNC(set_zsp)(Cpu_state *state, uint8_t res) {
     state->cc.z = (res == 0x00);
     state->cc.s = ((res & 0x80) == 0x80);
     state->cc.p = check_parity(res, 8);
 }
 
-uint16_t get_m_address(Cpu_state *state, uint8_t reg1, uint8_t reg2) {
+uint16_t ARCADE_FAST_FUNC(get_m_address)(Cpu_state *state, uint8_t reg1, uint8_t reg2) {
     return (state->regs[reg1] << 8) | state->regs[reg2];
 }
 
-uint16_t get_immediate_address(Cpu_state *state) {
+uint16_t ARCADE_FAST_FUNC(get_immediate_address)(Cpu_state *state) {
     uint8_t byte1 = read_memory(state, state->pc + 2);
     uint8_t byte2 = read_memory(state, state->pc + 1);
     return (byte1 << 8) | byte2;
 }
 
-int STC(Cpu_state *state) { state->cc.cy = 1; return 4; }
-int CMC(Cpu_state *state) { state->cc.cy = !state->cc.cy; return 4; }
+int ARCADE_FAST_FUNC(STC)(Cpu_state *state) { state->cc.cy = 1; return 4; }
+int ARCADE_FAST_FUNC(CMC)(Cpu_state *state) { state->cc.cy = !state->cc.cy; return 4; }
 
-int INR(Cpu_state *state, uint8_t reg) {
+int ARCADE_FAST_FUNC(INR)(Cpu_state *state, uint8_t reg) {
     int cyc = 5;
     uint8_t res;
     if (reg == M) {
@@ -69,7 +79,7 @@ int INR(Cpu_state *state, uint8_t reg) {
     return cyc;
 }
 
-int DCR(Cpu_state *state, uint8_t reg) {
+int ARCADE_FAST_FUNC(DCR)(Cpu_state *state, uint8_t reg) {
     int cyc = 5;
     uint8_t res;
     if (reg == M) {
@@ -85,9 +95,9 @@ int DCR(Cpu_state *state, uint8_t reg) {
     return cyc;
 }
 
-int CMA(Cpu_state *state) { state->regs[A] = ~state->regs[A]; return 4; }
+int ARCADE_FAST_FUNC(CMA)(Cpu_state *state) { state->regs[A] = ~state->regs[A]; return 4; }
 
-int DAA(Cpu_state *state) {
+int ARCADE_FAST_FUNC(DAA)(Cpu_state *state) {
     if (state->cc.ac || (state->regs[A] & 0x0f) > 9) {
         state->cc.ac = 1;
         state->regs[A] += 6;
@@ -99,7 +109,7 @@ int DAA(Cpu_state *state) {
     return 4;
 }
 
-int MOV(Cpu_state *state, uint8_t reg1, uint8_t reg2) {
+int ARCADE_FAST_FUNC(MOV)(Cpu_state *state, uint8_t reg1, uint8_t reg2) {
     int cyc = 5;
     uint8_t byte;
     if (reg2 == M) {
@@ -119,19 +129,19 @@ int MOV(Cpu_state *state, uint8_t reg1, uint8_t reg2) {
     return cyc;
 }
 
-int STAX(Cpu_state *state, uint8_t reg) {
+int ARCADE_FAST_FUNC(STAX)(Cpu_state *state, uint8_t reg) {
     uint16_t address = get_m_address(state, reg, reg + 1);
     write_memory(state, address, state->regs[A]);
     return 7;
 }
 
-int LDAX(Cpu_state *state, uint8_t reg) {
+int ARCADE_FAST_FUNC(LDAX)(Cpu_state *state, uint8_t reg) {
     uint16_t address = get_m_address(state, reg, reg + 1);
     state->regs[A] = read_memory(state, address);
     return 7;
 }
 
-int ADD(Cpu_state *state, uint8_t reg) {
+int ARCADE_FAST_FUNC(ADD)(Cpu_state *state, uint8_t reg) {
     int cyc = 4;
     uint8_t add1 = state->regs[A];
     uint8_t add2;
@@ -145,7 +155,7 @@ int ADD(Cpu_state *state, uint8_t reg) {
     return cyc;
 }
 
-int ADC(Cpu_state *state, uint8_t reg) {
+int ARCADE_FAST_FUNC(ADC)(Cpu_state *state, uint8_t reg) {
     int cyc = 4;
     uint8_t add1 = state->regs[A];
     uint8_t add2;
@@ -159,7 +169,7 @@ int ADC(Cpu_state *state, uint8_t reg) {
     return cyc;
 }
 
-int SUB(Cpu_state *state, uint8_t reg) {
+int ARCADE_FAST_FUNC(SUB)(Cpu_state *state, uint8_t reg) {
     int cyc = 4;
     uint8_t sub1 = state->regs[A];
     uint8_t sub2;
@@ -173,7 +183,7 @@ int SUB(Cpu_state *state, uint8_t reg) {
     return cyc;
 }
 
-int SBB(Cpu_state *state, uint8_t reg) {
+int ARCADE_FAST_FUNC(SBB)(Cpu_state *state, uint8_t reg) {
     int cyc = 4;
     uint8_t sub1 = state->regs[A];
     uint8_t sub2;
@@ -187,7 +197,7 @@ int SBB(Cpu_state *state, uint8_t reg) {
     return cyc;
 }
 
-int ANA(Cpu_state *state, uint8_t reg) {
+int ARCADE_FAST_FUNC(ANA)(Cpu_state *state, uint8_t reg) {
     int cyc = 4;
     uint8_t and;
     if (reg == M) { cyc = 7; and = read_memory(state, get_m_address(state, H, L)); }
@@ -199,7 +209,7 @@ int ANA(Cpu_state *state, uint8_t reg) {
     return cyc;
 }
 
-int XRA(Cpu_state *state, uint8_t reg) {
+int ARCADE_FAST_FUNC(XRA)(Cpu_state *state, uint8_t reg) {
     int cyc = 4;
     uint8_t xor;
     if (reg == M) { cyc = 7; xor = read_memory(state, get_m_address(state, H, L)); }
@@ -211,7 +221,7 @@ int XRA(Cpu_state *state, uint8_t reg) {
     return cyc;
 }
 
-int ORA(Cpu_state *state, uint8_t reg) {
+int ARCADE_FAST_FUNC(ORA)(Cpu_state *state, uint8_t reg) {
     int cyc = 4;
     uint8_t or;
     if (reg == M) { cyc = 7; or = read_memory(state, get_m_address(state, H, L)); }
@@ -223,7 +233,7 @@ int ORA(Cpu_state *state, uint8_t reg) {
     return cyc;
 }
 
-int CMP(Cpu_state *state, uint8_t reg) {
+int ARCADE_FAST_FUNC(CMP)(Cpu_state *state, uint8_t reg) {
     int cyc = 4;
     uint8_t cmp1 = state->regs[A];
     uint8_t cmp2;
@@ -237,21 +247,21 @@ int CMP(Cpu_state *state, uint8_t reg) {
     return cyc;
 }
 
-int RLC(Cpu_state *state) {
+int ARCADE_FAST_FUNC(RLC)(Cpu_state *state) {
     state->cc.cy = (state->regs[A] & 0x80) != 0;
     state->regs[A] <<= 1;
     if (state->cc.cy) state->regs[A]++;
     return 4;
 }
 
-int RRC(Cpu_state *state) {
+int ARCADE_FAST_FUNC(RRC)(Cpu_state *state) {
     state->cc.cy = (state->regs[A] & 0x01) != 0;
     state->regs[A] >>= 1;
     if (state->cc.cy) state->regs[A] += 0x80;
     return 4;
 }
 
-int RAL(Cpu_state *state) {
+int ARCADE_FAST_FUNC(RAL)(Cpu_state *state) {
     uint8_t oldcy = state->cc.cy;
     state->cc.cy = (state->regs[A] & 0x80) != 0;
     state->regs[A] <<= 1;
@@ -259,7 +269,7 @@ int RAL(Cpu_state *state) {
     return 4;
 }
 
-int RAR(Cpu_state *state) {
+int ARCADE_FAST_FUNC(RAR)(Cpu_state *state) {
     uint8_t oldcy = state->cc.cy;
     state->cc.cy = (state->regs[A] & 0x01) != 0;
     state->regs[A] >>= 1;
@@ -267,7 +277,7 @@ int RAR(Cpu_state *state) {
     return 4;
 }
 
-int PUSH(Cpu_state *state, uint8_t reg) {
+int ARCADE_FAST_FUNC(PUSH)(Cpu_state *state, uint8_t reg) {
     uint8_t byte1, byte2;
     if (reg == PSW) {
         byte1 = state->regs[A];
@@ -283,7 +293,7 @@ int PUSH(Cpu_state *state, uint8_t reg) {
     return 11;
 }
 
-int POP(Cpu_state *state, uint8_t reg) {
+int ARCADE_FAST_FUNC(POP)(Cpu_state *state, uint8_t reg) {
     uint8_t byte1 = read_memory(state, state->sp + 1);
     uint8_t byte2 = read_memory(state, state->sp);
     if (reg == PSW) {
@@ -301,7 +311,7 @@ int POP(Cpu_state *state, uint8_t reg) {
     return 10;
 }
 
-int DAD(Cpu_state *state, uint8_t reg) {
+int ARCADE_FAST_FUNC(DAD)(Cpu_state *state, uint8_t reg) {
     uint16_t add1 = (reg == SP) ? state->sp : (state->regs[reg] << 8) | state->regs[reg + 1];
     uint16_t add2 = (state->regs[H] << 8) | state->regs[L];
     uint32_t sum = add1 + add2;
@@ -311,26 +321,26 @@ int DAD(Cpu_state *state, uint8_t reg) {
     return 10;
 }
 
-int INX(Cpu_state *state, uint8_t reg) {
+int ARCADE_FAST_FUNC(INX)(Cpu_state *state, uint8_t reg) {
     if (reg == SP) { state->sp++; }
     else { if (state->regs[reg + 1]++ == 0xff) state->regs[reg]++; }
     return 5;
 }
 
-int DCX(Cpu_state *state, uint8_t reg) {
+int ARCADE_FAST_FUNC(DCX)(Cpu_state *state, uint8_t reg) {
     if (reg == SP) { state->sp--; }
     else { if (state->regs[reg + 1]-- == 0x00) state->regs[reg]--; }
     return 5;
 }
 
-int XCHG(Cpu_state *state) {
+int ARCADE_FAST_FUNC(XCHG)(Cpu_state *state) {
     uint8_t d = state->regs[D], e = state->regs[E];
     state->regs[D] = state->regs[H]; state->regs[E] = state->regs[L];
     state->regs[H] = d;              state->regs[L] = e;
     return 4;
 }
 
-int XTHL(Cpu_state *state) {
+int ARCADE_FAST_FUNC(XTHL)(Cpu_state *state) {
     uint8_t l = state->regs[L], h = state->regs[H];
     state->regs[L] = read_memory(state, state->sp);
     state->regs[H] = read_memory(state, state->sp + 1);
@@ -339,9 +349,9 @@ int XTHL(Cpu_state *state) {
     return 18;
 }
 
-int SPHL(Cpu_state *state) { state->sp = (state->regs[H] << 8) | state->regs[L]; return 5; }
+int ARCADE_FAST_FUNC(SPHL)(Cpu_state *state) { state->sp = (state->regs[H] << 8) | state->regs[L]; return 5; }
 
-int LXI(Cpu_state *state, uint8_t reg) {
+int ARCADE_FAST_FUNC(LXI)(Cpu_state *state, uint8_t reg) {
     uint8_t lo = read_memory(state, state->pc + 1);
     uint8_t hi = read_memory(state, state->pc + 2);
     if (reg == SP) { state->sp = (hi << 8) | lo; }
@@ -350,7 +360,7 @@ int LXI(Cpu_state *state, uint8_t reg) {
     return 10;
 }
 
-int MVI(Cpu_state *state, uint8_t reg) {
+int ARCADE_FAST_FUNC(MVI)(Cpu_state *state, uint8_t reg) {
     int cyc = 7;
     uint8_t byte = read_memory(state, state->pc + 1);
     if (reg == M) { cyc = 10; write_memory(state, get_m_address(state, H, L), byte); }
@@ -359,7 +369,7 @@ int MVI(Cpu_state *state, uint8_t reg) {
     return cyc;
 }
 
-int ADI(Cpu_state *state) {
+int ARCADE_FAST_FUNC(ADI)(Cpu_state *state) {
     uint8_t add1 = state->regs[A];
     uint8_t add2 = read_memory(state, state->pc + 1);
     state->cc.ac = (((add1 & 0x0f) + (add2 & 0x0f)) & 0xf0) != 0;
@@ -371,7 +381,7 @@ int ADI(Cpu_state *state) {
     return 7;
 }
 
-int ACI(Cpu_state *state) {
+int ARCADE_FAST_FUNC(ACI)(Cpu_state *state) {
     uint8_t add1 = state->regs[A];
     uint8_t add2 = read_memory(state, state->pc + 1);
     state->cc.ac = (((add1 & 0x0f) + (add2 & 0x0f) + 1) & 0xf0) != 0;
@@ -383,7 +393,7 @@ int ACI(Cpu_state *state) {
     return 7;
 }
 
-int SUI(Cpu_state *state) {
+int ARCADE_FAST_FUNC(SUI)(Cpu_state *state) {
     uint8_t sub1 = state->regs[A];
     uint8_t sub2 = ~read_memory(state, state->pc + 1);
     state->cc.ac = (((sub1 & 0x0f) + (sub2 & 0x0f) + 1) & 0xf0) != 0;
@@ -395,7 +405,7 @@ int SUI(Cpu_state *state) {
     return 7;
 }
 
-int SBI(Cpu_state *state) {
+int ARCADE_FAST_FUNC(SBI)(Cpu_state *state) {
     uint8_t sub1 = state->regs[A];
     uint8_t sub2 = ~(read_memory(state, state->pc + 1) + state->cc.cy);
     state->cc.ac = (((sub1 & 0x0f) + (sub2 & 0x0f) + 1) & 0xf0) != 0;
@@ -407,7 +417,7 @@ int SBI(Cpu_state *state) {
     return 7;
 }
 
-int ANI(Cpu_state *state) {
+int ARCADE_FAST_FUNC(ANI)(Cpu_state *state) {
     uint8_t and = read_memory(state, state->pc + 1);
     state->cc.ac = ((state->regs[A] | and) & 0x08) != 0;
     state->regs[A] &= and;
@@ -417,7 +427,7 @@ int ANI(Cpu_state *state) {
     return 7;
 }
 
-int XRI(Cpu_state *state) {
+int ARCADE_FAST_FUNC(XRI)(Cpu_state *state) {
     state->regs[A] ^= read_memory(state, state->pc + 1);
     state->cc.cy = 0;
     set_zsp(state, state->regs[A]);
@@ -425,7 +435,7 @@ int XRI(Cpu_state *state) {
     return 7;
 }
 
-int ORI(Cpu_state *state) {
+int ARCADE_FAST_FUNC(ORI)(Cpu_state *state) {
     state->regs[A] |= read_memory(state, state->pc + 1);
     state->cc.cy = 0;
     state->cc.ac = 0;
@@ -434,7 +444,7 @@ int ORI(Cpu_state *state) {
     return 7;
 }
 
-int CPI(Cpu_state *state) {
+int ARCADE_FAST_FUNC(CPI)(Cpu_state *state) {
     uint8_t cmp1 = state->regs[A];
     uint8_t cmp2 = ~read_memory(state, state->pc + 1);
     int16_t sub = cmp1 - ~cmp2;
@@ -446,44 +456,44 @@ int CPI(Cpu_state *state) {
     return 7;
 }
 
-int STA(Cpu_state *state) {
+int ARCADE_FAST_FUNC(STA)(Cpu_state *state) {
     write_memory(state, get_immediate_address(state), state->regs[A]);
     state->pc += 2; return 13;
 }
 
-int LDA(Cpu_state *state) {
+int ARCADE_FAST_FUNC(LDA)(Cpu_state *state) {
     state->regs[A] = read_memory(state, get_immediate_address(state));
     state->pc += 2; return 13;
 }
 
-int SHLD(Cpu_state *state) {
+int ARCADE_FAST_FUNC(SHLD)(Cpu_state *state) {
     uint16_t addr = get_immediate_address(state);
     write_memory(state, addr,     state->regs[L]);
     write_memory(state, addr + 1, state->regs[H]);
     state->pc += 2; return 16;
 }
 
-int LHLD(Cpu_state *state) {
+int ARCADE_FAST_FUNC(LHLD)(Cpu_state *state) {
     uint16_t addr = get_immediate_address(state);
     state->regs[L] = read_memory(state, addr);
     state->regs[H] = read_memory(state, addr + 1);
     state->pc += 2; return 16;
 }
 
-int PCHL(Cpu_state *state) { state->pc = get_m_address(state, H, L) - 1; return 5; }
+int ARCADE_FAST_FUNC(PCHL)(Cpu_state *state) { state->pc = get_m_address(state, H, L) - 1; return 5; }
 
-int JMP(Cpu_state *state) { state->pc = get_immediate_address(state) - 1; return 10; }
+int ARCADE_FAST_FUNC(JMP)(Cpu_state *state) { state->pc = get_immediate_address(state) - 1; return 10; }
 
-int JC(Cpu_state *state)  { if  (state->cc.cy) JMP(state); else state->pc += 2; return 10; }
-int JNC(Cpu_state *state) { if (!state->cc.cy) JMP(state); else state->pc += 2; return 10; }
-int JZ(Cpu_state *state)  { if  (state->cc.z)  JMP(state); else state->pc += 2; return 10; }
-int JNZ(Cpu_state *state) { if (!state->cc.z)  JMP(state); else state->pc += 2; return 10; }
-int JM(Cpu_state *state)  { if  (state->cc.s)  JMP(state); else state->pc += 2; return 10; }
-int JP(Cpu_state *state)  { if (!state->cc.s)  JMP(state); else state->pc += 2; return 10; }
-int JPE(Cpu_state *state) { if  (state->cc.p)  JMP(state); else state->pc += 2; return 10; }
-int JPO(Cpu_state *state) { if (!state->cc.p)  JMP(state); else state->pc += 2; return 10; }
+int ARCADE_FAST_FUNC(JC)(Cpu_state *state)  { if  (state->cc.cy) JMP(state); else state->pc += 2; return 10; }
+int ARCADE_FAST_FUNC(JNC)(Cpu_state *state) { if (!state->cc.cy) JMP(state); else state->pc += 2; return 10; }
+int ARCADE_FAST_FUNC(JZ)(Cpu_state *state)  { if  (state->cc.z)  JMP(state); else state->pc += 2; return 10; }
+int ARCADE_FAST_FUNC(JNZ)(Cpu_state *state) { if (!state->cc.z)  JMP(state); else state->pc += 2; return 10; }
+int ARCADE_FAST_FUNC(JM)(Cpu_state *state)  { if  (state->cc.s)  JMP(state); else state->pc += 2; return 10; }
+int ARCADE_FAST_FUNC(JP)(Cpu_state *state)  { if (!state->cc.s)  JMP(state); else state->pc += 2; return 10; }
+int ARCADE_FAST_FUNC(JPE)(Cpu_state *state) { if  (state->cc.p)  JMP(state); else state->pc += 2; return 10; }
+int ARCADE_FAST_FUNC(JPO)(Cpu_state *state) { if (!state->cc.p)  JMP(state); else state->pc += 2; return 10; }
 
-int CALL(Cpu_state *state) {
+int ARCADE_FAST_FUNC(CALL)(Cpu_state *state) {
     uint16_t ret = state->pc + 3;
     write_memory(state, state->sp - 1, ret >> 8);
     write_memory(state, state->sp - 2, ret & 0xff);
@@ -492,32 +502,32 @@ int CALL(Cpu_state *state) {
     return 17;
 }
 
-int CC(Cpu_state *state)  { if  (state->cc.cy) return CALL(state); state->pc += 2; return 11; }
-int CNC(Cpu_state *state) { if (!state->cc.cy) return CALL(state); state->pc += 2; return 11; }
-int CZ(Cpu_state *state)  { if  (state->cc.z)  return CALL(state); state->pc += 2; return 11; }
-int CNZ(Cpu_state *state) { if (!state->cc.z)  return CALL(state); state->pc += 2; return 11; }
-int CM(Cpu_state *state)  { if  (state->cc.s)  return CALL(state); state->pc += 2; return 11; }
-int CP(Cpu_state *state)  { if (!state->cc.s)  return CALL(state); state->pc += 2; return 11; }
-int CPE(Cpu_state *state) { if  (state->cc.p)  return CALL(state); state->pc += 2; return 11; }
-int CPO(Cpu_state *state) { if (!state->cc.p)  return CALL(state); state->pc += 2; return 11; }
+int ARCADE_FAST_FUNC(CC)(Cpu_state *state)  { if  (state->cc.cy) return CALL(state); state->pc += 2; return 11; }
+int ARCADE_FAST_FUNC(CNC)(Cpu_state *state) { if (!state->cc.cy) return CALL(state); state->pc += 2; return 11; }
+int ARCADE_FAST_FUNC(CZ)(Cpu_state *state)  { if  (state->cc.z)  return CALL(state); state->pc += 2; return 11; }
+int ARCADE_FAST_FUNC(CNZ)(Cpu_state *state) { if (!state->cc.z)  return CALL(state); state->pc += 2; return 11; }
+int ARCADE_FAST_FUNC(CM)(Cpu_state *state)  { if  (state->cc.s)  return CALL(state); state->pc += 2; return 11; }
+int ARCADE_FAST_FUNC(CP)(Cpu_state *state)  { if (!state->cc.s)  return CALL(state); state->pc += 2; return 11; }
+int ARCADE_FAST_FUNC(CPE)(Cpu_state *state) { if  (state->cc.p)  return CALL(state); state->pc += 2; return 11; }
+int ARCADE_FAST_FUNC(CPO)(Cpu_state *state) { if (!state->cc.p)  return CALL(state); state->pc += 2; return 11; }
 
-int RET(Cpu_state *state) {
+int ARCADE_FAST_FUNC(RET)(Cpu_state *state) {
     state->pc = read_memory(state, state->sp) | (read_memory(state, state->sp + 1) << 8);
     state->pc--;
     state->sp += 2;
     return 10;
 }
 
-int RC(Cpu_state *state)  { if  (state->cc.cy) return RET(state) + 1; return 5; }
-int RNC(Cpu_state *state) { if (!state->cc.cy) return RET(state) + 1; return 5; }
-int RZ(Cpu_state *state)  { if  (state->cc.z)  return RET(state) + 1; return 5; }
-int RNZ(Cpu_state *state) { if (!state->cc.z)  return RET(state) + 1; return 5; }
-int RM(Cpu_state *state)  { if  (state->cc.s)  return RET(state) + 1; return 5; }
-int RP(Cpu_state *state)  { if (!state->cc.s)  return RET(state) + 1; return 5; }
-int RPE(Cpu_state *state) { if  (state->cc.p)  return RET(state) + 1; return 5; }
-int RPO(Cpu_state *state) { if (!state->cc.p)  return RET(state) + 1; return 5; }
+int ARCADE_FAST_FUNC(RC)(Cpu_state *state)  { if  (state->cc.cy) return RET(state) + 1; return 5; }
+int ARCADE_FAST_FUNC(RNC)(Cpu_state *state) { if (!state->cc.cy) return RET(state) + 1; return 5; }
+int ARCADE_FAST_FUNC(RZ)(Cpu_state *state)  { if  (state->cc.z)  return RET(state) + 1; return 5; }
+int ARCADE_FAST_FUNC(RNZ)(Cpu_state *state) { if (!state->cc.z)  return RET(state) + 1; return 5; }
+int ARCADE_FAST_FUNC(RM)(Cpu_state *state)  { if  (state->cc.s)  return RET(state) + 1; return 5; }
+int ARCADE_FAST_FUNC(RP)(Cpu_state *state)  { if (!state->cc.s)  return RET(state) + 1; return 5; }
+int ARCADE_FAST_FUNC(RPE)(Cpu_state *state) { if  (state->cc.p)  return RET(state) + 1; return 5; }
+int ARCADE_FAST_FUNC(RPO)(Cpu_state *state) { if (!state->cc.p)  return RET(state) + 1; return 5; }
 
-int RST(Cpu_state *state, uint16_t offset) {
+int ARCADE_FAST_FUNC(RST)(Cpu_state *state, uint16_t offset) {
     uint16_t ret = state->pc + 3;
     write_memory(state, state->sp - 1, ret >> 8);
     write_memory(state, state->sp - 2, ret & 0xff);
@@ -526,10 +536,10 @@ int RST(Cpu_state *state, uint16_t offset) {
     return 11;
 }
 
-int EI(Cpu_state *state)  { state->int_enable = 1; return 4; }
-int DI(Cpu_state *state)  { state->int_enable = 0; return 4; }
+int ARCADE_FAST_FUNC(EI)(Cpu_state *state)  { state->int_enable = 1; return 4; }
+int ARCADE_FAST_FUNC(DI)(Cpu_state *state)  { state->int_enable = 0; return 4; }
 
-int IN(Cpu_state *state) {
+int ARCADE_FAST_FUNC(IN)(Cpu_state *state) {
     state->pc++;
     // An unbound port reads as an undriven bus rather than faulting -- see
     // the port_in/port_out contract on Cpu_state in i8080.h.
@@ -538,34 +548,34 @@ int IN(Cpu_state *state) {
     return 10;
 }
 
-int OUT(Cpu_state *state) {
+int ARCADE_FAST_FUNC(OUT)(Cpu_state *state) {
     state->pc++;
     uint8_t port_number = read_memory(state, state->pc);
     if (state->port_out) state->port_out(state, port_number, state->regs[A]);
     return 10;
 }
 
-int HLT(Cpu_state *state) {
+int ARCADE_FAST_FUNC(HLT)(Cpu_state *state) {
     // HLT halts until interrupt. In our cycle-count emulator, keep advancing
     // cycles so the interrupt threshold fires and breaks out of the inner loop.
     (void)state;
     return 7;
 }
 
-uint8_t read_memory(Cpu_state *state, uint16_t address) {
+uint8_t ARCADE_FAST_FUNC(read_memory)(Cpu_state *state, uint16_t address) {
     if (state->mirror_2000_at_4000 && address >= 0x4000 && address < 0x6000)
         address -= 0x2000;
     return state->memory[address];
 }
 
-void write_memory(Cpu_state *state, uint16_t address, uint8_t value) {
+void ARCADE_FAST_FUNC(write_memory)(Cpu_state *state, uint16_t address, uint8_t value) {
     if (address < 0x2000) return; // ROM is read-only
     if (state->mirror_2000_at_4000 && address >= 0x4000 && address < 0x6000)
         address -= 0x2000;
     state->memory[address] = value;
 }
 
-int interrupt(Cpu_state *state, uint16_t offset) {
+int ARCADE_FAST_FUNC(interrupt)(Cpu_state *state, uint16_t offset) {
     if (state->int_enable) {
         state->pc -= 3;
         state->int_enable = 0;
@@ -574,7 +584,7 @@ int interrupt(Cpu_state *state, uint16_t offset) {
     return 0;
 }
 
-int exec_opcode(Cpu_state *state) {
+int ARCADE_FAST_FUNC(exec_opcode)(Cpu_state *state) {
     uint8_t op = read_memory(state, state->pc);
     int cyc = 0;
 

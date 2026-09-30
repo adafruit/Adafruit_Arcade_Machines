@@ -70,7 +70,8 @@ bool invaders_load_assets(arcade_system *system, uint16_t *out_error_color) {
 
     hal_audio_init(INVADERS_AUDIO_SAMPLE_RATE);
     int samples_loaded = invaders_audio_load_samples();
-    hal_storage_unmount();
+    // Storage stays mounted: the sketch reads its settings file next, and
+    // rewrites it when a setting changes (settings/settings.h).
     if (samples_loaded == 0) {
         *out_error_color = INVADERS_COLOR_ERROR_NO_ASSETS;
         return false;

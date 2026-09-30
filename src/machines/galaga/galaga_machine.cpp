@@ -462,7 +462,8 @@ bool galaga_load_assets(galaga_system *system, uint16_t *out_error_color) {
     }
 
     galaga_video_build_caches();
-    hal_storage_unmount();
+    // Storage stays mounted: the sketch reads its settings file next, and
+    // rewrites it when a setting changes (settings/settings.h).
 
     // Namco WSG audio (3-voice wavetable). The 54XX explosion/noise
     // channel mixes into the same fill callback -- see galaga_audio.cpp.

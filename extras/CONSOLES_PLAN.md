@@ -1075,9 +1075,9 @@ games and is not Game Boy Color emulation.
 Today every choice a player makes resets at power-up. This saves them per
 game, per board, on the card.
 
-> **Consoles: DONE (2026-09-29, DEVNOTES #156).** All four console
-> sketches, confirmed on hardware. The arcade games, rollout step 2 below,
-> are next.
+> **DONE: consoles (2026-09-29, DEVNOTES #156) and arcade games
+> (2026-09-30, #157).** All 18 sketches, confirmed on hardware on both
+> boards.
 
 **The user's decisions (2026-09-29):**
 

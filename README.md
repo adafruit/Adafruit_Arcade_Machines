@@ -120,13 +120,20 @@ same standard `.sav` as on the Fruit Jam, written in the background
 between frames on the SPI bus the card shares with the display. See
 `extras/DEVNOTES.md` #141-#142 and #144.
 
-**The consoles remember your settings per game, on both boards.** The
-rotation, palette, picture size or 8:7 stretch, and (on the Feather) the
-volume you last chose are saved to a small text file next to the ROM,
-`/cart/<rom name>.fruitjam.cfg` or `.feather.cfg`, 3 seconds after your
-last change, and used again at the next power-up. Each board keeps its own
-file, so one card works in both. Edit it on a computer if you like, or
-delete it to go back to the defaults. See `extras/DEVNOTES.md` #156.
+**Every game and console remembers your settings, on both boards.** What
+you last chose with the buttons is saved to a small text file on the card,
+3 seconds after your last change, and used again at the next power-up:
+
+- **Consoles:** the rotation, palette, picture size or 8:7 stretch, and on
+  the Feather the volume, next to the ROM as `/cart/<rom name>.fruitjam.cfg`
+  or `.feather.cfg`.
+- **Arcade games:** the rotation, mirror and stretch on the Fruit Jam, and
+  the rotation and volume on the Feather, at the card's root as
+  `/<game>.fruitjam.cfg` or `.feather.cfg` (e.g. `/pacman.fruitjam.cfg`).
+
+Each board keeps its own file, so one card works in both. Edit it on a
+computer if you like, or delete it to go back to the defaults. See
+`extras/DEVNOTES.md` #156 and #157.
 
 **A Wii Classic or SNES Classic controller** works in every Feather
 sketch, arcade and console, on the STEMMA QT port through the Wii

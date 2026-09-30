@@ -94,6 +94,13 @@ sprites), matching the precedent in the other machine libraries.
 | MIRROR | Toggle horizontal mirror (for Pepper's-Ghost half-silvered-mirror cabinets) |
 | STRETCH (Button 1) | Toggle aspect-ratio correction. Which setting looks right depends on your MONITOR, not the game: a 16:9 panel already stretches a rotated picture on its own, while a panel forced to 4:3 — or a real 4:3 panel — does not. Try both and keep the one that looks correct. |
 
+**Your choices are remembered.** The rotation, mirror and stretch you last
+chose are saved to `/dkong.fruitjam.cfg` at the root of the card, 3 seconds
+after your last change, and used again at the next power-up. It is a short
+text file you can read or edit on a computer; delete it to go back to the
+defaults. On the Feather ESP32 V2 the game keeps its own, `/dkong.feather.cfg`
+(rotation and volume), so one card works in both.
+
 Jump uses the board's existing `HAL_BTN_SHOOT` (GPIO 10, header D10) — the
 same physical button Space Invaders fires with. **This game needed no new
 board wiring at all.**

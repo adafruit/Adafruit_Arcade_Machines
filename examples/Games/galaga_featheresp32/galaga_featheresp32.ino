@@ -35,6 +35,7 @@
 #include <hal/arcade_hal_video.h>
 #include <hal/arcade_hal_input.h>
 #include <boards/feather_esp32/board_config_feather_esp32.h>
+#include <settings/settings.h>
 #include <boards/feather_esp32/wii_input_feather_esp32.h>
 #include <boards/feather_esp32/hal_audio_feather_esp32.h>
 #include <machines/galaga/galaga_machine.h>
@@ -116,6 +117,32 @@ static void emulation_task(void *arg) {
 static bool     g_assets_ok = false;
 static uint16_t g_error_color = 0;
 
+// SETTINGS SAVED TO THE CARD (settings/settings.h): the rotation and volume
+// last chosen, in /galaga.feather.cfg at the card's root, read at boot and
+// rewritten 3 s after a change. The defaults are galaga_init()'s and
+// AUDIO_VOLUME.
+static int g_set_rotation, g_set_volume;
+
+static void print_settings(const char *what) {
+    char line[224];
+    settings_status_line(what, line, sizeof line);
+    Serial.printf("[galaga-esp32] %s\n", line);
+}
+
+// Boot only, with the card mounted (after the asset load), and before
+// hal_video_run() takes the SPI bus the card shares.
+static void load_settings(void) {
+    g_set_rotation = settings_add_choice("rotation", SETTINGS_ROTATION_NAMES, 4,
+                                         g_system.rotation, nullptr);
+    g_set_volume   = settings_add_int("volume", 0, 256, AUDIO_VOLUME, "0 (mute) to 256");
+    char path[96];
+    settings_arcade_path("galaga", "feather", path, sizeof path);
+    settings_begin(path, "Galaga settings on the Feather ESP32 V2.");
+    g_system.rotation = (uint8_t)settings_get(g_set_rotation);
+    feather_audio_set_volume((uint32_t)settings_get(g_set_volume));
+    print_settings("loaded");
+}
+
 void setup() {
     // A deep transmit buffer, so the heartbeat queues rather than blocking
     // the paint loop (~17 ms at 115200 baud otherwise; DEVNOTES #146).
@@ -148,6 +175,11 @@ void setup() {
     // for the whole mix (hal_audio_feather_esp32.h). X + Up/Down on the
     // controller moves it from here.
     feather_audio_set_volume(AUDIO_VOLUME);
+    // The settings file over the defaults, then a build flag over both.
+    if (g_assets_ok) load_settings();
+#ifdef TEST_ROTATION
+    g_system.rotation = (uint8_t)(TEST_ROTATION);
+#endif
 
     hal_video_run();
 
@@ -234,6 +266,12 @@ void loop() {
     // to mute.
     if (const int steps = feather_wii_input_take_volume_steps())
         Serial.printf("[galaga-esp32] volume %lu\n", (unsigned long)feather_audio_volume_step(steps));
+    // Settings: a change is saved 3 s after the last one, one storage step
+    // a frame (the card's SPI turn comes after the paint).
+    settings_set(g_set_rotation, g_system.rotation);
+    settings_set(g_set_volume, (int32_t)feather_audio_volume());
+    settings_frame();
+    if (settings_take_saved()) print_settings("saved");
     bool mirror = hal_input_read(HAL_BTN_MIRROR);   // always false here
 
     // Galaga is a shooter: left/right/fire, no up/down. HAL_BTN_SHOOT is

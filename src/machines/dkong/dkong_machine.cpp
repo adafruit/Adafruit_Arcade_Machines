@@ -92,7 +92,8 @@ bool dkong_load_assets(dkong_system *system, uint16_t *out_error_color) {
     }
 
     dkong_video_build_caches();
-    hal_storage_unmount();
+    // Storage stays mounted: the sketch reads its settings file next, and
+    // rewrites it when a setting changes (settings/settings.h).
 
     hal_audio_init(DKONG_AUDIO_SAMPLE_RATE);
     dkong_audio_init(system);

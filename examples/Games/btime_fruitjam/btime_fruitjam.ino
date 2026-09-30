@@ -42,6 +42,7 @@
 #include <machines/btime/btime_assets.h>
 #include <machines/btime/btime_audio.h>
 #include <boards/fruitjam/board_config_fruitjam.h>
+#include <settings/settings.h>
 #if defined(USE_TINYUSB)
 // USB gamepads on the Type-A ports (Tools > USB Stack > Adafruit TinyUSB,
 // which sketch.yaml selects; with the default stack the game still builds
@@ -55,6 +56,35 @@ static btime_system    g_system;
 static volatile bool   g_video_ready = false;
 static bool            g_assets_ok   = false;
 static uint16_t        g_error_color = 0;
+
+// SETTINGS SAVED TO THE CARD (settings/settings.h): the rotation, mirror
+// and stretch last chosen, in /btime.fruitjam.cfg at the card's root, read
+// at boot and rewritten 3 s after a change. The defaults are btime_init()'s.
+static int g_set_rotation, g_set_mirror, g_set_stretch;
+
+static void print_settings(const char *what) {
+    char line[224];
+    settings_status_line(what, line, sizeof line);
+    Serial.print("[btime] ");
+    Serial.println(line);
+}
+
+// Boot only, with the card mounted (after the asset load).
+static void load_settings(void) {
+    g_set_rotation = settings_add_choice("rotation", SETTINGS_ROTATION_NAMES, 4,
+                                         g_system.rotation, nullptr);
+    g_set_mirror   = settings_add_choice("mirror", SETTINGS_ON_OFF_NAMES, 2,
+                                         g_system.mirror_x ? 1 : 0, "off, on (Pepper's Ghost)");
+    g_set_stretch  = settings_add_choice("stretch", SETTINGS_ON_OFF_NAMES, 2,
+                                         av_geom_get_stretch() ? 1 : 0, "off, on (aspect correction)");
+    char path[96];
+    settings_arcade_path("btime", "fruitjam", path, sizeof path);
+    settings_begin(path, "Burger Time settings on the Fruit Jam.");
+    g_system.rotation = (uint8_t)settings_get(g_set_rotation);
+    g_system.mirror_x = settings_get(g_set_mirror) != 0;
+    av_geom_set_stretch(settings_get(g_set_stretch) != 0);
+    print_settings("loaded");
+}
 
 void setup() {
     // Serial for the frame-budget heartbeat in loop(). Before Core 1 starts
@@ -75,19 +105,6 @@ void setup() {
     // storage.
     btime_init(&g_system);
 
-    // Boot straight into a chosen rotation, for measuring one orientation
-    // without a hand on the rotate button:
-    //   arduino-cli compile --build-property compiler.cpp.extra_flags=-DTEST_ROTATION=0
-    // 0 = landscape, 1 = 90 CCW tate (this game's default), 2 = 180,
-    // 3 = 90 CW tate.
-#ifdef TEST_ROTATION
-    g_system.rotation = (uint8_t)(TEST_ROTATION);
-#endif
-    // btime_init() turns the aspect correction on; -DTEST_STRETCH=0 forces
-    // it off for an A/B against the historical 1:1 layout.
-#ifdef TEST_STRETCH
-    av_geom_set_stretch(TEST_STRETCH != 0);
-#endif
     Serial.println("[btime] boot: btime_init done");
 
     // Storage/ROM loading -- blocking, can be slow (SD card retries).
@@ -97,6 +114,23 @@ void setup() {
     Serial.println("[btime] boot: loading assets...");
     g_assets_ok = btime_load_assets(&g_system, &g_error_color);
     Serial.println("[btime] boot: load_assets returned");
+    // The settings file over btime_init()'s defaults, then the build flags
+    // over both.
+    if (g_assets_ok) load_settings();
+
+    // Boot straight into a chosen rotation, for measuring one orientation
+    // without a hand on the rotate button:
+    //   arduino-cli compile --build-property compiler.cpp.extra_flags=-DTEST_ROTATION=0
+    // 0 = landscape, 1 = 90 CCW tate, 2 = 180, 3 = 90 CW tate (this game's
+    // default, from btime_init()).
+#ifdef TEST_ROTATION
+    g_system.rotation = (uint8_t)(TEST_ROTATION);
+#endif
+    // btime_init() leaves the aspect correction off; -DTEST_STRETCH=1 turns
+    // it on for an A/B against the 1:1 layout.
+#ifdef TEST_STRETCH
+    av_geom_set_stretch(TEST_STRETCH != 0);
+#endif
 
     if (g_assets_ok) {
         Serial.println("[btime] assets loaded OK");
@@ -241,6 +275,14 @@ void loop() {
     btime_run_frame(&g_system);
     uint32_t frame_us   = micros() - t0;
     uint32_t blocked_us = hal_video_take_blocked_us();
+
+    // Settings: a change is saved 3 s after the last one, one storage step
+    // a frame, after the frame. Outside frame_us, and so outside `work`.
+    settings_set(g_set_rotation, g_system.rotation);
+    settings_set(g_set_mirror, g_system.mirror_x ? 1 : 0);
+    settings_set(g_set_stretch, av_geom_get_stretch() ? 1 : 0);
+    settings_frame();
+    if (settings_take_saved()) print_settings("saved");
     uint32_t starve     = hal_video_take_starve_count();
     static uint32_t starve_total = 0;
     starve_total += starve;
@@ -250,6 +292,9 @@ void loop() {
     work_sum += work_us; blk_sum += blocked_us; work_n++;
 
     if ((++frame_count % 60u) == 0) {
+        // The boot lines are lost unless the serial port was already open,
+        // so the settings are repeated every tenth heartbeat.
+        if ((frame_count % 600u) == 60u) print_settings("in use");
         // The counters go out with the heartbeat because this machine's
         // two worst failure modes are both silent on screen: if the vblank
         // poll count is zero the program is not running at all, and if the
