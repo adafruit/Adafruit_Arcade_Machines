@@ -39,6 +39,7 @@
 #include <machines/galaga/galaga_input.h>
 #include <machines/galaga/galaga_audio.h>
 #include <boards/fruitjam/board_config_fruitjam.h>
+#include <settings/settings.h>
 #if defined(USE_TINYUSB)
 // USB gamepads on the Type-A ports (Tools > USB Stack > Adafruit TinyUSB,
 // which sketch.yaml selects; with the default stack the game still builds
@@ -52,6 +53,35 @@ static galaga_system    g_system;
 static volatile bool    g_video_ready = false;
 static bool             g_assets_ok   = false;
 static uint16_t         g_error_color = 0;
+
+// SETTINGS SAVED TO THE CARD (settings/settings.h): the rotation, mirror
+// and stretch last chosen, in /galaga.fruitjam.cfg at the card's root, read
+// at boot and rewritten 3 s after a change. The defaults are galaga_init()'s.
+static int g_set_rotation, g_set_mirror, g_set_stretch;
+
+static void print_settings(const char *what) {
+    char line[224];
+    settings_status_line(what, line, sizeof line);
+    Serial.print("[galaga] ");
+    Serial.println(line);
+}
+
+// Boot only, with the card mounted (after the asset load).
+static void load_settings(void) {
+    g_set_rotation = settings_add_choice("rotation", SETTINGS_ROTATION_NAMES, 4,
+                                         g_system.rotation, nullptr);
+    g_set_mirror   = settings_add_choice("mirror", SETTINGS_ON_OFF_NAMES, 2,
+                                         g_system.mirror_x ? 1 : 0, "off, on (Pepper's Ghost)");
+    g_set_stretch  = settings_add_choice("stretch", SETTINGS_ON_OFF_NAMES, 2,
+                                         av_geom_get_stretch() ? 1 : 0, "off, on (aspect correction)");
+    char path[96];
+    settings_arcade_path("galaga", "fruitjam", path, sizeof path);
+    settings_begin(path, "Galaga settings on the Fruit Jam.");
+    g_system.rotation = (uint8_t)settings_get(g_set_rotation);
+    g_system.mirror_x = settings_get(g_set_mirror) != 0;
+    av_geom_set_stretch(settings_get(g_set_stretch) != 0);
+    print_settings("loaded");
+}
 
 void setup() {
     // DEBUG: boot-stage tracing to isolate the red-screen (NO_CARD)
@@ -92,6 +122,14 @@ void setup() {
     // the DVI pump (see g_video_ready below).
     Serial.println("[galaga] calling galaga_load_assets()...");
     g_assets_ok = galaga_load_assets(&g_system, &g_error_color);
+    // The settings file over the defaults, then the build flags over both.
+    if (g_assets_ok) load_settings();
+#ifdef TEST_ROTATION
+    g_system.rotation = (uint8_t)(TEST_ROTATION);
+#endif
+#ifdef TEST_STRETCH
+    av_geom_set_stretch((TEST_STRETCH) != 0);
+#endif
     Serial.print("[galaga] galaga_load_assets() returned ");
     Serial.print(g_assets_ok ? "true" : "false");
     if (!g_assets_ok) {
@@ -199,6 +237,14 @@ void loop() {
     // that shows real headroom -- see arcade_hal_video.h's
     // hal_video_take_blocked_us().
     uint32_t blocked_us = hal_video_take_blocked_us();
+
+    // Settings: a change is saved 3 s after the last one, one storage step
+    // a frame, after the frame. Outside frame_us, and so outside `work`.
+    settings_set(g_set_rotation, g_system.rotation);
+    settings_set(g_set_mirror, g_system.mirror_x ? 1 : 0);
+    settings_set(g_set_stretch, av_geom_get_stretch() ? 1 : 0);
+    settings_frame();
+    if (settings_take_saved()) print_settings("saved");
     uint32_t frame_us   = t1 - t0;
     uint32_t work_us    = (frame_us > blocked_us) ? (frame_us - blocked_us) : 0;
 
@@ -242,6 +288,9 @@ void loop() {
     // actually diagnosed the frame-budget overrun).
 
     if (frame_count % 60 == 0) {
+        // The boot lines are lost unless the serial port was already open,
+        // so the settings are repeated every tenth heartbeat.
+        if ((frame_count % 600u) == 60u) print_settings("in use");
         Serial.print("[galaga] loop(): frame ");
         Serial.print(frame_count);
         Serial.print(", frame ");

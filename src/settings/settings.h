@@ -47,6 +47,8 @@ extern "C" {
 // The rotation choices every console and arcade sketch uses: degrees,
 // where "90" is the code's rotation 1 (90 degrees counter-clockwise).
 extern const char *const SETTINGS_ROTATION_NAMES[4];
+// "off", "on", for a setting that is a switch.
+extern const char *const SETTINGS_ON_OFF_NAMES[2];
 
 // Registers a key before settings_begin(). A choice is stored as its index
 // into `names` (count at most 16); `help` is the comment written after it,
@@ -59,7 +61,8 @@ int settings_add_int(const char *key, int32_t lo, int32_t hi, int32_t def,
 
 // BLOCKING, BOOT ONLY, with storage mounted. Reads `path` (values override
 // the defaults), then makes it a contiguous 512-byte file holding the
-// values, creating it if missing. `title` is its first comment line.
+// values, creating it if missing. `title` is its first comment line; the
+// string must last (a literal).
 // Returns true if later changes will be saved.
 bool settings_begin(const char *path, const char *title);
 
@@ -73,9 +76,17 @@ void settings_frame(void);
 
 // "/cart/<rom stem>.<board>.cfg", next to the ROM and its .sav.
 void settings_console_path(const char *rom_name, const char *board, char *out, size_t n);
+// "/<game>.<board>.cfg", at the root of an arcade game's card.
+void settings_arcade_path(const char *game, const char *board, char *out, size_t n);
 
 // "rotation 0, scale fit-smooth, ..." for a serial line.
 void settings_describe(char *out, size_t n);
+// A whole serial line: "settings <what> <path> (<state>): <values>; read N,
+// ignored N, saves N, errors N". `what` is e.g. "loaded" or "saved".
+void settings_status_line(const char *what, char *out, size_t n);
+// True once each time a save has completed since the last call, for a
+// "saved" line.
+bool settings_take_saved(void);
 
 typedef enum {
     SETTINGS_NONE = 0,     // settings_begin() not called

@@ -102,6 +102,13 @@ card, it is simply unused.
 | MIRROR | Toggle horizontal mirror (for Pepper's-Ghost half-silvered-mirror cabinets) |
 | STRETCH (Button 1) | Toggle aspect-ratio correction — **tate only on this game.** Galaga is the most expensive machine in the project (three Z80s), and in landscape the correction costs +2,576us a frame, which puts it past the whole frame budget and fills the screen with red. So landscape is pinned to the uncorrected 1:1 layout and this button does nothing in rotations 0 and 2. See `DEVNOTES.md` #101. In tate it works and is worth having, though it leaves less headroom than any other game/rotation here. |
 
+**Your choices are remembered.** The rotation, mirror and stretch you last
+chose are saved to `/galaga.fruitjam.cfg` at the root of the card, 3 seconds
+after your last change, and used again at the next power-up. It is a short
+text file you can read or edit on a computer; delete it to go back to the
+defaults. On the Feather ESP32 V2 the game keeps its own, `/galaga.feather.cfg`
+(rotation and volume), so one card works in both.
+
 Galaga's native hardware framebuffer (288x224, before the cabinet's
 physical 90-degree mount) is displayed **portrait**, defaulting to rotation
 **1** (90° CCW). Note that is deliberately *not* the same value Space

@@ -46,6 +46,13 @@ names.
 | MIRROR | Toggle horizontal mirror (for Pepper's-Ghost half-silvered-mirror cabinets) |
 | STRETCH (Button 1) | Toggle aspect-ratio correction. Which setting looks right depends on your MONITOR, not the game: a 16:9 panel already stretches a rotated picture on its own, while a panel forced to 4:3 — or a real 4:3 panel — does not. Try both and keep the one that looks correct. |
 
+**Your choices are remembered.** The rotation, mirror and stretch you last
+chose are saved to `/invaders.fruitjam.cfg` at the root of the card, 3 seconds
+after your last change, and used again at the next power-up. It is a short
+text file you can read or edit on a computer; delete it to go back to the
+defaults. On the Feather ESP32 V2 the game keeps its own, `/invaders.feather.cfg`
+(rotation and volume), so one card works in both.
+
 Physical GPIO mapping for these lives in `ArcadeBoard_FruitJam`'s
 `board_config_fruitjam.h` — the button-to-action wiring above lives in
 `invaders_fruitjam.ino` itself, not in `ArcadeMachine_Invaders`, since this

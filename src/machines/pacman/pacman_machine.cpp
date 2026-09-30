@@ -91,7 +91,8 @@ bool pacman_load_assets(pacman_system *system, uint16_t *out_error_color) {
     }
 
     pacman_video_build_caches();
-    hal_storage_unmount();
+    // Storage stays mounted: the sketch reads its settings file next, and
+    // rewrites it when a setting changes (settings/settings.h).
 
     hal_audio_init(PACMAN_AUDIO_SAMPLE_RATE);
     pacman_audio_init(system);

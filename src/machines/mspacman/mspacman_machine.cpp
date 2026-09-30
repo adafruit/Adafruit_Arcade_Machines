@@ -93,7 +93,8 @@ bool mspacman_load_assets(mspacman_system *system, uint16_t *out_error_color) {
     }
 
     mspacman_video_build_caches();
-    hal_storage_unmount();
+    // Storage stays mounted: the sketch reads its settings file next, and
+    // rewrites it when a setting changes (settings/settings.h).
 
     hal_audio_init(MSPACMAN_AUDIO_SAMPLE_RATE);
     mspacman_audio_init(system);

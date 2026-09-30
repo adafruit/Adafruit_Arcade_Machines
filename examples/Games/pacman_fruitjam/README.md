@@ -60,6 +60,13 @@ emulation — it's fine to include it (it's simply never read) or omit it.
 | MIRROR | Toggle horizontal mirror (for Pepper's-Ghost half-silvered-mirror cabinets) |
 | STRETCH (Button 1) | Toggle aspect-ratio correction — **on by default on this game**, because its raster is already close to 4:3 so the correction is nearly free and nearly invisible (+3.7%). Press to turn it off. Which setting looks right depends on your MONITOR, not the game: a 16:9 panel already stretches a rotated picture on its own, while a panel forced to 4:3 — or a real 4:3 panel — does not. Try both and keep the one that looks correct. |
 
+**Your choices are remembered.** The rotation, mirror and stretch you last
+chose are saved to `/pacman.fruitjam.cfg` at the root of the card, 3 seconds
+after your last change, and used again at the next power-up. It is a short
+text file you can read or edit on a computer; delete it to go back to the
+defaults. On the Feather ESP32 V2 the game keeps its own, `/pacman.feather.cfg`
+(rotation and volume), so one card works in both.
+
 Pac-Man has no action button — `HAL_BTN_SHOOT` is unused by this game.
 UP/DOWN are new physical buttons added to `ArcadeBoard_FruitJam` for this
 port (header pins **A3**/**A4**, GPIO 43/44 — see `board_config_fruitjam.h`);
