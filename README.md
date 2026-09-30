@@ -211,13 +211,22 @@ computer if you like, or delete it to go back to the defaults. See
 
 **A Wii Classic or SNES Classic controller** works in every Feather
 sketch, arcade and console, on the STEMMA QT port through the Wii
-Nunchuck breakout, alongside the Feather's own buttons. On the consoles
-it adds what the Feather has no buttons for: L for 8:7 aspect (NES) or the
-picture size (Game Boy: a smooth full-height fit by default, a sharp one,
-1x, or 2x cropped three ways), Y for the palette, and X + Up/Down for the volume, down to mute, which works in the arcade
-games too (a master volume on the whole mix, since the Feather's amp has
-none). See `extras/DEVNOTES.md` #143
-and the mapping table in `extras/CONSOLES_PLAN.md`.
+Nunchuck breakout. On the consoles it adds what the Feather's buttons
+don't have: L for 8:7 aspect (NES) or the picture size (Game Boy: a
+smooth full-height fit by default, a sharp one, 1x, or 2x cropped three
+ways), Y for the palette, and X + Up/Down for the volume, down to mute,
+which works in the arcade games too (a master volume on the whole mix,
+since the Feather's amp has none). See `extras/DEVNOTES.md` #143 and the
+mapping table in `extras/CONSOLES_PLAN.md`.
+
+**With a controller plugged in, it is the only input:** the GPIO buttons
+are ignored, and come back about a second after it's unplugged. Four of
+the button pins -- START2 (GPIO 34), LEFT (39), RIGHT (36) and ROTATE (37)
+-- have no internal pull-up on the ESP32, so without a button panel they
+float and read as random presses. A panel of your own needs a pull-up of
+about 10 kΩ to 3.3 V on each of those four. On the GPIO buttons, **hold
+ROTATE and press Up or Down for the volume**, as X does on the controller;
+ROTATE on its own rotates when you let go. See `extras/DEVNOTES.md` #161.
 
 \* Lunar Rescue's is the one number here that is **not** a cabinet
 measurement. It shares Space Invaders' 8080bw board and 59.542Hz refresh, but

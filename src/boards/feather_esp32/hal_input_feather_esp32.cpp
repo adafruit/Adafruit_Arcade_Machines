@@ -81,6 +81,96 @@ typedef struct {
 static debounce_t   s_filt[HAL_BTN_COUNT];
 static volatile uint32_t s_state = 0;   // bit i = button i currently pressed
 
+// THE GPIO BUTTONS ARE IGNORED WHILE A CONTROLLER IS CONNECTED (DEVNOTES
+// #161). START2, LEFT, RIGHT and ROTATE are input-only pads with no internal
+// pull-up (see hal_input_init() below): on a Feather without the button
+// board they float, and read as random presses -- a phantom RIGHT, or a
+// ROTATE that the settings file then saves. So with a Wii Classic / SNES
+// Classic controller plugged in, the controller is the only input.
+//
+// Both directions wait PAD_SETTLE_MS, so a controller briefly not answering
+// (the driver's `drops`) never lets the floating pins through. At boot the
+// buttons start OFF and are decided once the Wii driver has had
+// BOOT_DECIDE_MS -- two of its once-a-second tries at finding a controller,
+// one just powered on can miss the first -- or NO_WII_FALLBACK_MS from boot
+// in a sketch that never starts the driver.
+#define PAD_SETTLE_MS      1000u
+#define BOOT_DECIDE_MS     2500u
+#define NO_WII_FALLBACK_MS 8000u
+static volatile bool s_gpio_on = false;
+
+// VOLUME ON THE GPIO PANEL: hold ROTATE, press Up or Down (DEVNOTES #161),
+// as X + Up/Down does on the controller. ROTATE is a system button, not a
+// game control, so it can be held back from the game at no cost: while it
+// is held, Up and Down go to the volume and not to the game, and the game
+// sees nothing. Let go without having touched Up or Down and the game gets
+// a ROTATE press then, ROTATE_PULSE_MS long -- rotation happens on release.
+#define ROTATE_PULSE_MS 100u
+
+static uint32_t rotate_combo(uint32_t st, uint32_t now_ms) {
+    static bool     held = false, used = false, prev_up = false, prev_down = false;
+    static bool     pulsing = false;
+    static uint32_t pulse_from = 0;
+    const uint32_t rot = 1u << HAL_BTN_ROTATE, up = 1u << HAL_BTN_UP, down = 1u << HAL_BTN_DOWN;
+    if (st & rot) {
+        const bool u = (st & up) != 0, d = (st & down) != 0;
+        if (!held) {
+            held = true; used = false;
+            prev_up = u; prev_down = d;   // already down when ROTATE went down: not a step
+        }
+        if (u && !prev_up)   { feather_wii_input_add_volume_steps(+1); used = true; }
+        if (d && !prev_down) { feather_wii_input_add_volume_steps(-1); used = true; }
+        prev_up = u; prev_down = d;
+        st &= ~(rot | up | down);
+    } else if (held) {
+        held = false;
+        if (!used) { pulsing = true; pulse_from = now_ms; }
+    }
+    if (pulsing) {
+        if (now_ms - pulse_from < ROTATE_PULSE_MS) st |= rot;
+        else pulsing = false;
+    }
+    return st;
+}
+
+static void gpio_set(bool on) {
+    if (on) {
+        // Start clean: nothing carried over from before the gap.
+        for (int i = 0; i < HAL_BTN_COUNT; i++) {
+            s_filt[i].stable = false;
+            s_filt[i].pending = false;
+        }
+    }
+    s_gpio_on = on;
+    Serial.println(on ? "[input] GPIO buttons ON (no controller connected)"
+                      : "[input] GPIO buttons OFF (a controller is connected)");
+}
+
+static void gpio_gate(uint32_t now_ms) {
+    static bool     decided = false, last_pad = false, have_boot = false, have_wii = false;
+    static uint32_t boot_ms = 0, wii_ms = 0, since = 0;
+    // Real flags, not a nonzero time: a start time nudged to be nonzero
+    // can land a millisecond ahead of `now`, and now - start then wraps to
+    // a huge value -- which read as "timed out" on the very first call.
+    if (!have_boot) { have_boot = true; boot_ms = now_ms; }
+    const bool started = feather_wii_input_started();
+    const bool pad = feather_wii_input_connected();
+    if (started && !have_wii) { have_wii = true; wii_ms = now_ms; }
+    if (!decided) {
+        const bool timed_out = have_wii ? (now_ms - wii_ms >= BOOT_DECIDE_MS)
+                                        : (now_ms - boot_ms >= NO_WII_FALLBACK_MS);
+        if (!pad && !timed_out) return;
+        decided = true;
+        last_pad = pad;
+        since = now_ms;
+        gpio_set(!pad);
+        return;
+    }
+    if (pad != last_pad) { last_pad = pad; since = now_ms; }
+    if (now_ms - since < PAD_SETTLE_MS) return;
+    if (pad == s_gpio_on) gpio_set(!pad);
+}
+
 // Pinned to core 0, away from the emulator and video on core 1. At 1kHz the
 // task spends almost all its time blocked, so it costs nothing measurable.
 static void input_task(void *arg) {
@@ -88,7 +178,7 @@ static void input_task(void *arg) {
     for (;;) {
         const uint32_t now = micros();
         uint32_t st = 0;
-        for (int i = 0; i < HAL_BTN_COUNT; i++) {
+        for (int i = 0; s_gpio_on && i < HAL_BTN_COUNT; i++) {
             if (s_pin[i] < 0) continue;
             const bool raw = digitalRead((uint8_t)s_pin[i]) == LOW;
             debounce_t *f = &s_filt[i];
@@ -107,10 +197,11 @@ static void input_task(void *arg) {
             }
             if (f->stable) st |= (1u << i);
         }
-        s_state = st;
+        s_state = s_gpio_on ? rotate_combo(st, millis()) : 0u;
         // A Wii Classic / SNES Classic controller, if the sketch started one
         // (wii_input_feather_esp32.h); returns at once otherwise.
         feather_wii_input_tick(millis());
+        gpio_gate(millis());
         vTaskDelay(pdMS_TO_TICKS(POLL_INTERVAL_MS));
     }
 }

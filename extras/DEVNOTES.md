@@ -8881,3 +8881,65 @@ It already ran Galaga at full speed; this is headroom in its 16.7 ms frame.
 **The main CPU is untouched.** The Z80 read fast path, a page table for
 ROM and plain RAM reads, remains a possible further lever for all the Z80
 games. With this, Galaga doesn't need it.
+
+### 161. The Feather: a controller replaces the GPIO buttons; volume on the GPIO buttons
+
+**The problem, found by the user.** A Feather without the button panel
+misbehaved: phantom RIGHT presses, rotations. Four of its nine button
+pins, START2 (GPIO 34), LEFT (39), RIGHT (36) and ROTATE (37), are
+input-only pads with no internal pull-up. The code already asks for one
+only where it exists (`hal_input_init()`). On the panel, its 10 kΩ
+resistors hold them high. Without it they float and read as random
+presses. The other five pins have internal pull-ups and read "not
+pressed" when unconnected.
+
+**The fix, the user's choice:** with a Wii Classic / SNES Classic
+controller connected, the GPIO buttons are ignored, panel or not, and the
+controller is the only input (`hal_input_feather_esp32.cpp`, `gpio_gate()`).
+
+- **Both directions wait 1 s** (`PAD_SETTLE_MS`), so a controller briefly
+  not answering (the driver's `drops`) never lets the floating pins through.
+- **At boot the buttons start OFF.** They are decided 2.5 s after the Wii
+  driver starts (`BOOT_DECIDE_MS`, two of its once-a-second tries at finding
+  a controller), or 8 s from boot in a sketch that never starts it. Without
+  that, a phantom ROTATE in the first moment would rotate the screen, and
+  the settings file (#157) would then save it.
+- **Two new calls:** `feather_wii_input_started()` and
+  `feather_wii_input_connected()`, used only from the input task.
+- **A serial line on each change:** `[input] GPIO buttons OFF (a controller
+  is connected)`, or `ON (no controller connected)`.
+- **A bug caught on the first flash.** The boot timer was first marked
+  "set" by storing `now | 1`, which can land a millisecond ahead of `now`.
+  `now - start` then wrapped to a huge value on the very first call, read as
+  "timed out", and turned the buttons ON before the game had even loaded.
+  Real flags now.
+
+**Left as agreed:** with neither a controller nor the panel, the floating
+pins still misfire once the buttons come back on. A phantom rotation can
+then be saved by the settings file; the user will correct the rotation
+once they settle on an input.
+
+**Volume on the GPIO buttons: hold ROTATE, press Up or Down**, as X does on
+the controller (`rotate_combo()`).
+
+- **Why ROTATE:** it's a system button that no game reads, so it can be
+  held back from the game at no cost. While it's held, Up and Down go to
+  the volume and not the game. P1 was considered, but it would have to be
+  held back too, and it is Start/pause in the consoles and a game start in
+  the arcade games.
+- **Rotation now happens on release:** let go of ROTATE without touching Up
+  or Down and the game gets a 100 ms ROTATE press (`ROTATE_PULSE_MS`).
+- **The steps feed the same counter as the controller's**
+  (`feather_wii_input_add_volume_steps()`), so all nine sketches apply them
+  unchanged. They're saved by the settings file like any volume change.
+
+**On hardware** (Pac-Man):
+
+- **No panel, controller in:** buttons OFF at boot, no phantom inputs, the
+  controller works.
+- **Controller unplugged:** buttons ON after a second, and a phantom
+  rotation followed, as expected.
+- **Panel on, no controller:** buttons ON at boot and working.
+- **ROTATE + Up/Down:** stepped the volume 32 → 181 → 16 and back, each
+  saved about 3 s after the last press, with no rotation. A tap of ROTATE
+  rotated on release.

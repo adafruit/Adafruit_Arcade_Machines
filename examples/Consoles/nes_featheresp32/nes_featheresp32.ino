@@ -33,8 +33,10 @@
 //   Rotation     ROTATE (37)          R
 //   8:7 aspect   --                   L
 //   Palette      --                   Y
-//   Volume       --                   hold X, press Up / Down (3 dB steps,
-//                                        the lowest one mute)
+//   Volume       hold ROTATE,         hold X, press Up / Down (3 dB steps,
+//                press Up / Down      the lowest one mute)
+//   ROTATE on the GPIO panel rotates when released, and the GPIO buttons
+//   are ignored while a controller is connected (hal_input_feather_esp32.cpp).
 //
 // Settings: the rotation, palette, 8:7 stretch and volume last chosen are
 // kept per game in /cart/<rom name>.feather.cfg, a small text file, and

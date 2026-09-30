@@ -334,7 +334,7 @@ resolution, byte 6 bit 0 is always set, so both can never be zero.
 | Y | START2 | (unmapped) | MIRROR, Button 3 (palette) |
 | L trigger | (unmapped) | (unmapped) | STRETCH, Button 1 |
 | R trigger | (unmapped; ROTATE on the Feather) | (unmapped) | ROTATE, Button 2 |
-| X | (unmapped; VOLUME on the Feather) | (unmapped) | hold for VOLUME: X + Up / Down, 3 dB steps, the lowest one mute |
+| X | (unmapped; VOLUME on the Feather) | (unmapped) | hold for VOLUME: X + Up / Down, 3 dB steps, the lowest one mute (on the Feather's GPIO buttons: ROTATE + Up / Down) |
 | ZL, ZR, Home | (unmapped) | (unmapped) | (unmapped) |
 
 On the Feather, the pad then replaces the on-board display buttons. A

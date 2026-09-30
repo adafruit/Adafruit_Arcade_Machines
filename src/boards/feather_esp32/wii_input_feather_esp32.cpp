@@ -102,8 +102,16 @@ void feather_wii_input_tick(uint32_t now_ms) {
     }
 }
 
+bool feather_wii_input_started(void) { return s_active; }
+
+bool feather_wii_input_connected(void) { return s_active && s_pad.state == WII_STATE_READY; }
+
 bool feather_wii_input_held(uint8_t hal_btn) {
     return hal_btn < 32 && ((s_held >> hal_btn) & 1u);
+}
+
+void feather_wii_input_add_volume_steps(int steps) {
+    s_volume_steps = s_volume_steps + steps;
 }
 
 int feather_wii_input_take_volume_steps(void) {
