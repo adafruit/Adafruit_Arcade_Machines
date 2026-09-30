@@ -1001,57 +1001,6 @@ games did. A colour-correction curve is a possible later refinement.
 > smooth fit the default. This goes against the "integer only" rule above,
 > by the user's choice after seeing it.
 
-### Later: Game Boy Color games (noted 2026-09-29)
-
-A possible future development, not planned yet. Today the Game Boy plays
-original (DMG) cartridges only; the "Game Boy Color" palette colours DMG
-games and is not Game Boy Color emulation.
-
-- **Where the code is:** upstream Peanut-GB's `cgb` branch (MIT;
-  froggestspirit's "CGB Support", 2022; last merge 2023-09). It is 13
-  commits ahead of `master` and 142 behind, and was never merged. The
-  vendored `master` (`d0bcca7`) has none of it. PicoPlus's `pico-peanutGB`
-  runs Game Boy Color games on the RP2350 with that code merged into an
-  older copy, but the repo is GPL-3.0, so we don't vendor from it
-  (`src/machines/gb/core/VENDORED.md`).
-- **The work:**
-  1. Merge `cgb` onto current `master`, keeping our halt patch, or ask the
-     maintainer about the branch's plans first.
-  2. Frame buffer: 8 background and 8 sprite palettes of 4 colours still
-     fit a byte per pixel, but games change palettes mid-frame, so the
-     renderer needs each line's palettes. The alternative is 16-bit pixels,
-     which doubles the frame buffers from about 45 KB to 90 KB.
-  3. Memory: 32 KB work RAM and 16 KB video RAM, against 8 KB each. Small
-     on both boards.
-- **The risk is speed on the Feather.** Many Game Boy Color games run in
-  double-speed mode. The Fruit Jam has room (8.7 ms of 16.7), and PicoPlus
-  shows it works there; the Feather emulates two frames per paint and
-  needs measuring first.
-- **Unchanged:** the loader, saves (mostly MBC5, already supported), sound,
-  rotation and the picture sizes.
-- **How to start:** a spike in the host harness (`extras/tools/gb_host`)
-  with cgb-acid2 and blargg's Game Boy Color tests, then a double-speed
-  game timed on the Feather.
-
-### Later: per-game settings saved next to the `.sav` (noted 2026-09-29)
-
-Today every choice a player makes resets at power-up. The idea is a small
-settings file per game, next to its `.sav` on the SD card, remembering:
-
-- the picture size (the Feather's six Game Boy modes, the Fruit Jam's
-  1x/3x);
-- the rotation;
-- the palette;
-- the volume.
-
-Not built yet. Things to settle first:
-
-- **The format:** plain text is the easy thing for a player to read or
-  edit.
-- **Which consoles:** the NES has rotation, 8:7 and volume too.
-- **When to write:** a change could be saved through the same background
-  sector writes the battery saves use (DEVNOTES #144 on the Feather).
-
 **Game Boy only; the NES already fills the height on both boards (256x240).**
 Today the 160x144 picture is drawn 1x on the 320x240 canvas
 (`gameboy_video.h`): 320x288 on the Fruit Jam's 640x480 output (each Game
@@ -1088,6 +1037,167 @@ unevenly, so these are the two to try:
 button (Button 1 on the Fruit Jam, L on the Feather's Wii pad), toggling
 between 1x and the big mode. This is the "scaled modes on STRETCH" that
 `gameboy_video.h` already mentions.
+
+### Later: Game Boy Color games (noted 2026-09-29)
+
+A possible future development, not planned yet. Today the Game Boy plays
+original (DMG) cartridges only; the "Game Boy Color" palette colours DMG
+games and is not Game Boy Color emulation.
+
+- **Where the code is:** upstream Peanut-GB's `cgb` branch (MIT;
+  froggestspirit's "CGB Support", 2022; last merge 2023-09). It is 13
+  commits ahead of `master` and 142 behind, and was never merged. The
+  vendored `master` (`d0bcca7`) has none of it. PicoPlus's `pico-peanutGB`
+  runs Game Boy Color games on the RP2350 with that code merged into an
+  older copy, but the repo is GPL-3.0, so we don't vendor from it
+  (`src/machines/gb/core/VENDORED.md`).
+- **The work:**
+  1. Merge `cgb` onto current `master`, keeping our halt patch, or ask the
+     maintainer about the branch's plans first.
+  2. Frame buffer: 8 background and 8 sprite palettes of 4 colours still
+     fit a byte per pixel, but games change palettes mid-frame, so the
+     renderer needs each line's palettes. The alternative is 16-bit pixels,
+     which doubles the frame buffers from about 45 KB to 90 KB.
+  3. Memory: 32 KB work RAM and 16 KB video RAM, against 8 KB each. Small
+     on both boards.
+- **The risk is speed on the Feather.** Many Game Boy Color games run in
+  double-speed mode. The Fruit Jam has room (8.7 ms of 16.7), and PicoPlus
+  shows it works there; the Feather emulates two frames per paint and
+  needs measuring first.
+- **Unchanged:** the loader, saves (mostly MBC5, already supported), sound,
+  rotation and the picture sizes.
+- **How to start:** a spike in the host harness (`extras/tools/gb_host`)
+  with cgb-acid2 and blargg's Game Boy Color tests, then a double-speed
+  game timed on the Feather.
+
+### Planned: settings saved to the SD card (decided 2026-09-29)
+
+Today every choice a player makes resets at power-up. This saves them per
+game, per board, on the card. **Planned, not built.**
+
+**The user's decisions (2026-09-29):**
+
+1. **A separate file per board, per game.** One card can move between a
+   Fruit Jam and a Feather, and the two want different things: scale means
+   different modes on each, only the Feather has volume, and a TV and a
+   small TFT may want different rotations.
+2. **Saved 3 seconds after the last change.**
+3. **The consoles first**, then the arcade games.
+4. **No reset button combination.** To go back to the defaults, delete the
+   file on a computer.
+
+**What's saved.** Exactly what a player can change today with a button:
+
+| Sketch | Fruit Jam | Feather |
+|---|---|---|
+| Game Boy | `rotation`, `palette`, `scale` (`3x`, `1x`) | `rotation`, `palette`, `scale` (six modes), `volume` |
+| NES | `rotation`, `palette`, `stretch` (8:7) | `rotation`, `palette`, `stretch`, `volume` |
+| Arcade games (second) | `rotation`, `mirror`, `stretch` | `rotation`, `volume` |
+
+- **Defaults stay in each sketch**, as today. A later extension could be
+  the arcade DIP switches (lives, difficulty, bonus), read at boot only,
+  as on the real boards.
+- **Never saved:** save states. The cartridge model rules those out.
+
+**The files:**
+
+- **Consoles:** next to the ROM and its `.sav`, as
+  `/cart/<rom name>.fruitjam.cfg` or `/cart/<rom name>.feather.cfg`.
+- **Arcade games:** at the card's root, named for the game and the board,
+  e.g. `/pacman.fruitjam.cfg`. A card reused for another game can't pick up
+  the wrong settings.
+
+**The format:** plain text, `key = value`, one per line, `#` for comments.
+Values are words, not internal codes: rotation in degrees (`90` is 90
+degrees counter-clockwise, the code's rotation 1), and palettes and modes
+by name. For example, `Link's Awakening.feather.cfg`:
+
+```
+# Game Boy settings for this game on the Feather ESP32 V2.
+# Rewritten by the game 3 s after you change one. Safe to edit here;
+# delete this file to go back to the defaults.
+rotation = 0           # 0, 90, 180, 270
+scale    = fit-smooth  # 1x, fit-nearest, fit-smooth, 2x-centre, 2x-top, 2x-bottom
+palette  = dmg-green   # dmg-green, greys, pocket, gbc
+volume   = 16          # 0 (mute) to 256
+```
+
+- **Palette names:**
+  - Game Boy: `dmg-green`, `greys`, `pocket`, `gbc`.
+  - NES: `nofrendo`, `composite`, `nes-classic`, `ntsc`, `pvm`, `smooth`.
+- **Why text:** a player can read and fix it on any computer, and a small
+  hand-written parser reads it, with no library. JSON would need a bigger
+  parser for no gain, and a binary struct would be opaque.
+- **Forgiving:** unknown keys, bad values and unreadable lines are ignored
+  and fall back to the sketch's defaults, so an old or damaged file never
+  stops a game from booting.
+- **Always written from the game's own template** (the comments above plus
+  its current values). Values edited on a computer are read at the next
+  boot, but comments a player adds don't survive the next rewrite. With one
+  file per board, nothing else needs preserving.
+
+**Reading it at start-up:**
+
+- **When:** in the boot's SD phase, after the ROM is found and before core
+  1 starts the display (the boot-order rule).
+- **The order:** the sketch's defaults, then the file's values on top, then
+  any `TEST_ROTATION`-style build flag, so measurement builds stay
+  deterministic.
+- **No file:** it's created at boot with the defaults. That shows the
+  player what can be set, and the in-game rewrite needs the file to exist
+  anyway (below).
+- **Card can't be written:** the game runs on what was read, or on the
+  defaults, and nothing is saved. This is reported on serial, as
+  `CONSOLE_SAVE_UNAVAILABLE` is for battery saves.
+- **Serial:** one boot line with the file and the values applied, and one
+  line per save.
+
+**Writing it during a game:**
+
+- **Why it's constrained:** ordinary file writes block for 6-30 ms, which
+  the display can't survive mid-game. What is safe is rewriting sectors of
+  a file created full-size and contiguous at boot, one 512-byte sector per
+  step (`hal_storage_make_contiguous()` and the extent-write calls, about
+  0.35 ms a sector on the Fruit Jam). On the Feather they go through the
+  paint loop's storage service. This is how battery saves work (#130, #144).
+- **One sector per file:** the file is exactly 512 bytes, the text padded
+  with trailing spaces the parser ignores.
+  - At boot it's made contiguous at 512 bytes, holding the text just read,
+    so hand-edited values survive.
+  - A file edited to more than 512 bytes is cut to its first 512 bytes, and
+    serial says so.
+- **When:** 3 seconds of wall time after the last change, so a run of
+  volume presses or rotation taps becomes one write. It's written only if
+  the text actually changed, so wear is a handful of sectors per session.
+- **Taking turns with battery saves:** only one extent rewrite may run at a
+  time (the storage contract), so the settings wait while a battery save
+  streams out, and the other way round. This needs a small shared "one
+  writer at a time" arbiter.
+- **A power cut mid-write** can at worst tear the one sector. The parser
+  then falls back to defaults for whatever it can't read.
+
+**Code shape:**
+
+- **A board-independent module,** `src/settings/`, with:
+  - `settings_begin(path)` at boot;
+  - typed get and set calls for integers and named choices;
+  - `settings_frame()` once a frame, next to `console_save_frame()`.
+- **Each sketch declares its own keys and defaults** (it is the
+  composition root) and applies them to the machine's existing fields:
+  `rotation`, `mirror_x`, the palette, the scale, the volume. No machine
+  code changes.
+- **The card stays mounted** for every console game. Today it stays
+  mounted only when the game has a battery save (`console_save_init()`'s
+  return value), and the NES machine unmounts otherwise
+  (`nes_machine.cpp`).
+
+**Rollout:**
+
+1. The four console sketches: the Game Boy and NES, on both boards.
+2. The 14 arcade sketches. Each needs the card kept mounted after loading
+   instead of unmounted (`pacman_machine.cpp` and the rest), a
+   `settings_frame()` call, and a hardware check. Burger Time's Fruit Jam
+   frame budget (14.9 ms of 16.7) is the tightest.
 
 ## What changes in how the project works
 
