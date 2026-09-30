@@ -343,7 +343,11 @@ void loop() {
                 Serial.print(ss.saves);
                 Serial.print(", last took ");
                 Serial.print(ss.last_save_frames);
-                Serial.print(" frames, busy waits ");
+                Serial.print(" frames and ");
+                Serial.print(ss.last_save_sectors);
+                Serial.print(" sectors (");
+                Serial.print(ss.sectors_written);
+                Serial.print(" since boot), busy waits ");
                 Serial.print(ss.busy_waits);
                 Serial.print(", errors ");
                 Serial.print(ss.errors);

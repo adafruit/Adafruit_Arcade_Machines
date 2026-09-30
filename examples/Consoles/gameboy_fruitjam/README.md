@@ -27,8 +27,9 @@ is the game that boots.
 - **Battery saves** work the way the cartridge's did: when the game saves,
   the save RAM is written to `/cart/<rom name>.sav`, in the same raw format
   PC emulators use, so saves move between the two. There is no save button
-  and there are no save states. A save takes about half a second, written
-  a little each frame so the picture never stutters.
+  and there are no save states. Only the part of the save that changed is
+  written, a little each frame, so the picture never stutters; a save
+  usually takes a fraction of a second.
 - **Settings are remembered per game:** the rotation, palette and 3x/1x
   you last chose are saved to `/cart/<rom name>.fruitjam.cfg`, 3 seconds
   after your last change, and used again at the next power-up. It's a

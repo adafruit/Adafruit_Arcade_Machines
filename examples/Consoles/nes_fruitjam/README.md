@@ -31,10 +31,10 @@ an SD card (FAT32, **MBR** partition scheme -- not GPT/exFAT). The first
   or less are copied into SRAM, which is slightly faster.
 - **Battery saves** work the way the cartridge's did. When the game writes
   its battery RAM and then leaves it alone for a second, the RAM is saved
-  to `/cart/<rom name>.sav`, in the same raw format PC emulators use. A
-  save takes about half a second, written a little each frame so the
-  picture never stutters. There is no save button, and there are no save
-  states.
+  to `/cart/<rom name>.sav`, in the same raw format PC emulators use. Only
+  the part of the save that changed is written, a little each frame, so
+  the picture never stutters; a save usually takes a fraction of a second.
+  There is no save button, and there are no save states.
 - **Settings are remembered per game:** the rotation, palette and 8:7
   stretch you last chose are saved to `/cart/<rom name>.fruitjam.cfg`, 3
   seconds after your last change, and used again at the next power-up.

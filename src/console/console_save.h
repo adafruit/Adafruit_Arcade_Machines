@@ -11,10 +11,11 @@
 // AS THE CARTRIDGE DID IT. A save happens when the game writes its save RAM
 // and then leaves it alone for a second -- no save button, no save states.
 // The .sav is rewritten IN PLACE, so it stays interchangeable with PC
-// emulators; a power cut during the ~0.5 s it takes could leave it half
-// old, half new, as a real cartridge's RAM could be, and games guard
-// against that themselves (Link's Awakening checksums each of its three
-// files).
+// emulators, and ONLY THE SECTORS THAT CHANGED are rewritten: usually one
+// or two of an 8 KB save's sixteen (DEVNOTES #158). A power cut during a
+// save could leave it half old, half new, as a real cartridge's RAM could
+// be, and games guard against that themselves (Link's Awakening checksums
+// each of its three files).
 //
 // NOTICING A SAVE: once a frame the RAM is compared with a shadow copy
 // (8 KB for Link's Awakening or Zelda, a few microseconds). nofrendo maps
@@ -24,8 +25,8 @@
 // NEVER BLOCKING THE DISPLAY. File operations block for 6-30 ms against
 // ~2.2 ms of queued picture (examples/SelfTest/sd_write_test_fruitjam), so
 // the .sav is made full-size and contiguous at boot and, in the game, only
-// ever rewritten one 512-byte sector per frame, and never while the card
-// reports busy.
+// ever rewritten one 512-byte sector per frame -- from the first changed
+// sector to the last -- and never while the card reports busy.
 #ifndef CONSOLE_SAVE_H
 #define CONSOLE_SAVE_H
 
@@ -67,6 +68,8 @@ typedef struct {
     uint32_t errors;           // storage errors since boot
     uint32_t busy_waits;       // frames a step waited because the card was busy
     uint32_t last_save_frames; // frames the last save took, begin to end
+    uint32_t last_save_sectors;// sectors the last save rewrote (only the changed run)
+    uint32_t sectors_written;  // sectors written since boot
     uint32_t step_us_max;      // worst single step since the last take (then reset)
     char     path[80];
 } console_save_stats_t;

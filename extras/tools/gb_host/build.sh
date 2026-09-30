@@ -25,6 +25,7 @@ cc -O2 -g -std=c11 -Wall $INC -c "$SRC/machines/gb/gameboy_core.c" -o "$OBJ/game
 c++ -O2 -g -std=c++17 -Wall -Wno-unused-parameter $INC \
     "$SRC/machines/gb"/*.cpp \
     "$SRC/console"/*.cpp \
+    "$SRC/storage"/*.cpp \
     "$SRC/cart"/*.cpp \
     "$SRC/hal"/*.cpp \
     "$HERE/../host_common/hal_host.cpp" \

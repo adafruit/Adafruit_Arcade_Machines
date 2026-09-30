@@ -8688,3 +8688,63 @@ v2.13.2 against `main` would tell. **Open.**
 - **Start-up underruns:** the Feather arcade games show one burst of audio
   underruns in the first status line after boot, then none. This is the
   start-up before the game's sound begins, as #141 found for the consoles.
+
+### 158. Battery saves write only the sectors that changed (NES Zelda saved every few seconds)
+
+On the Feather, NES Zelda wrote its battery save every 2-3 s of play, 19
+saves in one session (#156). Each rewrote all 8 KB, 16 sectors, in about
+71 frames. That's over a second of card writes out of every couple of
+seconds of play.
+
+**Why Zelda does it.** A battery-RAM tracer in a scratch copy of the NES
+host harness ran 7,200 frames of scripted play. Zelda's battery RAM
+changed in only 10 of those frames:
+
+- **At start-up:** 2 bytes near `0x0808`.
+- **Everything else:** bursts of 80-130 bytes in `0x0534`-`0x07ED`,
+  sectors 2-4, each landing on the frame Link started the game or walked
+  onto a new screen.
+
+So Zelda keeps a working buffer in its battery RAM and rewrites it on
+every screen change. It looks like the current screen's data, though
+that's inferred from the timing and addresses, not read in Zelda's code.
+Every screen change, followed by a quiet second, is a save. It isn't a bug
+in the save logic: a cartridge's SRAM is written just as often. But SRAM
+doesn't wear out, and rewriting the other 14 sectors every time, the ones
+holding the real save slots included, was wear and power-cut exposure for
+nothing.
+
+**The change, `console_save.cpp`:**
+
+- **The snapshot now doubles as a record of what's on the card.** At save
+  time the RAM is compared with it one sector at a time, only differing
+  sectors are copied in, and only the run from the first changed sector to
+  the last is written. A sub-extent starts at `first_sector + first`.
+- **No change at all** (changed and changed back): nothing is written.
+- **A write that fails partway** marks the snapshot unknown, so the next
+  save rewrites everything.
+- **New stats**, `last_save_sectors` and `sectors_written`, now in the four
+  console sketches' save lines.
+
+**A host-harness bug it exposed.** `hal_host.cpp` always wrote an extent
+from the start of the file, ignoring `first_sector`. It now seeks there,
+as a card sector number works on a board. Separately, `nes_host` and
+`gb_host`'s `build.sh` had been missing `src/storage/` since #156 (my
+omission), so both failed to link on `main`. Fixed.
+
+**Measured:**
+
+- **Host, Zelda, 7,300 frames:** 5 saves wrote 8 sectors, against 80
+  before; about 4 frames per save, against 18. Afterwards the `.sav` on
+  disk matches the battery RAM byte for byte.
+- **Feather, NES Zelda, on a card with no save:**
+  - The first save wrote all 16 sectors, since Zelda sets up its whole
+    battery RAM at start.
+  - The next nine wrote 2-7 sectors each, taking 14-35 frames against 71.
+    That's 51 sectors in 10 saves, where the old code would have written
+    160.
+  - The user made a real save (SAVE after dying) and power-cycled. The file
+    loaded (`loaded yes`), and the user confirmed it on screen.
+  - Saves after that were 1-3 sectors. No errors.
+- **Fruit Jam, Link's Awakening:** a save-and-quit wrote 1 sector in 4
+  frames, where it used to rewrite all 16. It loaded after a power cycle.

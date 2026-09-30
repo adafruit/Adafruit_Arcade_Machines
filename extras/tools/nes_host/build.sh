@@ -22,6 +22,7 @@ cc -O2 -g -std=gnu11 -Wall $INC -c "$SRC/machines/nes/nes_core.c" -o "$OBJ/nes_c
 c++ -O2 -g -std=c++17 -Wall -Wno-unused-parameter $INC \
     "$SRC/machines/nes"/*.cpp \
     "$SRC/console"/*.cpp \
+    "$SRC/storage"/*.cpp \
     "$SRC/cart"/*.cpp \
     "$SRC/hal"/*.cpp \
     "$HERE/../host_common/hal_host.cpp" \
