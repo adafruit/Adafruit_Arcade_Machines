@@ -8019,8 +8019,8 @@ arcade sketches build; not run with this change.
 
 > **Caveat (2026-09-30, #159):** the 99.2% below depends on how busy the
 > play was. Its emulation averaged 32.5 ms per pair of frames, just under
-> the 33.0 ms budget. On busier play the same v2.13.2 build needs about 34
-> ms and runs at about 94%.
+> the 33.0 ms budget. On busier play the same v2.13.2 build needs about
+> 34.8 ms and runs at about 94%.
 
 #145 found Galaga at 87-92% of its speed on busy stages, as it had been
 since the Feather port. This entry finds where the time went and gets
@@ -8768,8 +8768,8 @@ out:
 
 | Session | Build | Windows in play | Mean | Min | Below 90% | Emulation per pair |
 |---|---|---|---|---|---|---|
-| 1 | v2.13.2 | 263 | 94.2% | 88% | 5 | 34.0 ms |
-| 2 | `main` | 173 | 94.6% | 89% | 4 | about the same |
+| 1 | v2.13.2 | 263 | 94.2% | 88% | 5 | 34.8 ms |
+| 2 | `main` | 173 | 94.6% | 89% | 4 | 34.6 ms |
 | #146, for reference | v2.13.2 | 523 | 99.2% | -- | 2 | 32.5 ms |
 
 - **No regression:** v2.13.2 and `main` are the same within the difference
@@ -8777,8 +8777,8 @@ out:
   v2.13.2 cost Galaga nothing measurable here.
 - **Why #146 read 99.2%:** the Feather has 33.0 ms to emulate each pair of
   frames at 60.6 Hz. #146's play needed 32.5 ms on average, just under
-  budget. Today's play, with the same build, needed 34.0 ms, just over, and
-  the speed falls by about that ratio. The code didn't change; the play
+  budget. Today's play, with the same build, needed 34.8 ms (and `main`
+  34.6 ms), over budget, and the speed falls with it. The code didn't change; the play
   did. The user got further into the busy stages, with more enemies and
   more work for the three Z80s.
 - **What this means:** Galaga on the Feather runs at full speed until a
