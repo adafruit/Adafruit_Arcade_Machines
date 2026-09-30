@@ -8017,6 +8017,11 @@ arcade sketches build; not run with this change.
 
 ### 146. Galaga on the Feather: from 92% to 99% in play, by freeing core 0
 
+> **Caveat (2026-09-30, #159):** the 99.2% below depends on how busy the
+> play was. Its emulation averaged 32.5 ms per pair of frames, just under
+> the 33.0 ms budget. On busier play the same v2.13.2 build needs about 34
+> ms and runs at about 94%.
+
 #145 found Galaga at 87-92% of its speed on busy stages, as it had been
 since the Feather port. This entry finds where the time went and gets
 most of it back. Every number below is from real play by the user, several
@@ -8679,7 +8684,8 @@ Every Fruit Jam game ran with `starve 0` or 1.
 The settings cost nothing measurable. **But `main` at 94.9% is below the
 99.2% of #146**, over similar play. Either Galaga on the Feather has
 slowed since v2.13.2, or these sessions were harder play. An A/B of
-v2.13.2 against `main` would tell. **Open.**
+v2.13.2 against `main` would tell. **Resolved in #159: harder play, not
+a slowdown.**
 
 **Also seen:**
 
@@ -8748,3 +8754,38 @@ omission), so both failed to link on `main`. Fixed.
   - Saves after that were 1-3 sectors. No errors.
 - **Fruit Jam, Link's Awakening:** a save-and-quit wrote 1 sector in 4
   frames, where it used to rewrite all 16. It loaded after a power cycle.
+
+### 159. Galaga on the Feather: 94% in busy play is the emulation budget, not a regression
+
+#157 found `main`'s Galaga at 94.9% of arcade speed on the Feather in play,
+against #146's 99.2%, and left open whether it had slowed since v2.13.2.
+
+**A same-day A/B**, on the same card, board and controller, with the user
+playing each build in turn. v2.13.2 was built from its tag, exported with
+`git archive`, and `main` was at v2.16.1. Only the windows between the first
+and last below 100% count, so the attract mode after a game over is left
+out:
+
+| Session | Build | Windows in play | Mean | Min | Below 90% | Emulation per pair |
+|---|---|---|---|---|---|---|
+| 1 | v2.13.2 | 263 | 94.2% | 88% | 5 | 34.0 ms |
+| 2 | `main` | 173 | 94.6% | 89% | 4 | about the same |
+| #146, for reference | v2.13.2 | 523 | 99.2% | -- | 2 | 32.5 ms |
+
+- **No regression:** v2.13.2 and `main` are the same within the difference
+  between two sessions. The settings (#157) and everything else since
+  v2.13.2 cost Galaga nothing measurable here.
+- **Why #146 read 99.2%:** the Feather has 33.0 ms to emulate each pair of
+  frames at 60.6 Hz. #146's play needed 32.5 ms on average, just under
+  budget. Today's play, with the same build, needed 34.0 ms, just over, and
+  the speed falls by about that ratio. The code didn't change; the play
+  did. The user got further into the busy stages, with more enemies and
+  more work for the three Z80s.
+- **What this means:** Galaga on the Feather runs at full speed until a
+  stage's emulation cost passes 33 ms a pair. On the busiest stages it is
+  just past it, at about 94-95%, which is #145's finding again. Closing the
+  gap would mean cutting emulation cost on those stages, an optimisation
+  project, not a fix.
+- **Measuring this in future:** compare emulation cost per pair alongside
+  the speed. A speed difference with the same emulation cost is the code;
+  one with different emulation cost is the play.
