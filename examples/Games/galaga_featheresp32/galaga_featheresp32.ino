@@ -414,6 +414,27 @@ void loop() {
                       (unsigned long)(paint_sum / 30u), (unsigned long)paint_max,
                       (unsigned long)(wait_sum / 30u), (unsigned long)wait_max,
                       (unsigned long)(a_us * 1000u / (now - t_prev_a)), (unsigned long)a_max);
+#ifdef GALAGA_FRAME_TRACE
+        {
+            // Where core 0's emulation goes, per paint (two frames), over the
+            // same window: each Z80's slices, including its memory callbacks
+            // and the custom chips they reach. `other` is the rest of `emu`:
+            // the interleave loop, interrupts, the audio of the window.
+            uint32_t cm, cs, c2, cc, cr, cb, dmax;
+            galaga_debug_take_frame_costs(&cm, &cs, &c2, &cc, &cr, &cb, &dmax);
+            const uint32_t m = cm / 30u, s = cs / 30u, s2 = c2 / 30u, e = emu_sum / 30u;
+            uint32_t isub, isub2;
+            galaga_debug_take_idle_skips(&isub, &isub2);
+            // As a share of each sub's cycles in the window: 30 paints of two
+            // frames, 50,688 cycles a frame (galaga_machine.cpp).
+            const uint32_t per_pct = 50688u * 60u / 100u;
+            Serial.printf("[galaga-esp32] cost per paint: main %lu  sub %lu  sub2 %lu  other %ld us  (emu %lu); "
+                          "idle skipped %lu%% sub, %lu%% sub2\n",
+                          (unsigned long)m, (unsigned long)s, (unsigned long)s2,
+                          (long)e - (long)(m + s + s2), (unsigned long)e,
+                          (unsigned long)(isub / per_pct), (unsigned long)(isub2 / per_pct));
+        }
+#endif
         emul_us = 0; push_us = 0;
         wait_sum = wait_max = emu_sum = emu_max = paint_sum = paint_max = 0;
     }
