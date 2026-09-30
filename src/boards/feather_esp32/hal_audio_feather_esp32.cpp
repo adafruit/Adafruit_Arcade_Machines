@@ -105,8 +105,11 @@ void hal_audio_exit_critical(uint32_t saved_state) {
 
 // 3 dB apart, the steps the console defaults were chosen from
 // (console_audio.cpp has the same table for the consoles' own volume).
+// The 0 at the bottom is mute: one more step down from 2 (-42 dB), which
+// is still audible close to the speaker. The I2S stream keeps running with
+// zero samples, so the amp keeps its clocks and doesn't pop.
 static const uint16_t kVolumeSteps[] = {
-    2, 3, 4, 6, 8, 11, 16, 23, 32, 45, 64, 90, 128, 181, 256,
+    0, 2, 3, 4, 6, 8, 11, 16, 23, 32, 45, 64, 90, 128, 181, 256,
 };
 static uint32_t s_volume = 256;
 

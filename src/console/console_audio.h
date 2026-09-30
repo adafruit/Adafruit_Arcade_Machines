@@ -45,8 +45,8 @@ void console_audio_set_target(uint32_t samples);
 void console_audio_set_volume(uint32_t volume);
 
 // Moves the volume `steps` steps of 3 dB up (positive) or down, from the
-// step nearest the current volume, within 2..256 (never silent). Returns
-// the new volume. For a controller's volume buttons.
+// step nearest the current volume, within 0..256: the step below 2 (-42 dB)
+// is 0, mute. Returns the new volume. For a controller's volume buttons.
 uint32_t console_audio_volume_step(int steps);
 uint32_t console_audio_volume(void);
 

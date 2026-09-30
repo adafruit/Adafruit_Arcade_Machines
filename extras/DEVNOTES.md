@@ -8484,3 +8484,30 @@ upright, 106 are 2 canvas pixels wide and 54 are 1.
 at every power-up. The idea for later is a small per-game settings file
 next to the `.sav`, holding the scale, and maybe also the rotation, palette
 and volume. It is noted in `CONSOLES_PLAN.md`, not built.
+
+### 155. The Feather's volume goes down to mute
+
+X + Down on the controller used to stop at 2/256 (-42 dB), which is still
+audible close to the MAX98357A's speaker. Both volume tables now have a 0
+below it, one more 3 dB press down:
+
+- **The arcade games' master volume:** `hal_audio_feather_esp32.cpp`.
+- **The consoles' own volume:** `console_audio.cpp`.
+
+X + Up from 0 goes back to 2.
+
+**Nothing stops when muted.** The I2S task keeps writing frames, now all
+zeros, so the amp keeps its clocks. The MAX98357A mutes on a lost clock
+and pops when it returns (`arch_audio_i2s_esp32.cpp`). The consoles still
+push their frames through the ring, as silence, so its level control is
+unaffected.
+
+**On hardware:**
+
+- **The Game Boy** (Super Mario Land 4): 16 down to 0, up through every
+  step to 256, and back to 0.
+- **Pac-Man:** 45 up to 256, down to 0, and back up.
+- **The user:** "mute is mute", in both.
+- **Underruns:** none in any status line after the first volume press. The
+  Game Boy's log had one burst of 207 in the first measured second after
+  boot, before any press.
