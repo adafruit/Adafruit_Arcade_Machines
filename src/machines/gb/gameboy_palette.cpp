@@ -36,6 +36,10 @@ inline uint16_t bgr555_to_rgb565(uint16_t c) {
 
 } // namespace
 
+const char *const GAMEBOY_PALETTE_KEYS[GAMEBOY_PALETTE_COUNT] = {
+    "dmg-green", "greys", "pocket", "gbc",
+};
+
 const char *gameboy_palette_name(gameboy_palette_t p) {
     switch (p) {
     case GAMEBOY_PALETTE_DMG_GREEN: return "DMG green";

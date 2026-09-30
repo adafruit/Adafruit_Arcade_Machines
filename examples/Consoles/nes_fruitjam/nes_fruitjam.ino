@@ -43,6 +43,7 @@
 #include <machines/nes/nes_core.h>
 #include <console/console_audio.h>
 #include <console/console_save.h>
+#include <settings/settings.h>
 #include <boards/fruitjam/board_config_fruitjam.h>
 #if defined(USE_TINYUSB)
 // USB gamepads on the Type-A ports (Tools > USB Stack > Adafruit TinyUSB,
@@ -57,6 +58,44 @@ static nes_system      g_system;
 static volatile bool   g_video_ready = false;
 static bool            g_cart_ok     = false;
 static uint16_t        g_error_color = 0;
+
+// SETTINGS SAVED TO THE CARD (settings/settings.h): this game's rotation,
+// palette and 8:7 stretch on this board, in /cart/<rom name>.fruitjam.cfg,
+// read at boot and rewritten 3 s after a change. The defaults are this
+// sketch's own.
+#define TAG "nes"
+static const char *const kOnOff[] = { "off", "on" };
+static int g_set_rotation, g_set_palette, g_set_stretch;
+static uint32_t g_settings_saves_shown = 0;
+
+static void print_settings(const char *what) {
+    char values[128];
+    settings_describe(values, sizeof values);
+    settings_stats_t st;
+    settings_take_stats(&st);
+    static const char *const kState[] = { "none", "UNAVAILABLE", "ready", "writing" };
+    Serial.printf("[%s] settings %s %s (%s): %s; read %lu, ignored %lu%s, saves %lu, errors %lu\n",
+                  TAG, what, st.path, kState[st.state], values, (unsigned long)st.applied,
+                  (unsigned long)st.ignored, st.truncated ? ", TRUNCATED" : "",
+                  (unsigned long)st.saves, (unsigned long)st.errors);
+}
+
+// Boot only, with the card mounted (after the cart load): read them and
+// apply them over the defaults.
+static void load_settings(void) {
+    g_set_rotation = settings_add_choice("rotation", SETTINGS_ROTATION_NAMES, 4,
+                                         g_system.rotation, nullptr);
+    g_set_palette  = settings_add_choice("palette", nes_core_palette_keys(),
+                                         (uint8_t)nes_core_palette_count(), g_system.palette, nullptr);
+    g_set_stretch  = settings_add_choice("stretch", kOnOff, 2, g_system.stretch ? 1 : 0,
+                                         "off, on (8:7 aspect)");
+    char path[96];
+    settings_console_path(g_system.cart_name, "fruitjam", path, sizeof path);
+    settings_begin(path, "NES settings for this game on the Fruit Jam.");
+    g_system.rotation = (uint8_t)settings_get(g_set_rotation);
+    g_system.palette  = (uint8_t)settings_get(g_set_palette);
+    g_system.stretch  = settings_get(g_set_stretch) != 0;
+}
 
 static void print_cart(void) {
     Serial.print("[nes] cart /cart/");
@@ -88,13 +127,15 @@ void setup() {
     fruitjam_set_sys_clock_khz(252000);
 
     nes_init_system(&g_system);
-#ifdef TEST_ROTATION
-    g_system.rotation = (uint8_t)(TEST_ROTATION);
-#endif
 
     // Storage, cartridge load and audio setup -- blocking, and finished
     // before core 1 is allowed to start the display (see g_video_ready).
+    // Then the settings file, over the defaults, and a build flag over both.
     g_cart_ok = nes_load_cart(&g_system, &g_error_color);
+    if (g_cart_ok) load_settings();
+#ifdef TEST_ROTATION
+    g_system.rotation = (uint8_t)(TEST_ROTATION);
+#endif
 
 #if defined(USE_TINYUSB)
     // After the display is initialised (it claims PIO 0) and the clock is
@@ -171,6 +212,21 @@ void loop() {
         palette_shown = g_system.palette;
         Serial.print("[nes] palette ");
         Serial.println(nes_core_palette_name(palette_shown));
+    }
+
+    // Settings: a change is saved 3 s after the last one, one storage step
+    // a frame, after the frame (when the display queue is full).
+    settings_set(g_set_rotation, g_system.rotation);
+    settings_set(g_set_palette, g_system.palette);
+    settings_set(g_set_stretch, g_system.stretch ? 1 : 0);
+    settings_frame();
+    {
+        settings_stats_t st;
+        settings_take_stats(&st);
+        if (st.saves != g_settings_saves_shown) {
+            g_settings_saves_shown = st.saves;
+            print_settings("saved");
+        }
     }
 
     if ((++frame_count % 60u) == 0) {
@@ -254,7 +310,7 @@ void loop() {
                 Serial.println("us");
             }
         }
-        if ((frame_count % 600u) == 60u) print_cart();
+        if ((frame_count % 600u) == 60u) { print_cart(); print_settings("in use"); }
     }
 }
 

@@ -49,6 +49,10 @@ enum { GAMEBOY_LAYER_OBJ0 = 0, GAMEBOY_LAYER_OBJ1, GAMEBOY_LAYER_BG, GAMEBOY_LAY
 
 const char *gameboy_palette_name(gameboy_palette_t p);
 
+// The same palettes as one-word names for the settings file
+// (settings/settings.h): "dmg-green", "greys", "pocket", "gbc".
+extern const char *const GAMEBOY_PALETTE_KEYS[GAMEBOY_PALETTE_COUNT];
+
 // The Game Boy Color's palette combination for a cartridge, from its header
 // (`rom` is at least its first 0x150 bytes): 0, the default, unless the
 // game is published by Nintendo and its title is in the table.

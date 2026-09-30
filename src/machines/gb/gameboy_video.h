@@ -72,6 +72,10 @@ typedef enum {
 
 // Applies to gameboy_video_render_scanline() from the next line.
 void gameboy_video_set_scale(gameboy_scale_t scale);
+
+// The scales as one-word names for the settings file (settings/settings.h):
+// "1x", "fit-nearest", "fit-smooth", "2x-centre", "2x-top", "2x-bottom".
+extern const char *const GAMEBOY_SCALE_KEYS[GAMEBOY_SCALE_COUNT];
 const char *gameboy_video_scale_name(gameboy_scale_t scale);
 
 // --- 3x, straight to a 640x480 output (extras/CONSOLES_PLAN.md) -----------

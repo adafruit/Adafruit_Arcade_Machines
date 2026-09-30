@@ -13,6 +13,7 @@
 
 #include "arch/arch.h"
 #include "hal/arcade_hal_storage.h"
+#include "storage/extent_lock.h"
 
 namespace {
 
@@ -90,9 +91,12 @@ void console_save_frame(void) {
     hal_storage_result_t r = HAL_STORAGE_OK;
     switch (g_step) {
     case Step::Idle:
-        // Changed since the last save, and quiet for a second.
+        // Changed since the last save, and quiet for a second -- and the
+        // card free: a settings write takes turns with this one
+        // (storage/extent_lock.h).
         if (g_changes != g_seen_changes &&
-            g_frames - g_last_change_frame >= CONSOLE_SAVE_QUIET_FRAMES) {
+            g_frames - g_last_change_frame >= CONSOLE_SAVE_QUIET_FRAMES &&
+            extent_lock_take(EXTENT_OWNER_SAVE)) {
             memcpy(g_snapshot, g_ram, g_stats.size);
             if (g_snapshot_size > g_stats.size)
                 memset(g_snapshot + g_stats.size, 0xFF, g_snapshot_size - g_stats.size);
@@ -113,6 +117,7 @@ void console_save_frame(void) {
     case Step::End:
         r = hal_storage_extent_write_end();
         if (r == HAL_STORAGE_OK) {
+            extent_lock_give(EXTENT_OWNER_SAVE);
             g_step = Step::Idle;
             g_stats.state = CONSOLE_SAVE_READY;
             g_stats.saves++;
@@ -125,6 +130,7 @@ void console_save_frame(void) {
         // Give up on this save and try again after the quiet period; a
         // successful later save repairs a partly overwritten file.
         g_stats.errors++;
+        extent_lock_give(EXTENT_OWNER_SAVE);
         g_step = Step::Idle;
         g_stats.state = CONSOLE_SAVE_READY;
         g_seen_changes = g_changes - 1u; // still dirty

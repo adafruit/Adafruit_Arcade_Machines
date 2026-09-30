@@ -93,13 +93,12 @@ bool gameboy_load_cart(gameboy_system *sys, uint16_t *out_error_color) {
                     out_error_color);
     }
 
-    // A battery cartridge loads its .sav and keeps storage mounted for later
-    // saves (console/console_save.h); anything else never touches the card
-    // again.
+    // A battery cartridge loads its .sav (console/console_save.h). Storage
+    // stays mounted either way: the sketch's settings file is read next,
+    // and rewritten when a setting changes (settings/settings.h).
     const bool battery = gameboy_core_has_battery();
-    if (!console_save_init(sys->cart_name, battery ? gameboy_core_save_ram() : nullptr,
-                           battery ? gameboy_core_save_size() : 0))
-        hal_storage_unmount();
+    (void)console_save_init(sys->cart_name, battery ? gameboy_core_save_ram() : nullptr,
+                            battery ? gameboy_core_save_size() : 0);
     memcpy(sys->cart_title, gameboy_core_title(), sizeof sys->cart_title);
     sys->gbc_combo = gameboy_palette_gbc_combo(g_rom);
     gameboy_set_palette(sys, GAMEBOY_PALETTE_DEFAULT);

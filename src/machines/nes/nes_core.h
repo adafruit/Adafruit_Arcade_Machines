@@ -93,6 +93,10 @@ void nes_core_audio_render(int16_t *out, uint32_t n);
 // nes_core_palette_count(), or NULL.
 uint32_t nes_core_palette_count(void);
 const char *nes_core_palette_name(uint32_t n);
+// The palettes as one-word names for the settings file (settings/settings.h),
+// nes_core_palette_count() of them: "nofrendo", "composite", "nes-classic",
+// "ntsc", "pvm", "smooth".
+const char *const *nes_core_palette_keys(void);
 const uint16_t *nes_core_palette565(uint32_t n);
 
 // Cartridge RAM, for battery saves (none if the cart has no battery).

@@ -43,6 +43,7 @@
 #include <machines/gb/gameboy_audio.h>
 #include <machines/gb/gameboy_core.h>
 #include <console/console_save.h>
+#include <settings/settings.h>
 #include <machines/gb/gameboy_palette.h>
 #include <machines/gb/gameboy_video.h>
 #include <boards/fruitjam/board_config_fruitjam.h>
@@ -60,6 +61,49 @@ static volatile bool   g_video_ready = false;
 static bool            g_cart_ok     = false;
 static uint16_t        g_error_color = 0;
 static bool            g_scale3      = false;
+
+// SETTINGS SAVED TO THE CARD (settings/settings.h): this game's rotation,
+// palette and picture size on this board, in /cart/<rom name>.fruitjam.cfg,
+// read at boot and rewritten 3 s after a change. The defaults are this
+// sketch's own.
+#define TAG "gameboy"
+static const char *const kScales[] = { "1x", "3x" };
+#ifdef TEST_GB_SCALE1
+static const uint8_t kDefaultScale = 0;   // 1x
+#else
+static const uint8_t kDefaultScale = 1;   // 3x, the default (DEVNOTES #153)
+#endif
+static int g_set_rotation, g_set_palette, g_set_scale;
+static uint32_t g_settings_saves_shown = 0;
+
+static void print_settings(const char *what) {
+    char values[128];
+    settings_describe(values, sizeof values);
+    settings_stats_t st;
+    settings_take_stats(&st);
+    static const char *const kState[] = { "none", "UNAVAILABLE", "ready", "writing" };
+    Serial.printf("[%s] settings %s %s (%s): %s; read %lu, ignored %lu%s, saves %lu, errors %lu\n",
+                  TAG, what, st.path, kState[st.state], values, (unsigned long)st.applied,
+                  (unsigned long)st.ignored, st.truncated ? ", TRUNCATED" : "",
+                  (unsigned long)st.saves, (unsigned long)st.errors);
+}
+
+// Boot only, with the card mounted (after the cart load): read them and
+// apply them over the defaults. The scale is applied by setup(), which
+// knows whether this build can show 3x.
+static void load_settings(void) {
+    g_set_rotation = settings_add_choice("rotation", SETTINGS_ROTATION_NAMES, 4,
+                                         g_system.rotation, nullptr);
+    g_set_palette  = settings_add_choice("palette", GAMEBOY_PALETTE_KEYS, GAMEBOY_PALETTE_COUNT,
+                                         g_system.palette, nullptr);
+    g_set_scale    = settings_add_choice("scale", kScales, 2, kDefaultScale,
+                                         "3x, 1x (3x needs the default HSTX video)");
+    char path[96];
+    settings_console_path(g_system.cart_name, "fruitjam", path, sizeof path);
+    settings_begin(path, "Game Boy settings for this game on the Fruit Jam.");
+    g_system.rotation = (uint8_t)settings_get(g_set_rotation);
+    gameboy_set_palette(&g_system, (uint8_t)settings_get(g_set_palette));
+}
 
 static void set_scale3(bool on) {
     if (!fruitjam_video_set_line_source(on ? gameboy_video_scanout_3x : nullptr)) on = false;
@@ -100,24 +144,24 @@ void setup() {
     fruitjam_set_sys_clock_khz(252000);
 
     gameboy_init(&g_system);
-#ifdef TEST_ROTATION
-    g_system.rotation = (uint8_t)(TEST_ROTATION);
-#endif
 
     // Storage, cartridge load and audio setup -- blocking, and finished
     // before Core 1 is allowed to start the display (see g_video_ready).
+    // Then the settings file, over the defaults, and a build flag over both.
     g_cart_ok = gameboy_load_cart(&g_system, &g_error_color);
+    if (g_cart_ok) load_settings();
+#ifdef TEST_ROTATION
+    g_system.rotation = (uint8_t)(TEST_ROTATION);
+#endif
 
 #if defined(USE_TINYUSB)
     // After the display is initialised (it claims PIO 0) and the clock is
     // at 252 MHz, before core 1 starts the display.
     fruitjam_usb_input_begin(FRUITJAM_USB_MAP_GAMEBOY);
 #endif
-    // 3x at power-up (-DTEST_GB_SCALE1 for 1x); not on the error screens,
-    // which are drawn through the canvas.
-#ifndef TEST_GB_SCALE1
-    if (g_cart_ok) set_scale3(true);
-#endif
+    // The saved scale (3x unless changed, -DTEST_GB_SCALE1 for 1x); not on
+    // the error screens, which are drawn through the canvas.
+    if (g_cart_ok && settings_get(g_set_scale) == 1) set_scale3(true);
     g_video_ready = true;
 }
 
@@ -156,7 +200,12 @@ void loop() {
     {
         static bool stretch_prev = false;
         const bool stretch = hal_input_read(HAL_BTN_STRETCH);
-        if (stretch && !stretch_prev) set_scale3(!g_scale3);
+        if (stretch && !stretch_prev) {
+            set_scale3(!g_scale3);
+            // Saved only when the player presses it: on the PicoDVI
+            // fallback, where 3x can't be shown, the file keeps its choice.
+            settings_set(g_set_scale, g_scale3 ? 1 : 0);
+        }
         stretch_prev = stretch;
     }
 
@@ -191,6 +240,20 @@ void loop() {
     gameboy_run_frame(&g_system);
     uint32_t frame_us   = micros() - t0;
     uint32_t blocked_us = hal_video_take_blocked_us();
+
+    // Settings: a change is saved 3 s after the last one, one storage step
+    // a frame, after the frame (when the display queue is full).
+    settings_set(g_set_rotation, g_system.rotation);
+    settings_set(g_set_palette, g_system.palette);
+    settings_frame();
+    {
+        settings_stats_t st;
+        settings_take_stats(&st);
+        if (st.saves != g_settings_saves_shown) {
+            g_settings_saves_shown = st.saves;
+            print_settings("saved");
+        }
+    }
     uint32_t work_us    = (frame_us > blocked_us) ? (frame_us - blocked_us) : 0;
     if (work_us > work_max) work_max = work_us;
     work_sum += work_us; blk_sum += blocked_us; work_n++;
@@ -291,7 +354,7 @@ void loop() {
         }
         // Every tenth heartbeat, say which cartridge this is -- the boot
         // message saying so never reaches the host (see loop()'s error path).
-        if ((frame_count % 600u) == 60u) print_cart();
+        if ((frame_count % 600u) == 60u) { print_cart(); print_settings("in use"); }
     }
 }
 

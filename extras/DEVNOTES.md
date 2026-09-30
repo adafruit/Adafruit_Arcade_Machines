@@ -8511,3 +8511,74 @@ unaffected.
 - **Underruns:** none in any status line after the first volume press. The
   Game Boy's log had one burst of 207 in the first measured second after
   boot, before any press.
+
+### 156. Settings saved to the SD card, for the four console sketches
+
+The plan is `CONSOLES_PLAN.md`, "Planned: settings saved to the SD card".
+Every choice a player makes with the buttons is now kept per game and per
+board, in `/cart/<rom name>.fruitjam.cfg` or `/cart/<rom name>.feather.cfg`,
+next to the ROM and its `.sav`, and applied again at the next power-up.
+
+- **Game Boy:** rotation, palette and scale. The Fruit Jam's scale is
+  `3x` or `1x`; the Feather's is one of its six modes (#154).
+- **NES:** rotation, palette and `stretch` (8:7).
+- **The Feather:** both consoles also save the volume.
+
+**The pieces:**
+
+- **`src/settings/`**, board-independent:
+  - the keys are declared by each sketch, with its own defaults
+    (`settings_add_choice()` / `settings_add_int()`);
+  - `settings_begin()` at boot;
+  - `settings_set()` with the current values each frame, then
+    `settings_frame()`.
+- **The file:** plain text, `key = value`, values as words (`90`,
+  `fit-smooth`, `dmg-green`, `nes-classic`). Anything unreadable falls back
+  to the default. It is exactly 512 bytes, one sector, padded with spaces.
+  The Feather Game Boy's, the longest, is 400 bytes of text.
+- **Writing during a game** uses the battery saves' non-blocking extent
+  calls (#130, #144): 3 s after the last change, only if the text changed,
+  one storage step a frame.
+- **`src/storage/extent_lock`:** only one extent rewrite may run at a time,
+  so settings and battery saves take turns through a small atomic lock.
+  Atomic because on the Feather they run on different cores: battery saves
+  in the emulation task, settings in the paint loop's idle window (the
+  only place the paint core may read the machine's fields).
+- **The card stays mounted** for every console game. It used to be
+  unmounted after loading unless the game had a battery save.
+- **The order at boot:** the defaults, then the file, then `TEST_ROTATION`,
+  which now comes after the file so measurement builds stay fixed.
+- **The Fruit Jam Game Boy's scale** is saved only when Button 1 is
+  pressed. On the PicoDVI fallback, which can't show 3x, a saved `3x` stays
+  in the file instead of being overwritten with `1x`.
+- **Serial:** a line when the settings are loaded and each time they are
+  saved. The Fruit Jam loses its boot lines, so it also repeats the line
+  every tenth status line.
+
+**A host test first** (`extras/tools/settings_test`), against a RAM "card".
+It covers:
+
+- a hand-edited file, with odd case and spacing, a bad value, an unknown
+  key and a stray line: the two good values read, and the four others
+  ignored;
+- a file of the wrong size, remade at exactly 512 bytes;
+- the 3 s delay;
+- waiting while a battery save holds the lock;
+- no write when a value changes and changes back.
+
+**On hardware, all four:**
+
+| Sketch | Card | Result |
+|---|---|---|
+| Feather Game Boy | Link's Awakening | 4 saves; after a power cycle, back as `rotation 270, scale fit-smooth, palette gbc, volume 45`. 100% of 60 Hz, no underruns |
+| Feather NES | Zelda | 2 settings saves alongside 19 battery saves, no errors; back as `rotation 270, stretch off` after a power cycle |
+| Fruit Jam Game Boy | Link's Awakening | back as `palette greys, scale 1x` after a power cycle |
+| Fruit Jam NES | Zelda | back as `palette composite, stretch on` after a power cycle |
+
+The user confirmed each by eye.
+
+**Noticed, not changed:** on the Feather, NES Zelda wrote its battery save
+every 2-3 s of play (19 saves in the session). `console_save` is
+unchanged apart from taking the lock. Zelda appears to change its battery
+RAM continuously, and every change followed by a quiet second is a save.
+Worth a look for card wear; it is separate from settings.

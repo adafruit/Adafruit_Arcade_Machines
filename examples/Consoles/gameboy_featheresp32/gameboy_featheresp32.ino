@@ -35,9 +35,14 @@
 //                                        the lowest one mute)
 //   Scale        --                   L   (cycles the six below)
 //   The scales, for players to choose per game (gameboy_video.h): 1x;
-//   fit, nearest and fit, smooth (the default) (the full 240-line height at 5/3, or 3/2
-//   rotated); and 2x cropped, centred / top kept / bottom kept (2x is
-//   320x288 upright, 48 lines taller than the screen; 288x320 rotated, 80).
+//   fit, nearest and fit, smooth (the default), the full 240-line height
+//   at 5/3, or 3/2 rotated; and 2x cropped, centred / top kept / bottom
+//   kept (2x is 320x288 upright, 48 lines taller than the screen; 288x320
+//   rotated, 80).
+//
+// Settings: the rotation, scale, palette and volume last chosen are kept
+// per game in /cart/<rom name>.feather.cfg, a small text file, and used
+// again at the next power-up (settings/settings.h, DEVNOTES #156).
 //
 // Battery saves: a battery cartridge's save RAM is kept in a standard .sav
 // next to the ROM, the same file as the Fruit Jam's and PC emulators'. A
@@ -57,6 +62,7 @@
 static const gameboy_scale_t kDefaultScale = GAMEBOY_SCALE_FIT_SMOOTH;
 #include <console/console_audio.h>
 #include <console/console_save.h>
+#include <settings/settings.h>
 #include <boards/feather_esp32/hal_storage_feather_esp32.h>
 #include <boards/feather_esp32/board_config_feather_esp32.h>
 #include <boards/feather_esp32/wii_input_feather_esp32.h>
@@ -85,6 +91,46 @@ static const gameboy_scale_t kDefaultScale = GAMEBOY_SCALE_FIT_SMOOTH;
 static gameboy_system g_system;
 static bool           g_cart_ok = false;
 static uint16_t       g_error_color = 0;
+static uint8_t        g_scale = kDefaultScale;
+
+// SETTINGS SAVED TO THE CARD (settings/settings.h): this game's rotation,
+// picture size, palette and volume on this board, in
+// /cart/<rom name>.feather.cfg, read at boot and rewritten 3 s after a
+// change. The defaults are this sketch's own.
+static int g_set_rotation, g_set_scale, g_set_palette, g_set_volume;
+static uint32_t g_settings_saves_shown = 0;
+
+static void print_settings(const char *what) {
+    char values[128];
+    settings_describe(values, sizeof values);
+    settings_stats_t st;
+    settings_take_stats(&st);
+    static const char *const kState[] = { "none", "UNAVAILABLE", "ready", "writing" };
+    Serial.printf("[gameboy-esp32] settings %s %s (%s): %s; read %lu, ignored %lu%s, saves %lu, errors %lu\n",
+                  what, st.path, kState[st.state], values, (unsigned long)st.applied,
+                  (unsigned long)st.ignored, st.truncated ? ", TRUNCATED" : "",
+                  (unsigned long)st.saves, (unsigned long)st.errors);
+}
+
+// Boot only, with the card mounted (after the cart load): read them and
+// apply them over the defaults.
+static void load_settings(void) {
+    g_set_rotation = settings_add_choice("rotation", SETTINGS_ROTATION_NAMES, 4,
+                                         g_system.rotation, nullptr);
+    g_set_scale    = settings_add_choice("scale", GAMEBOY_SCALE_KEYS, GAMEBOY_SCALE_COUNT,
+                                         kDefaultScale, nullptr);
+    g_set_palette  = settings_add_choice("palette", GAMEBOY_PALETTE_KEYS, GAMEBOY_PALETTE_COUNT,
+                                         g_system.palette, nullptr);
+    g_set_volume   = settings_add_int("volume", 0, 256, AUDIO_VOLUME, "0 (mute) to 256");
+    char path[96];
+    settings_console_path(g_system.cart_name, "feather", path, sizeof path);
+    settings_begin(path, "Game Boy settings for this game on the Feather ESP32 V2.");
+    g_system.rotation = (uint8_t)settings_get(g_set_rotation);
+    gameboy_set_palette(&g_system, (uint8_t)settings_get(g_set_palette));
+    g_scale = (uint8_t)settings_get(g_set_scale);
+    gameboy_video_set_scale((gameboy_scale_t)g_scale);
+    print_settings("loaded");
+}
 
 static TaskHandle_t g_emu_task = NULL;
 static TaskHandle_t g_video_task = NULL;
@@ -124,7 +170,7 @@ void setup() {
     gameboy_init(&g_system);
     gameboy_video_set_scale(kDefaultScale);
     g_cart_ok = gameboy_load_cart(&g_system, &g_error_color);
-    if (g_cart_ok) print_cart();
+    if (g_cart_ok) { print_cart(); load_settings(); }
     else Serial.printf("[gameboy-esp32] cart FAILED: %s\n",
                        gameboy_boot_error_text(g_system.boot_error));
 
@@ -141,7 +187,7 @@ void setup() {
     // loop that hides the error screen (DEVNOTES #123).
     if (g_cart_ok) {
         console_audio_set_target(AUDIO_RING_TARGET);
-        console_audio_set_volume(AUDIO_VOLUME);
+        console_audio_set_volume((uint32_t)settings_get(g_set_volume));
         // The audio pump has been playing silence since the cartridge load
         // (through the display init), and each of those samples counted as
         // an underrun. Start the counters here, with the game (#141).
@@ -212,14 +258,29 @@ void loop() {
         // L cycles the scale. Here, in the idle window, so a paint never
         // changes scale halfway down the screen.
         static bool scale_prev = false;
-        static uint8_t scale = kDefaultScale;
         if (scale_next && !scale_prev) {
-            scale = (uint8_t)((scale + 1u) % GAMEBOY_SCALE_COUNT);
-            gameboy_video_set_scale((gameboy_scale_t)scale);
+            g_scale = (uint8_t)((g_scale + 1u) % GAMEBOY_SCALE_COUNT);
+            gameboy_video_set_scale((gameboy_scale_t)g_scale);
             Serial.printf("[gameboy-esp32] scale %s\n",
-                          gameboy_video_scale_name((gameboy_scale_t)scale));
+                          gameboy_video_scale_name((gameboy_scale_t)g_scale));
         }
         scale_prev = scale_next;
+    }
+    // Settings, also in the idle window, where core 0 isn't changing any of
+    // these: a change is saved 3 s after the last one, one storage step a
+    // paint.
+    settings_set(g_set_rotation, g_system.rotation);
+    settings_set(g_set_scale, g_scale);
+    settings_set(g_set_palette, g_system.palette);
+    settings_set(g_set_volume, (int32_t)console_audio_volume());
+    settings_frame();
+    {
+        settings_stats_t st;
+        settings_take_stats(&st);
+        if (st.saves != g_settings_saves_shown) {
+            g_settings_saves_shown = st.saves;
+            print_settings("saved");
+        }
     }
     static uint8_t palette_shown = 0xFF;
     if (g_system.palette != palette_shown) {
