@@ -141,6 +141,14 @@ mismatch does. The plan keeps the name and mentions consoles in the
 
 ## What changes in the stack
 
+> **Historical (updated 2026-09-30).** This is the plan as drawn before the
+> consoles were built, not the current architecture. It was superseded
+> where it differs: the NES core is nofrendo (not InfoNES); SMS / Game Gear
+> was never built; saves live in `src/console/`; and `src/arch/`,
+> `src/input/`, `src/settings/` and `src/storage/` came later. For how the
+> library fits together now, see the chart in the README ("How the pieces
+> fit").
+
 ```mermaid
 flowchart TB
     subgraph ex["examples/ (composition roots)"]

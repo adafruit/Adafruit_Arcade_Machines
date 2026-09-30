@@ -37,10 +37,82 @@ to one game or one board are reusable for the next port:
 - **`src/arch/`** — the layer between the two: chip facts rather than board
   facts (RP2 PIO/DMA, ESP32 I2S and SPI), shared by every board built on
   that family.
+- **`src/cart/`, `src/console/`** — what the consoles share: finding and
+  loading the cartridge ROM from the SD card, and the console audio ring,
+  volume and battery saves.
+- **`src/input/`** — controller drivers that know nothing about a board:
+  the Wii Classic / SNES Classic protocol and the USB gamepad decoder. A
+  board plugs them into its `hal_input` implementation.
+- **`src/settings/`, `src/storage/`** — settings saved to the SD card per
+  game and per board, and the lock that makes them take turns with battery
+  saves on the card.
 - **`examples/Games/`** — one sketch per game, each the one place that knows
   both "this game" and "this board," wiring the two together.
   **`examples/Consoles/`** does the same for consoles, where the SD card is
   the cartridge.
+
+### How the pieces fit
+
+Solid arrows point from the code that uses something to the code it uses.
+The dotted arrow is different: the HAL is only contracts, and each board
+*implements* them. Nothing above `src/hal/` names a board, which is why a
+second board needed no changes to any game.
+
+```mermaid
+flowchart TB
+    subgraph sketches["examples/ — the composition roots: one game or console, one board"]
+        GS["Games/&lt;game&gt;_fruitjam<br/>Games/&lt;game&gt;_featheresp32"]
+        CS["Consoles/gameboy_… · nes_…<br/>(_fruitjam, _featheresp32)"]
+    end
+
+    subgraph machines["src/machines/ — one directory per game or console"]
+        AM["invaders · lrescue · pacman · mspacman<br/>galaga · dkong · btime"]
+        GB["gb/ + core/ Peanut-GB (MIT)"]
+        NES["nes/ + core/ nofrendo (GPL-2.0-only)"]:::gpl
+    end
+
+    CPU["src/cpu/<br/>i8080 · z80 · mcs48 · m6502"]
+
+    subgraph shared["shared services"]
+        CART["src/cart/<br/>find and load the ROM"]
+        CON["src/console/<br/>audio ring · volume · battery saves"]
+        SET["src/settings/<br/>settings file per game, per board"]
+        LOCK["src/storage/<br/>one card writer at a time"]
+    end
+
+    subgraph hal["src/hal/ — contracts only"]
+        HAL["video · audio · input · storage · memory<br/>+ arcade_video_geom (rotation, mirror, stretch)"]
+    end
+
+    subgraph boards["src/boards/ — one directory per board"]
+        FJ["fruitjam/<br/>HSTX video + DVI audio (PicoDVI fallback)<br/>TLV320 DAC · GPIO + USB pads · SdFat"]
+        FE["feather_esp32/<br/>ILI9341 TFT over SPI · MAX98357A<br/>GPIO + Wii pad · SdFat (card shares the SPI bus)"]
+    end
+
+    INPUT["src/input/<br/>Wii Classic · USB gamepad decode"]
+    ARCH["src/arch/<br/>rp2040 · esp32: RAM placement, I2S, SPI DMA"]
+
+    GS --> AM
+    CS --> GB & NES
+    GS & CS --> SET
+    AM --> CPU
+    GB & NES --> CART & CON
+    CON --> LOCK
+    SET --> LOCK
+    AM & GB & NES --> HAL
+    CART & CON & SET --> HAL
+    HAL -. implemented by .-> FJ & FE
+    FJ & FE --> INPUT
+    FJ & FE --> ARCH
+    CPU --> ARCH
+
+    classDef gpl fill:#f4d4e4,stroke:#8a2a5a,color:#000
+```
+
+The sketches also call a few board-specific extras directly, e.g. the Fruit
+Jam's 3x Game Boy scan-out and the Feather's volume. Those are declared in
+each board's own headers, which is why only the composition roots include
+them.
 
 This is a single Arduino library: install it, then open an example. The
 three axes above are directories inside `src/`, not separate libraries, so
