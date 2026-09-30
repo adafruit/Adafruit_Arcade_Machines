@@ -119,6 +119,13 @@ const char *nes_core_palette_name(uint32_t n) {
     return n < NES_PALETTE_COUNT ? kNames[n] : "?";
 }
 
+const char *const *nes_core_palette_keys(void) {
+    static const char *const kKeys[NES_PALETTE_COUNT] = {
+        "nofrendo", "composite", "nes-classic", "ntsc", "pvm", "smooth",
+    };
+    return kKeys;
+}
+
 const uint16_t *nes_core_palette565(uint32_t n) {
     if (n >= NES_PALETTE_COUNT) return NULL;
     if (!g_pal[n]) g_pal[n] = (uint16_t *)nofrendo_buildpalette((nespal_t)n, 16);

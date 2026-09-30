@@ -36,6 +36,10 @@
 //   Volume       --                   hold X, press Up / Down (3 dB steps,
 //                                        the lowest one mute)
 //
+// Settings: the rotation, palette, 8:7 stretch and volume last chosen are
+// kept per game in /cart/<rom name>.feather.cfg, a small text file, and
+// used again at the next power-up (settings/settings.h, DEVNOTES #156).
+//
 // Battery saves: a battery cartridge's save RAM is kept in a standard .sav
 // next to the ROM, the same file as the Fruit Jam's and PC emulators'. A
 // save starts once the game's save RAM has been quiet for a second, and is
@@ -48,6 +52,7 @@
 #include <machines/nes/nes_core.h>
 #include <console/console_audio.h>
 #include <console/console_save.h>
+#include <settings/settings.h>
 #include <boards/feather_esp32/hal_storage_feather_esp32.h>
 #include <boards/feather_esp32/board_config_feather_esp32.h>
 #include <boards/feather_esp32/wii_input_feather_esp32.h>
@@ -74,6 +79,45 @@
 static nes_system g_system;
 static bool       g_cart_ok = false;
 static uint16_t   g_error_color = 0;
+
+// SETTINGS SAVED TO THE CARD (settings/settings.h): this game's rotation,
+// palette, 8:7 stretch and volume on this board, in
+// /cart/<rom name>.feather.cfg, read at boot and rewritten 3 s after a
+// change. The defaults are this sketch's own.
+static const char *const kOnOff[] = { "off", "on" };
+static int g_set_rotation, g_set_palette, g_set_stretch, g_set_volume;
+static uint32_t g_settings_saves_shown = 0;
+
+static void print_settings(const char *what) {
+    char values[128];
+    settings_describe(values, sizeof values);
+    settings_stats_t st;
+    settings_take_stats(&st);
+    static const char *const kState[] = { "none", "UNAVAILABLE", "ready", "writing" };
+    Serial.printf("[nes-esp32] settings %s %s (%s): %s; read %lu, ignored %lu%s, saves %lu, errors %lu\n",
+                  what, st.path, kState[st.state], values, (unsigned long)st.applied,
+                  (unsigned long)st.ignored, st.truncated ? ", TRUNCATED" : "",
+                  (unsigned long)st.saves, (unsigned long)st.errors);
+}
+
+// Boot only, with the card mounted (after the cart load): read them and
+// apply them over the defaults.
+static void load_settings(void) {
+    g_set_rotation = settings_add_choice("rotation", SETTINGS_ROTATION_NAMES, 4,
+                                         g_system.rotation, nullptr);
+    g_set_palette  = settings_add_choice("palette", nes_core_palette_keys(),
+                                         (uint8_t)nes_core_palette_count(), g_system.palette, nullptr);
+    g_set_stretch  = settings_add_choice("stretch", kOnOff, 2, g_system.stretch ? 1 : 0,
+                                         "off, on (8:7 aspect)");
+    g_set_volume   = settings_add_int("volume", 0, 256, AUDIO_VOLUME, "0 (mute) to 256");
+    char path[96];
+    settings_console_path(g_system.cart_name, "feather", path, sizeof path);
+    settings_begin(path, "NES settings for this game on the Feather ESP32 V2.");
+    g_system.rotation = (uint8_t)settings_get(g_set_rotation);
+    g_system.palette  = (uint8_t)settings_get(g_set_palette);
+    g_system.stretch  = settings_get(g_set_stretch) != 0;
+    print_settings("loaded");
+}
 
 static TaskHandle_t g_emu_task = NULL;
 static TaskHandle_t g_video_task = NULL;
@@ -109,6 +153,8 @@ void setup() {
                   (unsigned)g_system.cart_size, g_system.mapper, g_system.mapper_name);
     if (!g_cart_ok)
         Serial.printf("[nes-esp32]   %s\n", nes_boot_error_text(g_system.boot_error));
+    else
+        load_settings();
 
     // Hand the SPI bus to the IDF display driver -- AFTER the cartridge is
     // read over SPIClass; the two cannot both own it (arch_spi_dma.h).
@@ -123,7 +169,7 @@ void setup() {
     // loop that hides the error screen (DEVNOTES #123).
     if (g_cart_ok) {
         console_audio_set_target(AUDIO_RING_TARGET);
-        console_audio_set_volume(AUDIO_VOLUME);
+        console_audio_set_volume((uint32_t)settings_get(g_set_volume));
         // The audio pump has been playing silence since the cartridge load
         // (through the display init), and each of those samples counted as
         // an underrun. Start the counters here, with the game.
@@ -196,6 +242,22 @@ void loop() {
         stretch_shown = g_system.stretch;
         Serial.printf("[nes-esp32] palette %s, stretch %s\n",
                       nes_core_palette_name(palette_shown), stretch_shown ? "on" : "off");
+    }
+    // Settings, also in the idle window, where core 0 isn't changing any of
+    // these: a change is saved 3 s after the last one, one storage step a
+    // paint.
+    settings_set(g_set_rotation, g_system.rotation);
+    settings_set(g_set_palette, g_system.palette);
+    settings_set(g_set_stretch, g_system.stretch ? 1 : 0);
+    settings_set(g_set_volume, (int32_t)console_audio_volume());
+    settings_frame();
+    {
+        settings_stats_t st;
+        settings_take_stats(&st);
+        if (st.saves != g_settings_saves_shown) {
+            g_settings_saves_shown = st.saves;
+            print_settings("saved");
+        }
     }
     // 3. Release core 0 for the next two frames, and paint concurrently.
     for (uint32_t f = 0; f < EMULATED_FRAMES_PER_PAINT; f++) xTaskNotifyGive(g_emu_task);

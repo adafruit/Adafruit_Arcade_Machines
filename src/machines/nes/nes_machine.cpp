@@ -101,10 +101,10 @@ bool nes_load_cart(nes_system *sys, uint16_t *out_error_color) {
     sys->mapper_name = nes_core_mapper_name();
 
     // A battery cartridge loads its .sav (after the core's reset, which
-    // clears the RAM) and keeps storage mounted for later saves
-    // (console_save.h); anything else never touches the card again.
-    if (!console_save_init(sys->cart_name, nes_core_save_ram(), nes_core_save_size()))
-        hal_storage_unmount();
+    // clears the RAM; console_save.h). Storage stays mounted either way:
+    // the sketch's settings file is read next, and rewritten when a
+    // setting changes (settings/settings.h).
+    (void)console_save_init(sys->cart_name, nes_core_save_ram(), nes_core_save_size());
 
     console_audio_init(NES_AUDIO_SAMPLE_RATE);
     hal_input_init();

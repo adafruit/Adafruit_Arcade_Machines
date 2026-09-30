@@ -29,6 +29,12 @@ is the game that boots.
   PC emulators use, so saves move between the two. There is no save button
   and there are no save states. A save takes about half a second, written
   a little each frame so the picture never stutters.
+- **Settings are remembered per game:** the rotation, palette and 3x/1x
+  you last chose are saved to `/cart/<rom name>.fruitjam.cfg`, 3 seconds
+  after your last change, and used again at the next power-up. It's a
+  short text file you can read or edit on a computer; delete it to go back
+  to the defaults. The Feather keeps its own, `.feather.cfg`, so one card
+  works in both.
 - **Game Boy Color** games are not supported yet.
 - **Tested:** Tetris, Kirby's Dream Land, and The Legend of Zelda: Link's
   Awakening (including saves). The compatibility list is in

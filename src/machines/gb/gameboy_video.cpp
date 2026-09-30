@@ -162,6 +162,10 @@ void render_scanline_2x(uint32_t canvas_y, uint16_t *buf,
 
 } // namespace
 
+const char *const GAMEBOY_SCALE_KEYS[GAMEBOY_SCALE_COUNT] = {
+    "1x", "fit-nearest", "fit-smooth", "2x-centre", "2x-top", "2x-bottom",
+};
+
 void gameboy_video_set_scale(gameboy_scale_t scale) {
     g_scale = (scale < GAMEBOY_SCALE_COUNT) ? scale : GAMEBOY_SCALE_1X;
 }

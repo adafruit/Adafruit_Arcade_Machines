@@ -43,6 +43,8 @@ extras/tools/*_host/*.dSYM/
 # macOS debug bundle. Same shape as the m6502 runner below.
 extras/tools/geom_test/geom_test
 extras/tools/geom_test/*.dSYM/
+extras/tools/settings_test/settings_test
+extras/tools/settings_test/*.dSYM/
 
 # CPU conformance runner (extras/tools/m6502_test/) -- its binary, and the
 # third-party 6502 test programs it runs, which are fetched rather than

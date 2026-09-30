@@ -26,6 +26,7 @@ nes_test/        NES core spike: nofrendo vs fixNES on blargg's tests and games,
 nes_host/        src/machines/nes     (the NES console: SD card as cartridge)
 usb_gamepad_test/ src/input/usb_gamepad_decode against reports captured from real USB controllers
 geom_test/       arcade_video_geom conformance runner -- NOT a machine harness
+settings_test/   src/settings against a RAM "card": the file format, the 3 s save, taking turns with battery saves
 ```
 
 ```sh

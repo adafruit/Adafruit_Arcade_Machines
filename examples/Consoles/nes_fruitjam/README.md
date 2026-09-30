@@ -35,6 +35,12 @@ an SD card (FAT32, **MBR** partition scheme -- not GPT/exFAT). The first
   save takes about half a second, written a little each frame so the
   picture never stutters. There is no save button, and there are no save
   states.
+- **Settings are remembered per game:** the rotation, palette and 8:7
+  stretch you last chose are saved to `/cart/<rom name>.fruitjam.cfg`, 3
+  seconds after your last change, and used again at the next power-up.
+  It's a short text file you can read or edit on a computer; delete it to
+  go back to the defaults. The Feather keeps its own, `.feather.cfg`, so
+  one card works in both.
 - **Tested on hardware:** Super Mario Bros., Super Mario Bros. 3 (MMC3,
   from PSRAM), and The Legend of Zelda (MMC1, with its save surviving a
   power cycle). Kirby's Adventure, Metroid and Final Fantasy run in the
