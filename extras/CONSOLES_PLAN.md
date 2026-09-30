@@ -743,8 +743,9 @@ Adafruit's legal review, not a legal conclusion.**
 | Peanut-GB | Game Boy | MIT (header of `peanut_gb.h`) | **OK**; the Game Boy port is MIT end to end |
 | minigb_apu | Game Boy audio | MIT (header of upstream `minigb_apu.c`: "released under the terms of the MIT license"; README says MIT) | **OK**, from upstream. The PicoPlus copy's header only points at a LICENSE file, which in their repo is GPL-3.0 |
 | SMS Plus | SMS / Game Gear | GPL (`system.c`), **but its bundled `z80.c` (Juergen Buchmueller) is "freeware for non-commercial purposes"** | **Swap the Z80** for our own MIT `src/cpu/z80/`, then OK |
-| Gwenesis | Genesis | GPL (bus, VDP, I/O, `z80inst.c`), **but its bundled Musashi 68000 (`cpus/M68K/`) says "may be freely used for non-commercial purposes"** | **Swap the 68000.** Current upstream Musashi is believed to have been relicensed MIT; verify, and replace the vendored copy with it |
-| snes9x | SNES | "freeware for PERSONAL USE only. Commercial users should seek permission" | **Out of scope** |
+| Gwenesis | Genesis | GPL (bus, VDP, I/O, `z80inst.c`), **but its bundled Musashi 68000 (`cpus/M68K/`) says "may be freely used for non-commercial purposes"**. GitHub reports the repository as **AGPL-3.0** (checked 2026-09-29); reconcile file by file before a Genesis spike | **Swap the 68000.** Current upstream Musashi is believed to have been relicensed MIT; verify, and replace the vendored copy with it |
+| snes9x | SNES | **Non-commercial**: "freeware for PERSONAL USE only. Commercial users should seek permission"; also "for non-commercial purposes… Under no circumstances will commercial rights be given" | **Usable, the maintainer's decision** (corrected 2026-09-29; this row used to say "Out of scope"). Handled like the GPL NES core: its own directory with its licence, a `REUSE.toml` entry, linked only into the SNES sketch, never into a sketch with GPL code, the README and release notes saying the SNES binary is non-commercial. Vendored from Snes9x or the lineage the Pico port came from, not from `pico-snesPlus`, which relabels it GPL-3.0 |
+| pce-go (retro-go) | PC Engine | Shipped as GPLv2 in retro-go (a fork of HuExpress, whose repo declares no SPDX licence) | **Check file by file**; if GPL, handled like the NES core |
 
 Two consequences for the plan:
 
@@ -763,6 +764,9 @@ Two consequences for the plan:
 | **Game Boy** | SM83 | 32 KB – 2 MB | Peanut-GB, via `pico-peanutGB` | RP2040-GB runs Peanut-GB on RP2040. `pico-peanutGB` runs GB/GBC on RP2350. retro-go runs GB/GBC on ESP32. | High |
 | **SMS / Game Gear** | Z80 | 32–512 KB | SMS Plus, via `pico-smsplus`, **with our `z80`** | `pico-smsplus` (RP2040/RP2350), retro-go (ESP32) | High for the core; the Z80 swap is our work |
 | **Genesis** | 68000 + Z80 | up to 4 MB | Gwenesis, via `pico-genesisPlus`, **with an MIT Musashi** | `pico-genesisPlus` holds 60 fps on the Fruit Jam with the ROM in PSRAM, **but at 378 MHz / 1.50 V with HSTX output.** Gwenesis in retro-go runs on ESP32-S3 with frame skipping. | **Medium on Fruit Jam** (clock-dependent, see below); **low on ESP32** |
+| **PC Engine / TurboGrafx-16** | HuC6280 (a 65C02 derivative) | mostly ≤ 1 MB; Street Fighter II 2.5 MB | pce-go, from retro-go | `pico-pcePlus` runs it on the RP2350, HuCards even without PSRAM; SuperGrafx needs 378 MHz, which its README says works on the Fruit Jam because it uses HSTX. retro-go runs pce-go on the classic ESP32, the Feather's family. | **High on Fruit Jam; medium-high on the Feather** (2.5 MB cards don't fit its 2 MB PSRAM). The best next candidate (2026-09-29) |
+| **SNES** | 65C816 + SPC700 | 0.5–6 MB | A Snes9x derivative (see the licence table) | `pico-snesPlus` is developed on the Fruit Jam: most games full speed with sound, **with frame skip on by default** (every other frame drawn), occasional artifacts, Super FX slower; needs the 8 MB PSRAM. retro-go marks SNES "slow" on ESP32. | **Medium on Fruit Jam; very low on the Feather** |
+| **Game Boy Advance** | ARM7TDMI, 16.8 MHz | up to 32 MB | none known | No microcontroller port known to run at full speed. The Cortex-M33 is Thumb-only, so it can't run the GBA's ARM code natively, and has no MMU. ROMs can exceed the 8 MB PSRAM. | **Not feasible** |
 
 Memory against those ROM sizes: the RP2350 has 520 KB of SRAM, so anything
 past small NES/GB carts goes to PSRAM, with hot banks and lookup tables
@@ -820,6 +824,22 @@ clock. `pico-genesisPlus`'s 60 fps is at 378 MHz with an HSTX video path,
 50% more clock. So proven feasibility on the board does not transfer to our
 video stack for free. A Genesis port may need an HSTX backend for the Fruit
 Jam first, which is a board-layer project in its own right.
+
+> **Update 2026-09-29:** the HSTX backend exists now (the default since
+> v2.14.0), so half of this is done. What's left is a 378 MHz board mode:
+> the clock, PSRAM timing and audio setup all assume 252 MHz today, and
+> 378 MHz needs 1.50 V, past the chip's normal range. SuperGrafx on the PC
+> Engine needs the same mode.
+
+**ScummVM (noted 2026-09-29): doesn't fit this library.** With a USB
+keyboard and mouse on the Fruit Jam it is plausible in principle. The
+SCUMM games are 320×200 (the canvas exactly), and ScummVM's official
+Nintendo DS port ran them on a 67 MHz ARM with 4 MB of RAM. But it is a
+large C++ codebase with its own build system, and even a SCUMM-only build
+is several MB of code, run from flash through the 16 KB cache flash and
+PSRAM share. It needs a real file system and pointer input the HAL doesn't
+have, and it is GPL-3.0. Realistically a separate firmware, not a sketch
+here. Not on the Feather (no USB host, 2 MB PSRAM).
 
 **To verify before relying on it:**
 
