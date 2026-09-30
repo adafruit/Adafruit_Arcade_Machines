@@ -33,7 +33,8 @@
 //   Rotation     ROTATE (37)          R
 //   8:7 aspect   --                   L
 //   Palette      --                   Y
-//   Volume       --                   hold X, press Up / Down (3 dB steps)
+//   Volume       --                   hold X, press Up / Down (3 dB steps,
+//                                        the lowest one mute)
 //
 // Battery saves: a battery cartridge's save RAM is kept in a standard .sav
 // next to the ROM, the same file as the Fruit Jam's and PC emulators'. A

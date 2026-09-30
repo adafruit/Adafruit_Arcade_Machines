@@ -248,7 +248,8 @@ void loop() {
     bool left   = hal_input_read(HAL_BTN_LEFT);
     bool right  = hal_input_read(HAL_BTN_RIGHT);
     bool rotate = hal_input_read(HAL_BTN_ROTATE);
-    // The controller's X + Up/Down: the master volume, in 3 dB steps.
+    // The controller's X + Up/Down: the master volume, in 3 dB steps down
+    // to mute.
     if (const int steps = feather_wii_input_take_volume_steps())
         Serial.printf("[lrescue-esp32] volume %lu\n", (unsigned long)feather_audio_volume_step(steps));
     bool mirror = hal_input_read(HAL_BTN_MIRROR);   // always false here

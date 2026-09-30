@@ -98,9 +98,12 @@ void console_audio_set_volume(uint32_t volume) {
     g_volume = volume > CONSOLE_AUDIO_VOLUME_FULL ? CONSOLE_AUDIO_VOLUME_FULL : volume;
 }
 
-// 3 dB apart (x1.41), the steps the Feather's defaults were chosen from.
+// 3 dB apart (x1.41), the steps the Feather's defaults were chosen from,
+// with 0, mute, one step below 2 (-42 dB), which is still audible close to
+// the speaker. The frames still go out, as silence, so the ring and the
+// I2S clocks keep running.
 static const uint16_t kVolumeSteps[] = {
-    2, 3, 4, 6, 8, 11, 16, 23, 32, 45, 64, 90, 128, 181, 256,
+    0, 2, 3, 4, 6, 8, 11, 16, 23, 32, 45, 64, 90, 128, 181, 256,
 };
 #define VOLUME_STEP_COUNT (sizeof kVolumeSteps / sizeof kVolumeSteps[0])
 

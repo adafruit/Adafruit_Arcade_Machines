@@ -31,7 +31,8 @@
 //   Select       COIN (26)            Select (-)
 //   Rotation     ROTATE (37)          R
 //   Palette      --                   Y   (DMG green, Greys, Pocket, GBC)
-//   Volume       --                   hold X, press Up / Down (3 dB steps)
+//   Volume       --                   hold X, press Up / Down (3 dB steps,
+//                                        the lowest one mute)
 //   Scale        --                   L   (cycles the six below)
 //   The scales, for players to choose per game (gameboy_video.h): 1x;
 //   fit, nearest and fit, smooth (the default) (the full 240-line height at 5/3, or 3/2

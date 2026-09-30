@@ -21,7 +21,8 @@ extern "C" {
 void feather_audio_set_volume(uint32_t volume);
 
 // Moves the volume `steps` steps of 3 dB up (positive) or down, from the
-// step nearest the current volume, within 2..256. Returns the new volume.
+// step nearest the current volume, within 0..256: the step below 2 (-42 dB)
+// is 0, mute. Returns the new volume.
 // For the controller's X + Up/Down (wii_input_feather_esp32.h).
 uint32_t feather_audio_volume_step(int steps);
 
