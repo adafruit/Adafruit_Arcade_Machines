@@ -349,6 +349,13 @@ volume and not to the game.
 
 **Test controllers:** first-party Wii Classic and SNES Classic now; clones
 later, which is when the knockoff format handling gets its real test.
+
+| Controller | Result |
+|---|---|
+| Nintendo Wii Classic | works on the Feather (the Fruit Jam's I2C controllers are parked: the display's EDID answers at 0x52 too) |
+| Nintendo SNES Classic | works on the Feather |
+| 8BitDo Retro Receiver (NES/SNES/SFC Classic edition) with an 8BitDo NES30 Pro, on the Feather | **works**: identity `00 00 A4 20 03 01`, clean 8-byte reads at 100 kHz, every button correct; L2/R2 arrive as L/R (it emulates a SNES Classic pad), and no Home. Played Pac-Man with no drops (DEVNOTES #163) |
+| ZJDZTK "Retro Wired Game Controller" (SNES Classic replica), on the Feather | **does not work**: start-up and identity are fine, but the ESP32's I2C hardware can't read its 8-byte report at any clock, and software I2C gets real data only when polled every ~50 ms (DEVNOTES #162). Not pursued, by the user's choice; stronger bus pull-ups are the next thing to try |
 One player only: every controller uses address 0x52, so a second needs a
 second bus or an I2C multiplexer.
 

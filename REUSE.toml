@@ -14,7 +14,7 @@ version = 1
 # This is the mechanism REUSE provides for exactly that case, and it is what
 # keeps `reuse lint` at 100% now that every ESP32 example ships one.
 [[annotations]]
-path = ["examples/Games/*_featheresp32/build_opt.h", "examples/Consoles/*_featheresp32/build_opt.h", "extras/tools/*_featheresp32/build_opt.h"]
+path = ["examples/Games/*_featheresp32/build_opt.h", "examples/Consoles/*_featheresp32/build_opt.h", "extras/tools/*_featheresp32/build_opt.h", "examples/SelfTest/*_featheresp32/build_opt.h"]
 SPDX-FileCopyrightText = "2026 John Park for Adafruit Industries"
 SPDX-License-Identifier = "MIT"
 

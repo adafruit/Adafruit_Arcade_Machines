@@ -228,6 +228,13 @@ about 10 kΩ to 3.3 V on each of those four. On the GPIO buttons, **hold
 ROTATE and press Up or Down for the volume**, as X does on the controller;
 ROTATE on its own rotates when you let go. See `extras/DEVNOTES.md` #161.
 
+**Third-party controllers vary.** The 8BitDo Retro Receiver (NES/SNES
+Classic edition) works, with an 8BitDo NES30 Pro paired to it (DEVNOTES
+#163). A cheap wired SNES Classic replica connects but can't be read
+reliably (#162). To check another,
+`examples/SelfTest/wii_classic_test_featheresp32` prints exactly what a
+controller sends.
+
 \* Lunar Rescue's is the one number here that is **not** a cabinet
 measurement. It shares Space Invaders' 8080bw board and 59.542Hz refresh, but
 its machine code carries a 60.0368 calibration and its cycle budget derives
@@ -630,9 +637,10 @@ flashing it.
 ### `arduino-lint`, and the two ways to run it wrong
 
 `arduino-lint` is what Library Manager submissions are checked against. This
-library **passes**: 0 errors, 1 warning, exit 0, with all 28 examples clean —
+library **passes**: 0 errors, 1 warning, exit 0, with all 29 examples clean —
 fourteen games (seven per board), the Game Boy and NES consoles on both
-boards, and ten SelfTest sketches (checked for v2.16.3).
+boards, and eleven SelfTest sketches (checked for v2.16.3, plus the
+Feather Wii test since).
 
 ```bash
 # lint what the registry would actually clone, NOT the working tree

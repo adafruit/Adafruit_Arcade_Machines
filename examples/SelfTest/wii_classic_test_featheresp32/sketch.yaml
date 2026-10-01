@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
+#
+# SPDX-License-Identifier: MIT
+
+# The optimisation level is set in build_opt.h beside this file, not here
+# (see examples/Games/pacman_featheresp32/sketch.yaml).
+default_fqbn: esp32:esp32:adafruit_feather_esp32_v2
