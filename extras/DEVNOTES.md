@@ -8943,3 +8943,118 @@ the controller (`rotate_combo()`).
 - **ROTATE + Up/Down:** stepped the volume 32 → 181 → 16 and back, each
   saved about 3 s after the last press, with no rotation. A tap of ROTATE
   rotated on release.
+
+### 162. A third-party SNES Classic replica on the Feather: connects, but can't be read
+
+**The controller:** ZJDZTK "Retro Wired Game Controller, compatible with
+SNES Classic Edition", Wii-Remote-style connector, on the same Adafruit
+Wii Nunchuck breakout and STEMMA QT port as the first-party pads.
+
+**The tool:** a Feather version of the Wii test sketch,
+`examples/SelfTest/wii_classic_test_featheresp32`. It uses the same driver
+at the same 100 kHz as the games, and prints:
+
+- the identity;
+- every raw report;
+- the start-up steps that fail;
+- a bus scan.
+
+It also gained a software-I2C mode (`-DWII_TEST_BITBANG`) and timing
+switches; the sketch's header lists them.
+
+**What it does through the ESP32's I2C hardware (the games' path):**
+
+- **Start-up works.** The identity is right for a SNES Classic pad in
+  high-resolution mode: `00 00 A4 20 03 01`.
+- **Every 8-byte report read fails:** `i2c_master_receive`:
+  `ESP_ERR_INVALID_STATE`, 0 bytes. The driver retries, drops it after four
+  failures, and finds it again a second later, about 40 times in 40 s.
+- **Reads of 6 or 7 bytes succeed.** But in high resolution the buttons are
+  in bytes 6 and 7, and byte 7 holds Up, Left, A, B, X and Y.
+- **No timing change helped:** clock 25, 50 or 100 kHz; request-to-read gap
+  200 us or 2 ms; poll every 16, 33 or 50 ms; a repeated start; a split 6 +
+  2 read. At 200 and 400 kHz start-up itself fails.
+- **Starting the read at register 2** returns the identity again: the clone
+  honours a pointer of 0x00 only.
+- **The bus scan sees every address answer.** Also something to check when
+  a controller misbehaves.
+
+**What it does through software I2C:** 8-byte reads succeed, with no clock
+stretching at any byte (1 us), so the hardware's failure isn't stretching.
+The data depends on the poll interval:
+
+| Poll every | Reports |
+|---|---|
+| 4 ms | half the pointer writes NACKed |
+| 16-20 ms | every other report is junk, `02 02 02 02 02 02 02 02` |
+| 25 ms | over a third of reads fail |
+| 33 ms | clean, but a held A reads as released after the first report |
+| 50 ms | clean, a held A reported every time |
+
+When a real report arrives the layout is standard: a held A gives `80 80 80
+80 00 00 FF EF`, the A bit of byte 7. Press-and-release at 50 ms wasn't
+tested.
+
+**The reading:**
+
+- **Slow, forgiving software I2C working, faster clocks failing first, and
+  the first-party pad also failing at 400 kHz (#143)** together look like a
+  marginal bus electrically: weak pull-ups or too much capacitance, which a
+  clone's weaker drivers expose sooner.
+- **The clone also needs a long interval between reads,** however it's
+  read.
+- **Even working, it would be poor:** at 50 ms its input would lag by up to
+  50 ms, against 4 ms for the first-party pads, and software I2C costs about
+  1.5 ms of a core per read.
+
+**Decision (the user's): not pursued.** The driver is unchanged; the
+experiment switches tried in it were reverted. If anyone takes this up,
+try stronger pull-ups first, 2.2-4.7 kOhm from SDA and SCL to 3.3 V at the
+breakout. If that's the cause, it's a documentation fix, not code. Then a
+logic-analyser capture of the clone on a real SNES Classic console would
+show how the console reads it.
+
+### 163. The 8BitDo Retro Receiver (NES/SNES Classic edition) on the Feather: works
+
+**The setup:** the receiver plugged into the same Adafruit Wii Nunchuck
+breakout and STEMMA QT port as #162's clone, with an 8BitDo NES30 Pro
+paired to it.
+
+**The test sketch** (`wii_classic_test_featheresp32`, hardware mode, 100
+kHz, as the games use):
+
+- **Identity:** `00 00 A4 20 03 01`, the same high-resolution
+  Classic-family identity the clone gave.
+- **The bus scan is clean:** only `0x48`, which I believe is the TFT
+  FeatherWing's touch controller, and `0x52`. That's against the clone's
+  "every address answers".
+- **Reads:** every 8-byte report read succeeds, collect 0.93 ms. Over the
+  whole session: 1 connect, 0 drops, 1 refused pointer write, as with the
+  first-party pads (#143).
+- **At rest:** `84 86 86 86 00 00 FF FF`. The analog bytes sit near 0x80,
+  as a SNES Classic pad has no sticks.
+
+**Every button decodes correctly:**
+
+| Pressed | Bytes 6-7 | Decoded |
+|---|---|---|
+| Up, Down, Left, Right | `FF FE`, `BF FF`, `FF FD`, `7F FF` | correct; diagonals combine correctly |
+| A, B, X, Y | `FF EF`, `FF BF`, `FF F7`, `FF DF` | correct |
+| L, R | `DF FF`, `FD FF` | correct |
+| L2, R2 | `DF FF`, `FD FF` | **L, R**: the receiver folds them in, being a SNES Classic pad, which has only L and R |
+| Start, Select | `FB FF`, `EF FF` | correct |
+
+No Home was reported. Nothing in the games uses it.
+
+**In a game:** Pac-Man on the Feather.
+
+- **The gate:** `[input] GPIO buttons OFF (a controller is connected)` at
+  boot, and it never flipped back during the session, so no drop lasted a
+  second.
+- **Speed:** 100% of 60.6 Hz throughout.
+- **Volume:** X + Up/Down stepped it 6 → 45, saved by the settings file.
+- **The user:** "plays great".
+
+**So the driver needs no change for this controller.** Between this and
+#162, the Classic-family identity alone says nothing about whether a
+third-party controller will work: both gave the same bytes.
