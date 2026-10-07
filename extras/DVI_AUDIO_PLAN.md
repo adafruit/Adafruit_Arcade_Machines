@@ -61,17 +61,28 @@ thin MIT wrapper around [fliperama86/pico_hdmi](https://github.com/fliperama86/p
 
 ## Building
 
-The HSTX video with DVI audio is the Fruit Jam's **default** (2026-09-29).
-The Adafruit DVI Audio library comes from Library Manager (1.0.0, listed in
-`depends=`), so a plain build needs no flag and no local clone:
+The HSTX video with DVI audio is the Fruit Jam's **default** (2026-09-29),
+through the **Adafruit DVI HSTX** library since v2.17.0 (2.0.1 or later,
+from Library Manager, listed in `depends=`). A plain build needs no flag
+and no local clone:
 
 ```bash
-arduino-cli lib install "Adafruit DVI Audio"
+arduino-cli lib install "Adafruit DVI HSTX"
 arduino-cli compile --library . examples/Games/pacman_fruitjam
 ```
 
-The PicoDVI (PIO) video is the fallback, for a display that won't sync with
-the audio packets:
+Two fallbacks, by build flag. The same HSTX video through the Adafruit DVI
+Audio library, the default from v2.14.0 to v2.16.x:
+
+```bash
+arduino-cli lib install "Adafruit DVI Audio"
+arduino-cli compile --library . \
+  --build-property "compiler.cpp.extra_flags=-DARCADE_FRUITJAM_DVI_AUDIO" \
+  examples/Games/pacman_fruitjam
+```
+
+And the PicoDVI (PIO) video, for a display that won't sync with the audio
+packets:
 
 ```bash
 arduino-cli compile --library . \
@@ -115,6 +126,16 @@ arduino-cli compile --library . \
    (DEVNOTES #152).
    Expose pico_hdmi's DVI-only mode for displays that don't sync with data
    islands.
+5. **One library: Adafruit DVI HSTX.** Mikey Sklar added DVI audio and a
+   scanline mode to Adafruit DVI HSTX (adafruit/Adafruit-DVI-HSTX#29), with
+   the same callback signature as Adafruit DVI Audio's. At this project's
+   request it also gained `DVHSTX_NO_CLOCK_SETUP`, so the sketches keep
+   their 252 MHz clock and HSTX runs from half of it; without that, the
+   library sets 240 MHz itself and every game would run 5% slower. **Done
+   2026-10-06, DEVNOTES #164:** the same backend file on DVHSTXScanline,
+   passed in all nine Fruit Jam sketches on hardware, then made the default
+   with 2.0.1 in Library Manager. Adafruit DVI Audio stays as
+   `-DARCADE_FRUITJAM_DVI_AUDIO`.
 
 ## Risks
 

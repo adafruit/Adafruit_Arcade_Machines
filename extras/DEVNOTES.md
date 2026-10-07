@@ -9058,3 +9058,85 @@ No Home was reported. Nothing in the games uses it.
 **So the driver needs no change for this controller.** Between this and
 #162, the Classic-family identity alone says nothing about whether a
 third-party controller will work: both gave the same bytes.
+
+### 164. The Fruit Jam's video moves to Adafruit DVI HSTX, and a DMA claim that panics before USB
+
+**Why move:** Mikey Sklar added DVI audio and a scanline mode,
+`DVHSTXScanline`, to Adafruit DVI HSTX (adafruit/Adafruit-DVI-HSTX#29).
+Its callback has the same signature as Adafruit DVI Audio's, so one
+Adafruit library can do what two did, with one vendored copy of pico_hdmi
+instead of two.
+
+**The blocker was the clock.** Including the library's header ran a static
+constructor that moved `clk_sys` to the USB PLL at 240 MHz and gave the
+system PLL to HSTX. Every Fruit Jam sketch calls `set_sys_clock_khz(252000)`,
+which would then reprogram the PLL feeding the video and break the picture.
+Dropping that call would have cost 5% of the CPU in every game. At this
+project's request the PR added `DVHSTX_NO_CLOCK_SETUP`: defined before the
+include, the sketch keeps `clk_sys` and HSTX runs from `clk_sys / 2`, with
+`begin()` returning false unless `clk_sys` is exactly twice the mode's
+clock (252 MHz for 640x480). That's how Adafruit DVI Audio already ran it
+(`MODE_HSTX_CLK_DIV 2`).
+
+**The backend** is the same file, `hal_video_fruitjam_hstx.cpp`, with the
+two libraries' calls side by side; the queue, the line callback and the
+audio rate matching are shared. On DVHSTX:
+
+- The packets go out through `audioWrite()`, four stereo frames at a time,
+  and `audioAvailableForWrite()` keeps the same 200-packet target.
+- `begin()` runs on core 1, in `hal_video_run()`, so the line interrupt
+  does too (it fires on the core that called it). Core 1's loop then pumps
+  the audio and sleeps on `__wfe()` between interrupts, as before (#149).
+- DVHSTX has no resync call. The watchdog only counts runaway windows,
+  and it never counted one.
+
+**The trap: a DMA claim that kills USB.** The first build showed no
+picture, and the serial port never came back, even after a power cycle;
+it took the BOOT button to reflash. The `DVHSTX` constructor claims DMA
+channels 0-2 at boot (`dma_claim_mask()`, "Always use the bottom channels"),
+and `begin()` claims channel 3 for audio. To keep the sound and USB host
+off those channels until core 1 calls `begin()`, `hal_video_init()`
+claimed 0-3 itself. Claiming a channel twice panics, and on core 0,
+before USB has enumerated, a panic leaves no port and no picture. The fix
+is to reserve channel 3 only and release it just before `begin()`; the
+constructor's claim already protects 0-2. The library's README now says
+so.
+
+**On hardware**, all nine Fruit Jam sketches, 252 MHz, 44.1 kHz audio,
+each played for a few minutes with the user confirming a steady picture,
+sound from the TV and the speaker, and normal speed:
+
+| Sketch | Frames logged | Lowest queue | Worst work | DVI underruns |
+|---|---|---|---|---|
+| NES (Zelda) | 13,739 | 13/32 | 10.6 ms | 0 |
+| Game Boy (Link's Awakening, 3x) | 10,139 | 6/32, on a rotation | 12.8 ms | 0 |
+| Galaga | 10,499 | 10/32 | 12.4 ms | 88, start-up only |
+| Burger Time | 9,496 | 17/32 | 15.8 ms | 0 |
+| Pac-Man | 10,019 | 17/32 | 10.2 ms | 54, start-up only |
+| Ms. Pac-Man | 14,519 | 17/32 | 11.4 ms | 88, start-up only |
+| Donkey Kong | 9,419 | 15/32 | 15.0 ms | 88, start-up only |
+| Space Invaders | 14,519 | 19/32 | 7.8 ms | 0 |
+| Lunar Rescue | 36,479 | 5/32 | 8.4 ms | 0 |
+
+No starved lines and no runaway windows in any of them, and the work
+times match Adafruit DVI Audio's. The start-up underruns are the queue
+sending silence before a game's first sound reaches it; they never grew
+during play. These runs used the PR branch at `9db1db1`; 2.0.1 adds only
+null initial frame-buffer pointers and the README note. A second, shorter
+round on the released 2.0.1 from Library Manager, with no flags (the
+default build), matched in all nine: no starved lines, no resyncs, the
+same start-up underruns, the same work times, and the user confirming the
+picture and sound on each.
+
+**Two things seen along the way, neither from the library:**
+
+- Lunar Rescue runs at about 58 fps (17.3 ms frames) on both libraries,
+  with the same settings (rotation 90, stretch on), though it needs only
+  ~6 ms of work. Not investigated.
+- Once, the NES build ignored arduino-cli's 1200-baud reset while
+  running fine. Another USB device was plugged in at the time; with it
+  unplugged, every later reset worked, including from the Game Boy build.
+
+**Now the default** (Adafruit DVI HSTX 2.0.1 in Library Manager, added to
+`depends=`). Adafruit DVI Audio stays as `-DARCADE_FRUITJAM_DVI_AUDIO` and
+PicoDVI as `-DARCADE_FRUITJAM_PICODVI`.

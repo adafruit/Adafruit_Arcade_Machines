@@ -2,19 +2,23 @@
 //
 // SPDX-License-Identifier: MIT
 
-// hal_video.h for the Adafruit Fruit Jam on the RP2350's HSTX, through
-// pico_hdmi (via the Adafruit DVI Audio library). THE FRUIT JAM'S DEFAULT
-// VIDEO since v2.14.0; hal_video_fruitjam.cpp's PicoDVI (PIO) backend is the
-// fallback, built instead with -DARCADE_FRUITJAM_PICODVI. See
-// extras/DVI_AUDIO_PLAN.md. It carries the sound over the display cable
-// too, and it frees PIO 0 and most of core 1, since HSTX encodes TMDS in
-// hardware.
+// hal_video.h for the Adafruit Fruit Jam on the RP2350's HSTX. THE FRUIT
+// JAM'S DEFAULT VIDEO since v2.14.0, through the Adafruit DVI HSTX library
+// (its DVHSTXScanline and audio, 2.0.1+) since v2.17.0. Two fallbacks, by
+// build flag:
+//   -DARCADE_FRUITJAM_DVI_AUDIO  this file on pico_hdmi through the Adafruit
+//                                DVI Audio library, the default v2.14-v2.16
+//   -DARCADE_FRUITJAM_PICODVI    hal_video_fruitjam.cpp's PicoDVI (PIO)
+// See extras/DVI_AUDIO_PLAN.md and DEVNOTES #164. It carries the sound over
+// the display cable too, and it frees PIO 0 and most of core 1, since HSTX
+// encodes TMDS in hardware. The two HSTX libraries share the queue, the
+// callback and the audio pump below; what differs is marked DVHSTX.
 //
 // SAME CONTRACT, SAME QUEUE. The machines render 320-pixel lines through
 // acquire/submit into 32 buffers cycled through a free and a valid queue,
 // exactly as with PicoDVI, so frame pacing, the statistics and the USB idle
-// hook behave the same. What differs is the consumer: pico_hdmi's per-line
-// interrupt on core 1 PULLS, calling scanline_cb() once per 640x480 output
+// hook behave the same. What differs is the consumer: the HSTX library's
+// per-line interrupt on core 1 PULLS, calling scanline_cb() once per 640x480 output
 // line. It takes a buffer from the valid queue for every second output line,
 // doubles each pixel into the 640-pixel line, and after the second use puts
 // the buffer back on the free queue.
@@ -36,7 +40,30 @@
 // rest of the picture. Measured in the spike first (DEVNOTES #147).
 #if defined(ARDUINO_ADAFRUIT_FRUITJAM_RP2350) && !defined(ARCADE_FRUITJAM_PICODVI)
 
+#ifndef ARCADE_FRUITJAM_DVI_AUDIO
+#define FRUITJAM_DVHSTX 1
+#endif
+
+#ifdef FRUITJAM_DVHSTX
+// The sketch owns clk_sys (252 MHz); HSTX runs from clk_sys / 2.
+#define DVHSTX_NO_CLOCK_SETUP
+#include <Adafruit_dvhstx.h>
+#include "hardware/dma.h"
+#define OUT_LINES 480u        // 640x480 output for the 320x240 mode
+// dvhstx uses DMA channels 0-3: 0-2 for video, claimed by its constructor
+// at boot, and 3 for audio, claimed by begin() (which fails if it's taken).
+// The sound and USB host claim the first free channels after
+// hal_video_init(), and begin() has to run on core 1 (the line interrupt
+// fires on the core that called it), so channel 3 is reserved here and
+// handed over just before begin(). Claiming 0-2 again panics (the first
+// trial did, before USB came up: no port, no picture; DEVNOTES #164).
+#define DVHSTX_DMA_MASK (1u << 3)
+static DVHSTXScanline s_display(ADAFRUIT_FRUIT_JAM_CFG, DVHSTX_RESOLUTION_320x240);
+static volatile int s_begin_result = -1;   // -1 not yet, 0 failed, 1 running
+#else
 #include <Adafruit_DVI_Audio.h>   // pico_hdmi: video_output.h, the audio queue
+#define OUT_LINES MODE_V_ACTIVE_LINES
+#endif
 #include "pico/platform.h"
 #include "pico/time.h"
 #include "hardware/vreg.h"
@@ -151,7 +178,7 @@ static void __not_in_flash_func(scanline_cb)(uint32_t v_scanline, uint32_t activ
     } else {
         for (int i = 0; i < 320; i++) dst[i] = 0xF800F800u;   // red: starved
     }
-    if (active_line == MODE_V_ACTIVE_LINES - 1u) release_cur();
+    if (active_line == OUT_LINES - 1u) release_cur();
 }
 
 // --- DVI audio: the DAC's samples, sent over DVI too ----------------------
@@ -179,7 +206,9 @@ static volatile uint32_t s_ring_head = 0;   // I2S interrupt (core 0)
 static volatile uint32_t s_ring_tail = 0;   // pump (core 1)
 static volatile uint32_t s_dvi_packets = 0, s_dvi_drops = 0, s_dvi_repeats = 0,
                          s_dvi_overflow = 0, s_dvi_jumps = 0, s_dvi_ring_min = 0xFFFFFFFFu;
+#ifndef FRUITJAM_DVHSTX
 static int s_channel_frame = 0;
+#endif
 
 static void __not_in_flash_func(dvi_audio_tap)(const int32_t *block, int count) {
     uint32_t head = s_ring_head;
@@ -196,7 +225,12 @@ static void __not_in_flash_func(dvi_audio_pump)(void) {
     uint32_t level = s_ring_head - s_ring_tail;
     if (level < s_dvi_ring_min) s_dvi_ring_min = level;
     uint32_t budget = 32;   // packets per call: ~11 are due each millisecond
+#ifdef FRUITJAM_DVHSTX
+    // DVHSTX: audioAvailableForWrite() keeps the same 200-packet target.
+    while (budget-- && s_display.audioAvailableForWrite() >= 4u) {
+#else
     while (budget-- && hstx_di_queue_get_level() < DVI_DI_TARGET) {
+#endif
         level = s_ring_head - s_ring_tail;
         if (level < 2) break;
         __dmb();
@@ -214,6 +248,10 @@ static void __not_in_flash_func(dvi_audio_pump)(void) {
         if (level > DVI_RING_HIGH)     { tail += 3; s_dvi_drops = s_dvi_drops + 1; }
         else if (level < DVI_RING_LOW) { tail += 1; s_dvi_repeats = s_dvi_repeats + 1; }
         else                            { tail += 2; }
+#ifdef FRUITJAM_DVHSTX
+        const int16_t lr[8] = { a, a, a, a, b, b, b, b };
+        if (s_display.audioWrite(lr, 4) != 4u) break;
+#else
         audio_sample_t f[4];
         f[0].left = f[0].right = a; f[1].left = f[1].right = a;
         f[2].left = f[2].right = b; f[3].left = f[3].right = b;
@@ -224,6 +262,7 @@ static void __not_in_flash_func(dvi_audio_pump)(void) {
         hstx_encode_data_island(&island, &packet, false, DI_HSYNC_ACTIVE);
         if (!hstx_di_queue_push(&island)) break;
         s_channel_frame = next;
+#endif
         s_ring_tail = tail;
         s_dvi_packets = s_dvi_packets + 1;
     }
@@ -238,7 +277,15 @@ static void __not_in_flash_func(dvi_audio_pump)(void) {
 // Core 1 thread context". So: every 250 ms, more than 20 frames (15
 // expected) means a runaway stream, and it is restarted and counted.
 
+// DVHSTX has no resync call, and in all nine sketches its stream never
+// ran away (DEVNOTES #164); the same test only counts runaway windows
+// there, so the serial line would show it if it ever did.
+#ifdef FRUITJAM_DVHSTX
+#define FRAME_COUNT() s_display.getFrameCount()
+#else
 extern "C" void video_output_force_resync(void);
+#define FRAME_COUNT() video_frame_count
+#endif
 
 static volatile uint32_t s_resyncs = 0;
 
@@ -255,13 +302,15 @@ static void __not_in_flash_func(background_task)(void) {
     }
     static uint32_t t0 = 0, f0 = 0;
     if (now - t0 < 250000u) return;
-    const uint32_t frames = video_frame_count - f0;
+    const uint32_t frames = FRAME_COUNT() - f0;
     if (t0 != 0 && frames > 20u) {
+#ifndef FRUITJAM_DVHSTX
         video_output_force_resync();
+#endif
         s_resyncs = s_resyncs + 1;
     }
     t0 = now;
-    f0 = video_frame_count;
+    f0 = FRAME_COUNT();
 }
 
 // pico_hdmi calls this in a tight loop. Sleeping until the next interrupt
@@ -285,6 +334,12 @@ bool hal_video_init(void) {
     // a bare set_sys_clock_khz() (galaga_fruitjam does).
     vreg_set_voltage(VREG_VOLTAGE_1_15);
     sleep_ms(10);
+#ifdef FRUITJAM_DVHSTX
+    // DVHSTX: reserve its audio DMA channel; begin() is in hal_video_run().
+    dma_claim_mask(DVHSTX_DMA_MASK);
+    s_display.enableAudio(DVI_AUDIO_RATE);
+    arch_i2s_set_tap(dvi_audio_tap);
+#else
     // Configure only: the signal starts in hal_video_run(), as the HAL
     // requires (video_output_core1_run() enables HSTX and the DMA).
     hstx_di_queue_init();
@@ -293,6 +348,7 @@ bool hal_video_init(void) {
     video_output_set_scanline_callback(scanline_cb);
     video_output_set_background_task(background_task_sleepy);
     arch_i2s_set_tap(dvi_audio_tap);   // DVI audio: a copy of the DAC's samples
+#endif
     return true;
 }
 
@@ -351,6 +407,14 @@ uint32_t hal_video_take_starve_count(void) {
                       (unsigned long)s_dvi_jumps,
                       (unsigned long)s_dvi_drops, (unsigned long)s_dvi_repeats,
                       (unsigned long)s_dvi_overflow, (unsigned long)s_dvi_ring_min);
+#ifdef FRUITJAM_DVHSTX
+        Serial.printf("[dvhstx] begin %s, %dx%d, clk_sys %lu, clk_hstx %lu, frames %lu, underruns %lu\n",
+                      s_begin_result == 1 ? "ok" : s_begin_result == 0 ? "FAILED" : "not yet",
+                      (int)s_display.width(), (int)s_display.height(),
+                      (unsigned long)clock_get_hz(clk_sys), (unsigned long)clock_get_hz(clk_hstx),
+                      (unsigned long)s_display.getFrameCount(),
+                      (unsigned long)s_display.audioUnderruns());
+#endif
         t_last = t_now;
         pk0 = pk;
         s_dvi_ring_min = 0xFFFFFFFFu;
@@ -363,7 +427,18 @@ uint32_t hal_video_take_starve_count(void) {
 void hal_video_probe_readback(void) {}
 
 void hal_video_run(void) {
+#ifdef FRUITJAM_DVHSTX
+    // DVHSTX: on core 1, so its line interrupt is too. Core 0 is past its
+    // setup by now and claims no more channels.
+    dma_unclaim_mask(DVHSTX_DMA_MASK);
+    s_begin_result = s_display.begin(scanline_cb) ? 1 : 0;
+    for (;;) {
+        if (s_begin_result == 1) background_task();
+        __wfe();
+    }
+#else
     video_output_core1_run();   // never returns
+#endif
     __builtin_unreachable();
 }
 
