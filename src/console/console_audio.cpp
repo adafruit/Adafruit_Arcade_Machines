@@ -125,6 +125,8 @@ uint32_t console_audio_volume_step(int steps) {
 
 uint32_t console_audio_volume(void) { return g_volume; }
 
+uint32_t console_audio_depth(void) { return g_head - g_tail; }
+
 void console_audio_push(const int16_t *samples, uint32_t n) {
     static int16_t frame[CONSOLE_AUDIO_MAX_FRAME + MAX_CORRECTION];
     if (n > CONSOLE_AUDIO_MAX_FRAME) n = CONSOLE_AUDIO_MAX_FRAME;
