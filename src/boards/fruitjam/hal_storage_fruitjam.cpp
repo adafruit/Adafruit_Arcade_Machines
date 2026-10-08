@@ -51,6 +51,32 @@
 static SdFat s_sd;
 static bool  s_mounted = false;
 
+// A CARD LEFT MID-READ BY A RESET. With DEDICATED_SPI, SdFat keeps the card
+// in a multi-block read between calls; a reset that isn't a power-off
+// (a crash reboot, the watchdog, a BOOT-button replug while the board is
+// powered from elsewhere) leaves it still in that read, and it ignores
+// sd.begin()'s CMD0 -- RED, until the card loses power. So before
+// mounting: clock out the rest of any block it is sending, then CMD12
+// (STOP_TRANSMISSION) and wait for it to finish. A card at rest answers
+// CMD12 with "illegal command", which is harmless.
+static void sd_unstick(void) {
+    pinMode(PIN_SD_DAT3_CS, OUTPUT);
+    digitalWrite(PIN_SD_DAT3_CS, HIGH);
+    SPI.begin();
+    SPI.beginTransaction(SPISettings(400000, MSBFIRST, SPI_MODE0));
+    digitalWrite(PIN_SD_DAT3_CS, LOW);
+    for (int i = 0; i < 1100; i++) SPI.transfer(0xFF);    // a block + CRC + gap
+    static const uint8_t kCmd12[6] = { 0x4C, 0, 0, 0, 0, 0x61 };
+    for (uint8_t b : kCmd12) SPI.transfer(b);
+    SPI.transfer(0xFF);                                    // the stuff byte
+    for (int i = 0; i < 16 && (SPI.transfer(0xFF) & 0x80); i++) {}  // R1
+    for (int i = 0; i < 20000 && SPI.transfer(0xFF) != 0xFF; i++) {} // busy
+    digitalWrite(PIN_SD_DAT3_CS, HIGH);
+    for (int i = 0; i < 16; i++) SPI.transfer(0xFF);
+    SPI.endTransaction();
+    SPI.end();
+}
+
 bool hal_storage_mount(void) {
     if (s_mounted) return true;
 
@@ -61,6 +87,7 @@ bool hal_storage_mount(void) {
     SPI.setTX(PIN_SD_CMD_MOSI);
     SPI.setRX(PIN_SD_DAT0_MISO);
     SPI.setCS(PIN_SD_DAT3_CS);
+    sd_unstick();
 
     // DEDICATED_SPI: nothing else lives on SPI0 on this board (the variant
     // puts SPIWIFI on SPI1), so SdFat may keep the bus configured.
@@ -104,7 +131,9 @@ struct hal_file {
     bool   in_use;
 };
 
-#define MAX_OPEN_FILES 2
+// 4: the SCUMM engine keeps a room file open, and opens sound and save
+// files beside it. Each File32 is a few dozen bytes; the cache is shared.
+#define MAX_OPEN_FILES 4
 static hal_file_t file_pool[MAX_OPEN_FILES];
 
 hal_file_t *hal_storage_open(const char *path) {
@@ -125,6 +154,14 @@ uint32_t hal_storage_read(hal_file_t *f, void *buf, uint32_t len) {
     if (!f) return 0;
     int br = f->fil.read(buf, (size_t)len);
     return (br > 0) ? (uint32_t)br : 0u;
+}
+
+bool hal_storage_seek(hal_file_t *f, uint32_t pos) {
+    return f && f->fil.seekSet(pos);
+}
+
+uint32_t hal_storage_size(hal_file_t *f) {
+    return f ? (uint32_t)f->fil.fileSize() : 0u;
 }
 
 void hal_storage_close(hal_file_t *f) {

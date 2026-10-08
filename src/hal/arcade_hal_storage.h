@@ -45,6 +45,14 @@ hal_file_t *hal_storage_open(const char *path);
 // read (0 at EOF or on error).
 uint32_t hal_storage_read(hal_file_t *f, void *buf, uint32_t len);
 
+// Moves the read position to `pos` bytes from the start. Returns false if
+// it can't (past the end, or an error). Added for the SCUMM engine, which
+// reads its resource files at random offsets; nothing else seeks.
+bool hal_storage_seek(hal_file_t *f, uint32_t pos);
+
+// The file's size in bytes (0 for a null file).
+uint32_t hal_storage_size(hal_file_t *f);
+
 // Closes a file opened by hal_storage_open() or hal_storage_create(). For a
 // file being written, this is also when its data and size are committed to
 // the card.
