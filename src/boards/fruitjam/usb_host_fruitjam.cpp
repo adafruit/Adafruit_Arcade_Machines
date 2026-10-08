@@ -12,6 +12,8 @@
 #include <pio_usb.h>
 #include <hardware/clocks.h>
 #include <hardware/dma.h>
+#include <hardware/irq.h>
+#include <hardware/timer.h>
 
 namespace {
 
@@ -42,6 +44,15 @@ bool fruitjam_usb_host_begin(void) {
     cfg.tx_ch = (uint8_t)g_dma;
     g_host.configure_pio_usb(1, &cfg);
     g_host.begin(1);
+    // NOTHING MAY INTERRUPT A PIO USB TRANSFER. Pico PIO USB sends each
+    // packet from its 1 ms frame timer (alarm_pool_create(2, 1): TIMER0
+    // alarm 2) by starting the DMA and then clearing the "done" flags; an
+    // interrupt between the two that outlasts the packet wipes its flag,
+    // and pio_usb_bus_usb_transfer() then waits for it forever, inside the
+    // timer interrupt -- core 0 stalled, USB dead. A 5 kHz profiler at
+    // the highest priority reproduced it within a second of every boot
+    // (DEVNOTES). So the frame timer gets the highest priority on core 0.
+    irq_set_priority(timer_hardware_alarm_get_irq_num(timer0_hw, 2), PICO_HIGHEST_IRQ_PRIORITY);
     g_started = true;
     return true;
 }
