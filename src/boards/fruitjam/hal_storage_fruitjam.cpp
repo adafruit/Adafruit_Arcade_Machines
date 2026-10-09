@@ -58,7 +58,7 @@ static bool  s_mounted = false;
 // sd.begin()'s CMD0 -- RED, until the card loses power. So before
 // mounting: clock out the rest of any block it is sending, then CMD12
 // (STOP_TRANSMISSION) and wait for it to finish. A card at rest answers
-// CMD12 with "illegal command", which is harmless.
+// CMD12 with "illegal command", which is harmless. DEVNOTES #167.
 static void sd_unstick(void) {
     pinMode(PIN_SD_DAT3_CS, OUTPUT);
     digitalWrite(PIN_SD_DAT3_CS, HIGH);

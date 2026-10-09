@@ -12,7 +12,8 @@ the free demos) with a small C interface, `backend/fj_core.h`. It comes from
 [mikeysklar/fruitjam-arcade](https://github.com/mikeysklar/fruitjam-arcade)
 (`ports/scumm/src`), copied at commit
 `b7cb16491ede66e5dde6e56471fea80647221ec9` (2026-10-05). Upstream's own
-`NOTES.md` and `STATUS.md` explain how it works and what it runs.
+`NOTES.md` and `STATUS.md` explain how it works and what it runs; this
+project's bring-up is `extras/DEVNOTES.md` #165-#168.
 
 ## Licence
 

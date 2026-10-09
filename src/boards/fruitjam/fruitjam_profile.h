@@ -2,7 +2,8 @@
 //
 // SPDX-License-Identifier: MIT
 
-// A sampling profiler for core 0 on the Fruit Jam (RP2350), for bring-up:
+// A sampling profiler for core 0 on the Fruit Jam (RP2350), for bring-up
+// (DEVNOTES #168):
 // a timer interrupt at FRUITJAM_PROFILE_HZ, at a high priority (above all
 // but the USB host's frame timer), records the PC it interrupted into a
 // histogram of 64-byte buckets. The

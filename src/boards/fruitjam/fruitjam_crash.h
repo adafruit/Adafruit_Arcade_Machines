@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: MIT
 
-// Crash reports for the Fruit Jam (RP2350), for bring-up. Without this a
+// Crash reports for the Fruit Jam (RP2350), for bring-up (DEVNOTES #168). Without this a
 // fault parks the core in the SDK's default handler: the picture freezes
 // (core 1 keeps scanning out), the sound stops, USB stops answering, and
 // nothing says where.

@@ -245,7 +245,7 @@ static fj_io g_io = { io_open, io_read, io_write, io_seek, io_size, io_close, io
 // long the frame took, so a slow one (a 30-100 ms redraw, a 270 ms room
 // load) drains the console ring and it never refills: the ring's own
 // correction adds 3 samples a frame, ~12 s to recover 100 ms, and every
-// hiccup in between underruns (the stutter on pans; DEVNOTES). So after
+// hiccup in between underruns (the stutter on pans; DEVNOTES #165). So after
 // each frame the ring is topped back up to its target with extra samples
 // from the engine's mixer (fj_core_mix_extra(), core/scumm-mix-extra.patch),
 // at most a frame's worth at a time so the top-up never makes a slow frame

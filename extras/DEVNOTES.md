@@ -9140,3 +9140,167 @@ picture and sound on each.
 **Now the default** (Adafruit DVI HSTX 2.0.1 in Library Manager, added to
 `depends=`). Adafruit DVI Audio stays as `-DARCADE_FRUITJAM_DVI_AUDIO` and
 PicoDVI as `-DARCADE_FRUITJAM_PICODVI`.
+
+### 165. SCUMM on the Fruit Jam: Loom, vendored from fruitjam-scumm, and why the music stuttered
+
+**What:** LucasArts' SCUMM v3/v4 adventures through Mikey Sklar's
+fruitjam-scumm, a cut-down ScummVM 2.2.0 SCUMM engine with a small C
+interface (`fj_core.h`: one call per 1/60 s frame, file I/O through
+callbacks, a framebuffer and an audio ring handed in). Vendored, not a
+dependency (the user's choice): `src/machines/scumm/core/`, rebuilt from
+upstream by `extras/tools/scumm_vendor/revendor.py`, with
+`VENDORED.md` listing every difference. GPL-3.0-or-later, as upstream
+ships the folder; it links only into `scumm_fruitjam`.
+
+**Two library rules shaped the vendoring.**
+
+- **Upstream's board build defines `malloc`, `free`, `setjmp` and
+  `printf` itself** (a CircuitPython native module has no C library).
+  Linked into an archived library, those would replace the C library's in
+  every sketch. Its desktop build (`FJ_HOST`) keeps the C library and
+  renames the engine's allocator calls to `fj_host_malloc()` and friends,
+  so that's the mode used, set by `backend/fj_arduino.h` (no compiler
+  flags in an Arduino library).
+- **C++ `new` must reach the arena too**, as the engine allocates nearly
+  everything with it, but a global `operator new` in the library would be
+  pulled into every sketch by `dot_a_linkage`. So it lives in
+  `machines/scumm/scumm_new.h`, which the SCUMM sketch alone includes.
+
+**Display:** the engine's 320x200 picture goes into a 320x240 RGB565
+framebuffer that core 1 scans out at 2x (the Game Boy's 3x path,
+`fruitjam_video_set_line_source()`), because a room load holds the engine
+for up to ~270 ms; the canvas queue would show red. The 240 lines a frame
+still go through the queue, only to pace it.
+
+**First run (Loom EGA with AdLib):** right picture, pointer, clicks and
+sound, but two problems: the board froze after a few minutes (#166), and
+the music stuttered on pans and redraws.
+
+**The stutter, profiled** (#168's sampler, engine frame only):
+
+| Steady play, everything in PSRAM | Share |
+|---|---|
+| AdLib (MAME OPL2: `OPL_CALC_SLOT`, `YM3812UpdateOne`, `OPL_CALC_CH`) | ~40% |
+| `render()`: the 8-bit screen to RGB565, every dirty row | ~32% |
+| the rate converter (11,025 to 22,050 Hz) | 9% |
+| `memset` | 9% |
+| the SCUMM engine itself | ~5% |
+
+- **The engine's stack and screen were in PSRAM**, in upstream's 2 MB
+  arena, which on the RP2350 shares the flash's 16 KB XIP cache: every
+  interrupt taken during the engine worked on that stack, and a pan
+  converted the whole 64 KB screen through the cache, evicting the code
+  that ran next. `scumm-fast-ram.patch` adds hooks so both come from
+  on-chip RAM (112 KB of it). The engine's mean frame went from ~3.0 to
+  ~2.1 ms with AdLib, and `render()` fell to ~12%. The stutter stayed.
+- **The real cause: the engine mixes exactly 1/60 s of audio per frame,
+  however long the frame took.** A 30-100 ms redraw drained the console
+  ring and nothing refilled it: the ring's own drift correction adds 3
+  samples a frame, ~12 s to recover 100 ms, and every hiccup meanwhile
+  underran. Underruns were in 35 of 72 one-second windows.
+  `scumm-mix-extra.patch` adds `fj_core_mix_extra(n)`, more audio without
+  advancing the game (the music players are driven by the samples they
+  make, so the tempo holds). After each frame the glue tops the ring back
+  up to its target, at most a frame's worth (368 samples) at a time so
+  the top-up never makes a slow frame itself, and SCUMM's target is the
+  ring's maximum, 2048 samples (~93 ms) against the consoles' 768.
+  Afterwards: underruns in 8 of 3,468 windows (the longest room loads),
+  and "no audio stutter at all" by ear, over 58 minutes.
+
+**Still open:** AdLib is now ~65% of the engine's time (the OPL code in
+flash, its tables in PSRAM); moving it into RAM is the next lever. USB
+mouse and keyboard. And the upload's 1200-baud reset: the SCUMM sketch
+ignores it (the port never even drops), so it needs the BOOT button. It
+isn't the watchdog (the red-screen path, which never starts it, ignores
+it too), nor the watchdog scratch registers (nothing else uses 0-3); the
+NES DVHSTX build showed it once as well. Every other sketch takes the
+reset normally.
+
+### 166. A Pico PIO USB transfer that waits forever if it is interrupted
+
+**Symptom (SCUMM, Mantapad plugged in):** the picture froze, the sound
+stopped and USB stopped answering, after 33 s once and 7 minutes another
+time. #168's stall check caught it in Pico PIO USB 0.7.2,
+`pio_usb_bus_usb_transfer()`, inside its 1 ms frame-timer interrupt:
+
+```c
+pio_sm_exec(pp->pio_usb_tx, pp->sm_tx, pp->tx_start_instr);
+dma_channel_transfer_from_buffer_now(pp->tx_ch, data, len);
+pp->pio_usb_tx->irq = IRQ_TX_ALL_MASK; // clear complete flag
+while ((pp->pio_usb_tx->irq & IRQ_TX_ALL_MASK) == 0) { continue; }
+```
+
+The DMA starts the packet, and only then are the "done" flags cleared. An
+interrupt landing between the two that outlasts the packet lets the
+packet finish and raise its flag, which the clear then wipes: the wait
+never ends. (`addr2line` put the PC on the later wait at line 109; the
+compiler had merged the loops.)
+
+**Wrong turns first:** a DMA channel clash (no: PIO USB claims its own
+channel, and no driver claims channels at runtime); SPI DMA (no: SdFat
+uses the core's blocking SPI); memory corruption next to the packet pool
+(nothing suspicious there); the engine's stack in PSRAM slowing the
+interrupt handlers (moving it to SRAM, #165, helped speed but the stall
+came back at frame 11).
+
+**Proof:** #168's 5 kHz profiler, at the highest priority, stalled it
+within 9-17 frames of every boot. With PIO USB's frame timer (TIMER0
+alarm 2, from its `alarm_pool_create(2, 1)`) raised to the highest
+priority on core 0 and the profiler just below it, never: the profiler
+build ran clean, and so did 58 minutes of Loom. What interrupted it in
+the normal build, where nothing else outranks the default priority, isn't
+known. The fix is in `usb_host_fruitjam.cpp`, so it covers every Fruit
+Jam sketch with a USB pad; all nine were played with a Mantapad
+afterwards, unchanged. Upstream has the same code (0.7.2 is current).
+
+### 167. An SD card left mid-read by a reset, and a "power cycle" that wasn't one
+
+**Symptom:** after any reset that didn't remove power (a crash reboot, the
+watchdog, a BOOT-button replug), RED: 20 failed mounts. It looked like a
+dead card until a full power-off.
+
+**Two causes.** SdFat with `DEDICATED_SPI` keeps the card in a
+multi-block read between calls; a reset mid-session leaves it streaming,
+and it ignores `sd.begin()`'s CMD0. And "unplug it and plug it back in"
+often didn't power the board down: the watchdog scratch registers, which
+only a real power-on clears, still held the last crash report. Something
+else on the bench was powering it.
+
+**Fix:** `sd_unstick()` before every mount (`hal_storage_fruitjam.cpp`):
+at 400 kHz, clock out the rest of any block, send CMD12
+(STOP_TRANSMISSION), wait out the busy, then CS high and 16 clocks. A
+card at rest answers CMD12 "illegal command", harmlessly. Tested on a
+stuck card: it mounted without a power-off, and kept mounting through a
+run of crash reboots.
+
+### 168. Crash reports, a stall detector and a sampling profiler for the Fruit Jam
+
+Without them, a fault parks core 0 in the SDK's default handler: frozen
+picture (core 1 keeps scanning out), no sound, no USB, nothing said.
+`src/boards/fruitjam/fruitjam_crash.*`:
+
+- **Faults:** `isr_hardfault` saves PC, LR and the fault status, then
+  reboots. **Where it's kept matters:** the first version kept the record
+  in `.uninitialized_data` RAM, and it came back zeroed after the reboot
+  (the boot path uses that SRAM). The four free watchdog scratch
+  registers (0-3) survive, so the essentials are packed into those: PC,
+  LR, the core and CFSR's bits, and the frame number with the phase.
+- **Stalls:** core 1 checks, once a video frame, that core 0 is still
+  feeding. After 2 s it raises a non-maskable interrupt on core 0: TIMER1's
+  IRQ 0 is put in core 0's NMI mask (`eppb_hw->nmi_mask`) and forced
+  pending through `intf`. The NMI handler records the PC it interrupted,
+  even with interrupts off, plus a probe word the sketch supplies (SCUMM's
+  is the USB host's DMA and PIO state), then reboots.
+- **Hangs:** the hardware watchdog (5 s) catches a core in lockup, where
+  even an NMI can't run; that report has the phase but no PC.
+- **Phases:** the sketch notes what core 0 is doing (engine frame, file
+  read, audio...) in a scratch register as it goes.
+
+Tested on purpose: a write to `0xF0000000` was reported at its exact line
+(a precise bus fault), and a spin with interrupts off was caught by the
+NMI at its exact line.
+
+`fruitjam_profile.*`: a timer interrupt at 5 kHz that histograms the PC
+it interrupted, in 64-byte buckets, read out with `addr2line`. It runs
+just below PIO USB's frame timer (#166). Keep the ELF of the build that
+ran: a rebuild into the same folder moves the addresses.

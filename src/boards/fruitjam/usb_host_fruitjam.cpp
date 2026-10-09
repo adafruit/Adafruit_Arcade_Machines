@@ -51,7 +51,7 @@ bool fruitjam_usb_host_begin(void) {
     // and pio_usb_bus_usb_transfer() then waits for it forever, inside the
     // timer interrupt -- core 0 stalled, USB dead. A 5 kHz profiler at
     // the highest priority reproduced it within a second of every boot
-    // (DEVNOTES). So the frame timer gets the highest priority on core 0.
+    // (DEVNOTES #166). So the frame timer gets the highest priority on core 0.
     irq_set_priority(timer_hardware_alarm_get_irq_num(timer0_hw, 2), PICO_HIGHEST_IRQ_PRIORITY);
     g_started = true;
     return true;

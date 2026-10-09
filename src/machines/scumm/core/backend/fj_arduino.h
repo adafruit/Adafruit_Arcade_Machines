@@ -50,7 +50,7 @@
 //   - The screen: render() converts every dirty row of it to RGB565 each
 //     frame, a whole 64 KB pass on a pan, which in PSRAM also evicted the
 //     code that ran next. A profile of steady play put render() at ~32% of
-//     the engine's frame (DEVNOTES).
+//     the engine's frame (DEVNOTES #165).
 // ../scumm-fast-ram.patch adds the hooks to fj_core.cpp and osystem.cpp;
 // machines/scumm/scumm_machine.cpp provides them. The 16-bit screen of
 // Loom PC Engine (128 KB) doesn't fit and stays in the arena.
