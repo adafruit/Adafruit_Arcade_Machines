@@ -261,7 +261,11 @@ void ScummEngine_v3::processKeyboard(Common::KeyState lastKeyHit) {
 	ScummEngine::processKeyboard(lastKeyHit);
 
 	// On Alt-F5 prepare savegame for the original save/load dialog.
-	if (lastKeyHit.keycode == Common::KEYCODE_F5 && lastKeyHit.hasFlags(Common::KBD_ALT)) {
+	// Adafruit Arcade Machines: on plain F5 too. Desktop ScummVM keeps F5
+	// for its own menu, so the game's dialog is Alt-F5 there; this port has
+	// no such menu, F5 opens the game's dialog, and without the snapshot
+	// its save failed ("The game was NOT saved").
+	if (lastKeyHit.keycode == Common::KEYCODE_F5) {
 		prepareSavegame();
 	}
 }

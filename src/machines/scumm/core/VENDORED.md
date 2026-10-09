@@ -52,14 +52,24 @@ Made by `extras/tools/scumm_vendor/revendor.py`, and nothing else:
    header is ours (MIT) and says why the host mode is the right one here:
    the board mode, `FJ_NATMOD`, defines `malloc` and friends itself, which
    in this library would replace the C library's in every sketch.
-5. **One patch,** `scumm-fast-ram.patch`, applied last by the script. It
-   adds hooks (`FJ_STACK_ALLOC`, `FJ_SCREEN_ALLOC`, `FJ_SCREEN_FREE`) for
-   the engine's coroutine stack and its 8-bit screen, which upstream takes
-   from the arena (PSRAM on the board). `fj_arduino.h` points them at
-   static buffers in on-chip RAM (`../scumm_machine.cpp`); on the RP2350
-   PSRAM shares the flash's small cache, and these two are touched by
-   every interrupt and every frame respectively. The defaults keep
-   upstream's behaviour.
+5. **Three patches,** applied last by the script in name order. Each
+   change in them is marked `Adafruit Arcade Machines:`.
+   - `scumm-fast-ram.patch`: hooks (`FJ_STACK_ALLOC`, `FJ_SCREEN_ALLOC`,
+     `FJ_SCREEN_FREE`) for the engine's coroutine stack and its 8-bit
+     screen, which upstream takes from the arena (PSRAM on the board).
+     `fj_arduino.h` points them at static buffers in on-chip RAM
+     (`../scumm_machine.cpp`); on the RP2350 PSRAM shares the flash's small
+     cache, and these two are touched by every interrupt and every frame.
+     The defaults keep upstream's behaviour.
+   - `scumm-mix-extra.patch`: `fj_core_mix_extra()`, more audio without
+     advancing the game, so the glue can catch the output up after a slow
+     frame (DEVNOTES #165).
+   - `scumm-save-screen.patch`: the game's own save/load screen. Plain F5
+     now prepares the v3 games' save snapshot (ScummVM's Alt-F5, because
+     desktop ScummVM keeps F5 for its own menu; without it every typed
+     save failed), and `listSavefiles()` takes its pattern from the C
+     string (the pattern's NUL kept its `*`, so the load list was always
+     empty). DEVNOTES #169.
 
 To re-vendor: check out fruitjam-arcade at the new commit, run
 `extras/tools/scumm_vendor/revendor.py <checkout>`, and update the commit

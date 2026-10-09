@@ -13,7 +13,7 @@ and the general build steps; this page covers what is specific to SCUMM.
 The engine is **fruitjam-scumm**, Mikey Sklar's cut-down copy of
 [ScummVM](https://www.scummvm.org/) 2.2.0's SCUMM engine (v3/v4 games) from
 [mikeysklar/fruitjam-arcade](https://github.com/mikeysklar/fruitjam-arcade),
-vendored with two documented patches
+vendored with three documented patches
 ([`src/machines/scumm/core/VENDORED.md`](../../../src/machines/scumm/core/VENDORED.md)).
 **This sketch's binary contains GPL-3.0-or-later code** (ScummVM's own
 files are GPL-2.0-or-later). It links only into this sketch.
@@ -53,7 +53,9 @@ partition scheme -- not GPT/exFAT):
 
 ## Controls
 
-The pad is a mouse.
+A **USB mouse and keyboard** work as they would on a PC, and so do the pad
+and the Fruit Jam's buttons, all at once. On the pad, the D-pad moves the
+pointer.
 
 | Action | Fruit Jam GPIO | USB pad (Nintendo layout) |
 |---|---|---|
@@ -67,13 +69,23 @@ The pad is a mouse.
 | Quick save | Button 2 | -- |
 | Quick load | Button 3 | -- |
 
-- **The game's own save screen wants a typed name**, which a pad can't do,
-  so save with **quick save** (Button 2). It saves to slot 1, listed as
-  "Fruit Jam" in the game's load screen, which works with the pad.
-- **USB gamepads** plug into either Type-A port, with **Tools → USB Stack →
-  Adafruit TinyUSB** (which `sketch.yaml` selects). Tested with a Mantapad.
-  On a Retro-bit Genesis pad, Escape and "." are on the GPIO buttons only.
-- A USB mouse and keyboard aren't supported yet.
+- **Saving:** F5 opens the game's own save/load screen. Saving there wants
+  a typed name, so it needs a keyboard; without one, use **quick save**
+  (Button 2), which saves to slot 1, listed as "Fruit Jam". Loading from
+  the game's screen works with the pad or the mouse.
+- **USB mouse:** moves the pointer (two mouse counts per game pixel, as
+  the picture is drawn at 2x) and clicks, left and right.
+- **USB keyboard** (US layout): letters, digits, punctuation, F1-F12,
+  Enter, Esc, Backspace, Tab, Space, Delete and the arrows reach the game,
+  so you can type save names, and in Loom play a draft by typing its
+  notes. It must
+  offer the standard boot keyboard interface, as most do (tested: a
+  Keychron K8). A keyboard with an off switch is invisible until it's on.
+- **USB devices** plug into either Type-A port, with **Tools → USB Stack →
+  Adafruit TinyUSB** (which `sketch.yaml` selects); with two ports, a
+  keyboard and a mouse fill them, or use a wireless combo receiver. Tested
+  with a Mantapad, a Keychron K8 and a USB mouse. On a Retro-bit Genesis
+  pad, Escape and "." are on the GPIO buttons only.
 
 ## Picture and sound
 

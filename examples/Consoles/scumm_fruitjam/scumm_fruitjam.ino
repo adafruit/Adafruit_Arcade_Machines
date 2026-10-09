@@ -49,6 +49,26 @@
 #if defined(USE_TINYUSB)
 #include <pio_usb.h>
 #include <boards/fruitjam/usb_input_fruitjam.h>
+#include <input/usb_keyboard_mouse.h>
+#include <input/usb_gamepad.h>
+
+// Every USB HID interface plugged in, kept for the status output (the
+// boot messages never reach the host): what a keyboard or mouse that isn't
+// recognised actually offers.
+#define HID_LOG 8
+static struct { uint8_t addr, inst, proto; uint16_t vid, pid, len; } g_hid_log[HID_LOG];
+static uint8_t g_hid_n = 0;
+static void on_any_hid(uint8_t addr, uint8_t inst, uint16_t vid, uint16_t pid,
+                       uint8_t proto, uint16_t len) {
+    if (g_hid_n < HID_LOG) g_hid_log[g_hid_n++] = { addr, inst, proto, vid, pid, len };
+}
+static void print_hid_log(void) {
+    static const char *const kProto[] = { "none", "KEYBOARD", "MOUSE" };
+    for (uint8_t i = 0; i < g_hid_n; i++)
+        Serial.printf("[scumm] usb hid: dev %u itf %u %04x:%04x boot protocol %s, report descriptor %u bytes\n",
+                      g_hid_log[i].addr, g_hid_log[i].inst, g_hid_log[i].vid, g_hid_log[i].pid,
+                      g_hid_log[i].proto < 3 ? kProto[g_hid_log[i].proto] : "?", g_hid_log[i].len);
+}
 #endif
 
 #define TAG "scumm"
@@ -210,6 +230,7 @@ void setup() {
     }
 
 #if defined(USE_TINYUSB)
+    usb_hid_set_any_mount_hook(on_any_hid);
     fruitjam_usb_input_begin(FRUITJAM_USB_MAP_SCUMM);
 #endif
     if (g_ok) g_scanout = fruitjam_video_set_line_source(scanout);
@@ -258,6 +279,18 @@ void loop() {
     if (hal_input_read(HAL_BTN_START2))  pad |= SCUMM_PAD_START2;
     if (hal_input_read(HAL_BTN_ROTATE))  pad |= SCUMM_PAD_SAVE;
     if (hal_input_read(HAL_BTN_MIRROR))  pad |= SCUMM_PAD_LOAD;
+#if defined(USE_TINYUSB)
+    // A USB mouse moves the same pointer and clicks with it; a USB keyboard
+    // types (save names, Loom's drafts, F5, Esc...). Both work beside the
+    // pad and the buttons.
+    {
+        int32_t dx, dy, wheel;
+        const uint8_t mb = usb_mouse_take(&dx, &dy, &wheel);
+        scumm_mouse_input(&g_system, dx, dy, mb);
+        usb_key_event_t k;
+        while (usb_keyboard_pop(&k)) scumm_key_hid(&g_system, k.usage, k.modifiers);
+    }
+#endif
     scumm_input_update(&g_system, pad);
 
     static uint32_t frame_count = 0;
@@ -296,7 +329,7 @@ void loop() {
         Serial.printf("[%s] frame %lu, frame %luus (blocked %luus), engine MEAN %luus max %luus, "
                       "arena %lu KB peak %lu KB, stack %lu/%lu, io max %luus opens %lu (miss %lu) "
                       "reads %lu seeks %lu writes %lu, audio %lu frames (topup %lu), ur %lu ov %lu depth %lu, "
-                      "starve %lu, minq %lu/%lu, ptr %d,%d, pad 0x%lx%s\n",
+                      "starve %lu, minq %lu/%lu, ptr %d,%d, pad 0x%lx, kbd %d mouse %d keys %lu%s\n",
                       TAG, (unsigned long)frame_count, (unsigned long)frame_us,
                       (unsigned long)blocked_us,
                       (unsigned long)(s.frames ? s.frame_us_sum / s.frames : 0),
@@ -312,8 +345,17 @@ void loop() {
                       (unsigned long)hal_video_take_starve_count(),
                       (unsigned long)hal_video_take_min_valid_level(),
                       (unsigned long)hal_video_scanbuf_count(), g_system.x, g_system.y,
-                      (unsigned long)pad, running ? "" : ", STOPPED");
+                      (unsigned long)pad,
+#if defined(USE_TINYUSB)
+                      (int)usb_keyboard_connected(), (int)usb_mouse_connected(),
+#else
+                      0, 0,
+#endif
+                      (unsigned long)g_system.keys, running ? "" : ", STOPPED");
         if ((frame_count % 600u) == 60u) { print_game(); print_settings("in use"); }
+#if defined(USE_TINYUSB)
+        if ((frame_count % 300u) == 0u) print_hid_log();
+#endif
 #ifdef SCUMM_PROFILE
         if ((frame_count % 600u) == 0u) print_profile();
 #endif

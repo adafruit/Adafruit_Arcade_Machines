@@ -14,7 +14,8 @@
 //     board scans out on its own (scumm_video_scanout()), so a room load
 //     that keeps the engine busy for 300 ms never stalls the picture;
 //   - its 22,050 Hz stereo, mixed to mono for console/console_audio;
-//   - the pad as a mouse.
+//   - the pad as a mouse, and a USB mouse and keyboard (scumm_mouse_input(),
+//     scumm_key_hid()).
 //
 // THE GAME is a folder of game files plus a marker in /cart, as upstream
 // does it: /cart/<name>.scumm holds the folder's path (e.g. "/scumm/loom";
@@ -85,6 +86,10 @@ typedef struct {
     uint32_t pad_prev;
     bool     combo;            // Start and Select went down together
     bool     running;          // false once the engine has stopped
+    // A USB mouse: its buttons, and motion not yet a whole game pixel.
+    uint8_t  mouse_buttons;
+    int32_t  mouse_rem_x, mouse_rem_y;
+    uint32_t keys;             // key presses sent, for the status line
 } scumm_system;
 
 // Boot, in order: init (sets up the display); load (mounts the card and
@@ -97,6 +102,17 @@ bool scumm_start(scumm_system *sys, const char *music, bool subtitles,
 
 // The pad, once a frame before scumm_run_frame(): SCUMM_PAD_* bits.
 void scumm_input_update(scumm_system *sys, uint32_t pad);
+
+// A mouse, once a frame before scumm_input_update(): its motion since the
+// last call, in mouse counts (Y down-positive), and its buttons (bit 0
+// left, 1 right). The picture is shown at 2x, so two counts are one game
+// pixel. Its clicks join the pad's.
+void scumm_mouse_input(scumm_system *sys, int32_t dx, int32_t dy, uint8_t buttons);
+
+// A key pressed on a keyboard, as a HID keyboard usage and the modifiers
+// held (USB boot-keyboard bits; 0x22 is either Shift). US layout. Keys the
+// engine has no use for are ignored. Up to 8 queue between frames.
+void scumm_key_hid(scumm_system *sys, uint8_t usage, uint8_t modifiers);
 
 // One 1/60 s engine frame, its audio, and 240 lines into the display queue
 // to pace it (not shown: the board scans the framebuffer out). Returns
