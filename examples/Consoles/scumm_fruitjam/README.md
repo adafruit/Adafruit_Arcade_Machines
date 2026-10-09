@@ -22,6 +22,51 @@ No game data comes with this library. Use your own copy of a game, or
 ScummVM's free demos (fruitjam-arcade's `ports/scumm/get_testdata.sh`
 fetches them).
 
+## Setting up a card, step by step
+
+Loom (DOS EGA) as the example; any supported game is the same.
+
+1. **Format the card** FAT32 with the **MBR** partition scheme. On a Mac,
+   Disk Utility's "Erase" picks GPT unless you choose "Master Boot Record"
+   under Scheme (choose View → Show All Devices first to see it).
+2. **Copy the game's files** into a folder, exactly as they came, for
+   example `/scumm/loom/`. For DOS Loom that's the `.LFL` files. Don't
+   rename or convert anything.
+3. **Make the marker:** a text file in `/cart` named `<anything>.scumm`
+   whose only line is the game folder's path. From Terminal, with the card
+   mounted as `CARD`:
+
+   ```sh
+   mkdir -p /Volumes/CARD/cart
+   printf '/scumm/loom\n' > /Volumes/CARD/cart/loom.scumm
+   ```
+
+   If you use a text editor instead, save as **plain text** and check the
+   name: TextEdit adds `.txt` (`loom.scumm.txt`) and Finder hides it, and
+   the Fruit Jam then finds no marker (a **yellow** screen).
+4. **Optional, AdLib music:** make `/cart/loom.fruitjam.cfg` holding the
+   line `music = adlib`. The game also writes this file itself on its
+   first boot, with every setting at its default, so you can instead boot
+   once, edit the file on your computer and boot again. The music setting
+   is read only at start-up.
+5. **Put the card in the Fruit Jam and power it up.** The game starts on
+   its own; the marker that sorts first in `/cart` is the one that boots.
+
+The card then looks like this (`loom.s01` and so on appear when you save):
+
+```
+/cart/loom.scumm           /scumm/loom
+/cart/loom.fruitjam.cfg    music = adlib     (optional; written at first boot)
+/scumm/loom/00.LFL
+/scumm/loom/01.LFL
+...                        (the rest of the game's .LFL files)
+/scumm/loom/loom.s01       a save, once you've saved
+```
+
+**AdLib** is for **DOS Loom and Indiana Jones and the Last Crusade**.
+Monkey Island 1 (EGA) plays its music through iMuse, which isn't
+included, so it stays on the PC speaker whatever the setting says.
+
 ## The card
 
 A SCUMM game is a **folder**, plus a small **marker** file in `/cart` that
