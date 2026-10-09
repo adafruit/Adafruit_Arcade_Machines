@@ -22,6 +22,8 @@
 //   Start D6       space (pause)     Select A5 COIN  F5 (the game's save/load screen)
 //   Start2 D7      "." (skip the current line of dialogue)
 //   Button 1       F5                Button 2 quick save   Button 3 quick load
+// A USB pad (Nintendo layout): D-pad, A, B, Start and Select as above, Y
+// for Escape and X for "." (FRUITJAM_USB_MAP_SCUMM).
 // The game's own save screen wants a typed name, so without a keyboard use
 // quick save (slot 1, listed as "Fruit Jam" in the game's load screen).
 //
@@ -208,7 +210,7 @@ void setup() {
     }
 
 #if defined(USE_TINYUSB)
-    fruitjam_usb_input_begin(FRUITJAM_USB_MAP_NES);
+    fruitjam_usb_input_begin(FRUITJAM_USB_MAP_SCUMM);
 #endif
     if (g_ok) g_scanout = fruitjam_video_set_line_source(scanout);
     if (g_ok) {

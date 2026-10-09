@@ -31,6 +31,9 @@ typedef enum {
     // The NES reads the same four buttons the same way (A, B, Start,
     // Select, on SHOOT, ACTION2, START1, COIN), so it shares the tables.
     FRUITJAM_USB_MAP_NES = FRUITJAM_USB_MAP_GAMEBOY,
+    // SCUMM: the Game Boy's four, plus Y as ACTION3 (Escape) and X as
+    // START2 (".") -- scumm_fruitjam.ino.
+    FRUITJAM_USB_MAP_SCUMM,
 } fruitjam_usb_map_t;
 
 // Starts the USB host (usb_host_fruitjam.h) and picks the mapping. Call
