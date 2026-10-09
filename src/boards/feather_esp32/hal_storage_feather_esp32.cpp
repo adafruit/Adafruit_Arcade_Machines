@@ -60,9 +60,10 @@ bool hal_storage_list_dir(const char *dir, hal_storage_dirent_cb cb, void *ctx) 
 }
 
 struct hal_file { File32 fil; bool in_use; };
-// 4: the SCUMM engine keeps a room file open, and opens sound and save
-// files beside it. Each File32 is a few dozen bytes; the cache is shared.
-#define MAX_OPEN_FILES 4
+// 2 here (the Fruit Jam has 4, for the SCUMM engine, which doesn't run on
+// this board): each slot is a File32 in DRAM, and Galaga on the Feather
+// has only ~100 bytes of DRAM to spare -- 4 overflowed it by 24 bytes.
+#define MAX_OPEN_FILES 2
 static hal_file_t file_pool[MAX_OPEN_FILES];
 
 hal_file_t *hal_storage_open(const char *path) {
