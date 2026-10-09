@@ -9209,12 +9209,9 @@ the music stuttered on pans and redraws.
 
 **Still open:** AdLib is now ~65% of the engine's time (the OPL code in
 flash, its tables in PSRAM); moving it into RAM is the next lever. USB
-mouse and keyboard. And the upload's 1200-baud reset: the SCUMM sketch
-ignores it (the port never even drops), so it needs the BOOT button. It
-isn't the watchdog (the red-screen path, which never starts it, ignores
-it too), nor the watchdog scratch registers (nothing else uses 0-3); the
-NES DVHSTX build showed it once as well. Every other sketch takes the
-reset normally.
+mouse and keyboard. And the upload's 1200-baud reset, which the SCUMM
+sketch ignored (the port never even dropped), so it needed the BOOT
+button: no longer reproducible after #166's USB host fix; see #170.
 
 ### 166. A Pico PIO USB transfer that waits forever if it is interrupted
 
@@ -9345,3 +9342,36 @@ Both are in `scumm-save-screen.patch`. On hardware (Loom, Keychron K8 and a
 USB mouse): typed a save name, saved, reopened, the save was listed under
 its name, and it loaded to the right place. Loom's drafts also play when
 their notes are typed.
+
+### 170. The SCUMM sketch's ignored upload reset: gone since the USB host fix
+
+**The symptom (#165):** arduino-cli's 1200-baud touch did nothing while the
+SCUMM sketch ran: no reboot, the port never dropped, so every flash needed
+the BOOT button. The NES DVHSTX build showed it once.
+
+**The chain it has to pass:** the host sets 1200 baud and drops DTR;
+TinyUSB's device task sees the line state (`tud_cdc_line_state_cb()` in
+`Adafruit_USBD_CDC.cpp`) and calls `TinyUSB_Port_EnterDFU()`, which is
+`reset_usb_boot(0, 0)`. The device task runs from a software interrupt
+(only when `__usb_mutex` is free; nothing else takes it) and from
+`yield()`, which the core calls after every `loop()`.
+
+**A probe** (`-DTEST_RESET_PROBE`, kept in the sketch) logs every change of
+`Serial.baud()` and `Serial.dtr()`, and reboots to BOOTSEL when `B` arrives
+on serial, to test the two halves apart. It took the reset at once. So did
+the plain build, every time, measured with
+`extras/tools/upload_reset_test/touchtest.sh`, which copies the `.uf2` to
+the BOOTSEL drive, waits, sends the touch and watches for the drive:
+
+| Build | Condition | Result |
+|---|---|---|
+| probe | 5 s, 60 s after boot | reset |
+| plain | 5 s, 60 s, 5 min after boot | reset |
+| plain | 3 min of play with the Mantapad | reset |
+
+**So:** every failure we saw was on a build from before #166, the Pico PIO
+USB transfer that could wait forever inside its frame-timer interrupt, and
+every SCUMM flash after that fix went through the BOOT button, so the reset
+simply wasn't tried again. The correlation is strong; the mechanism isn't
+proven, since no pre-#166 build was re-tested. The probe stays for the day
+it comes back.
