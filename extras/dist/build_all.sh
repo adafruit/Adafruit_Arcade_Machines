@@ -4,10 +4,10 @@
 # SPDX-License-Identifier: MIT
 
 # Build the release binaries into dist/: seven Fruit Jam game .uf2 files,
-# the Game Boy and NES console .uf2s, and the Feather ESP32 V2 images of
-# the same nine sketches.
+# the Game Boy, NES and SCUMM .uf2s, and the Feather ESP32 V2 images of the
+# games and the two consoles (SCUMM is Fruit Jam only): 19 files.
 #
-# TWO THINGS THIS DOES DELIBERATELY:
+# THREE THINGS THIS DOES DELIBERATELY:
 #
 # 1. No --fqbn. Each sketch.yaml pins its own optimisation level (invaders
 #    Optimize2, the rest Optimize3); passing one here would override every
@@ -28,6 +28,14 @@
 #    that directory is gone, and the override silently pointed the builder
 #    at a sketchbook with no libraries in it -- "PicoDVI.h: No such file or
 #    directory" on the first game.
+#
+# 3. --clean on every build. arduino-cli keeps one build folder per sketch
+#    in its cache and reuses its objects and its list of detected
+#    libraries. After builds with other flags (-DARCADE_FRUITJAM_PICODVI,
+#    say), that cache can hold a library this build doesn't use: the
+#    v2.17.0 release build linked PicoDVI beside Adafruit DVI HSTX and
+#    failed with "multiple definition of dvi_timing_640x480p_60hz". A
+#    release is built from nothing, every time; it costs a few minutes.
 set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -38,7 +46,7 @@ cd "$ROOT"
 for g in $GAMES; do
     sk="${g}_fruitjam"
     printf '%-20s ' "$sk"
-    if ! arduino-cli compile --library "$ROOT" \
+    if ! arduino-cli compile --clean --library "$ROOT" \
             --output-dir "$HERE" "examples/Games/$sk" \
             > "$HERE/.$g.log" 2>&1; then
         echo "FAILED -- see $HERE/.$g.log"
@@ -52,11 +60,13 @@ for g in $GAMES; do
 done
 
 # --- Consoles (Fruit Jam) ---------------------------------------------------
-# Same as the games; the sketch lives under examples/Consoles/.
-for c in gameboy nes; do
+# Same as the games; the sketch lives under examples/Consoles/. SCUMM is
+# here too (its sketch is there), and its .uf2 contains GPL-3.0-or-later
+# code, as nes_ contains GPL-2.0-only.
+for c in gameboy nes scumm; do
     sk="${c}_fruitjam"
     printf '%-20s ' "$sk"
-    if ! arduino-cli compile --library "$ROOT" \
+    if ! arduino-cli compile --clean --library "$ROOT" \
             --output-dir "$HERE" "examples/Consoles/$sk" \
             > "$HERE/.$c.log" 2>&1; then
         echo "FAILED -- see $HERE/.$c.log"
@@ -84,7 +94,7 @@ for path in $ESP_SKETCHES; do
     g=$(basename "$path")
     sk="${g}_featheresp32"
     printf '%-20s ' "$sk"
-    if ! arduino-cli compile --library "$ROOT" \
+    if ! arduino-cli compile --clean --library "$ROOT" \
             --fqbn esp32:esp32:adafruit_feather_esp32_v2 \
             --output-dir "$HERE" "examples/${path}_featheresp32" \
             > "$HERE/.$g-esp32.log" 2>&1; then
