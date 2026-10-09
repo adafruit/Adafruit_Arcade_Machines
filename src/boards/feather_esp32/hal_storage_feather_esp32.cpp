@@ -60,7 +60,9 @@ bool hal_storage_list_dir(const char *dir, hal_storage_dirent_cb cb, void *ctx) 
 }
 
 struct hal_file { File32 fil; bool in_use; };
-#define MAX_OPEN_FILES 2
+// 4: the SCUMM engine keeps a room file open, and opens sound and save
+// files beside it. Each File32 is a few dozen bytes; the cache is shared.
+#define MAX_OPEN_FILES 4
 static hal_file_t file_pool[MAX_OPEN_FILES];
 
 hal_file_t *hal_storage_open(const char *path) {
@@ -78,6 +80,14 @@ uint32_t hal_storage_read(hal_file_t *f, void *buf, uint32_t len) {
     if (!f) return 0;
     int br = f->fil.read(buf, (size_t)len);
     return (br > 0) ? (uint32_t)br : 0u;
+}
+
+bool hal_storage_seek(hal_file_t *f, uint32_t pos) {
+    return f && f->fil.seekSet(pos);
+}
+
+uint32_t hal_storage_size(hal_file_t *f) {
+    return f ? (uint32_t)f->fil.fileSize() : 0u;
 }
 
 void hal_storage_close(hal_file_t *f) {

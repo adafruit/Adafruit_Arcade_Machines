@@ -50,6 +50,10 @@ void console_audio_set_volume(uint32_t volume);
 uint32_t console_audio_volume_step(int steps);
 uint32_t console_audio_volume(void);
 
+// The ring's level now, in samples, without touching the statistics. For
+// a machine that can make extra audio on demand (SCUMM's catch-up).
+uint32_t console_audio_depth(void);
+
 // One frame of mono samples from the emulation loop (core 0).
 void console_audio_push(const int16_t *samples, uint32_t n);
 

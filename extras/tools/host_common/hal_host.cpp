@@ -186,6 +186,21 @@ uint32_t hal_storage_read(hal_file_t *f, void *buf, uint32_t len) {
     return (uint32_t)fread(buf, 1, len, f->fp);
 }
 
+bool hal_storage_seek(hal_file_t *f, uint32_t pos) {
+    if (!f || !f->fp) return false;
+    if (fseek(f->fp, 0, SEEK_END) != 0 || (uint32_t)ftell(f->fp) < pos) return false;
+    return fseek(f->fp, (long)pos, SEEK_SET) == 0;
+}
+
+uint32_t hal_storage_size(hal_file_t *f) {
+    if (!f || !f->fp) return 0;
+    const long here = ftell(f->fp);
+    fseek(f->fp, 0, SEEK_END);
+    const long n = ftell(f->fp);
+    fseek(f->fp, here, SEEK_SET);
+    return n > 0 ? (uint32_t)n : 0u;
+}
+
 void hal_storage_close(hal_file_t *f) {
     if (!f) return;
     if (f->fp) fclose(f->fp);

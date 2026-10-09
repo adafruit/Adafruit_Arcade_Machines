@@ -59,6 +59,17 @@ const entry_t kGameBoyGenesis[] = {
     { USB_PAD_SELECT, HAL_BTN_COIN },   // Genesis Mode -> Select
 };
 
+// SCUMM (scumm_fruitjam.ino): the Game Boy's A, B, Start, Select (left
+// click, right click, space, F5), plus Y as ACTION3 (Escape, skip a
+// cutscene) and X as START2 ("." , skip a line of dialogue). On Nintendo's
+// layout Y is WEST and X is NORTH.
+const entry_t kScumm[] = {
+    DPAD,
+    { USB_PAD_EAST, HAL_BTN_SHOOT }, { USB_PAD_SOUTH, HAL_BTN_ACTION2 },
+    { USB_PAD_START, HAL_BTN_START1 }, { USB_PAD_SELECT, HAL_BTN_COIN },
+    { USB_PAD_WEST, HAL_BTN_ACTION3 }, { USB_PAD_NORTH, HAL_BTN_START2 },
+};
+
 struct table_t { const entry_t *e; uint8_t n; };
 #define TABLE(t) { t, (uint8_t)(sizeof t / sizeof t[0]) }
 
@@ -74,7 +85,9 @@ bool g_started = false;
 
 table_t table_for(uint16_t vid, uint16_t pid) {
     for (const pad_override_t &o : kOverrides)
-        if (o.vid == vid && o.pid == pid) return g_map == FRUITJAM_USB_MAP_GAMEBOY ? o.gameboy : o.arcade;
+        if (o.vid == vid && o.pid == pid)
+            return g_map == FRUITJAM_USB_MAP_ARCADE ? o.arcade : o.gameboy;   // SCUMM: the console table
+    if (g_map == FRUITJAM_USB_MAP_SCUMM) return table_t TABLE(kScumm);
     return g_map == FRUITJAM_USB_MAP_GAMEBOY ? table_t TABLE(kGameBoy) : table_t TABLE(kArcade);
 }
 

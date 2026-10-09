@@ -1,0 +1,59 @@
+--- a/backend/fj_core.cpp
++++ b/backend/fj_core.cpp
+@@ -33,6 +33,17 @@
+ static bool fjHostJmpSet;
+ 
+ enum { kStackSize = 48 * 1024 };
++// Adafruit Arcade Machines: where the engine's coroutine stack and its
++// 8-bit screen come from. Upstream takes both from the arena (PSRAM on the
++// board); a port can put them in faster memory (see fj_arduino.h). The
++// screen's hooks are also used by osystem.cpp's initSize().
++#ifndef FJ_STACK_ALLOC
++#define FJ_STACK_ALLOC(n) malloc(n)
++#endif
++#ifndef FJ_SCREEN_ALLOC
++#define FJ_SCREEN_ALLOC(n) calloc((n), 1)
++#define FJ_SCREEN_FREE(p) free(p)
++#endif
+ 
+ #pragma mark --- engine coroutine ---
+ 
+@@ -277,10 +288,10 @@
+ 	if (!fj)
+ 		return FJ_ERR_NOMEM;
+ 	fj->io = io;
+-	fj->screen = (byte *)calloc(FJ_SCREEN_W * FJ_SCREEN_H, 1);
++	fj->screen = (byte *)FJ_SCREEN_ALLOC(FJ_SCREEN_W * FJ_SCREEN_H);
+ 	fj->screenBpp = 1;
+ 	fj->scratch = (int16 *)malloc(512 * 4);
+-	void *stack = malloc(kStackSize);
++	void *stack = FJ_STACK_ALLOC(kStackSize);
+ 	if (!fj->screen || !fj->scratch || !stack)
+ 		return FJ_ERR_NOMEM;
+ 
+--- a/backend/osystem.cpp	2026-10-07 17:41:45
++++ b/backend/osystem.cpp	2026-10-07 17:41:45
+@@ -439,16 +439,21 @@
+ 	return list;
+ }
+ 
++#ifndef FJ_SCREEN_ALLOC   // Adafruit Arcade Machines: see fj_core.cpp
++#define FJ_SCREEN_ALLOC(n) calloc((n), 1)
++#define FJ_SCREEN_FREE(p) free(p)
++#endif
++
+ void OSystem::initSize(uint width, uint height, const Graphics::PixelFormat *format) {
+ 	if (width != FJ_SCREEN_W || height != FJ_SCREEN_H)
+ 		warning("initSize %dx%d: only 320x200 is supported", width, height);
+ 	// Only RGB565 (Loom PC-Engine) or CLUT8.
+ 	int bpp = (format && format->bytesPerPixel == 2) ? 2 : 1;
+ 	if (bpp != fj->screenBpp) {
+-		byte *s = (byte *)calloc(FJ_SCREEN_W * FJ_SCREEN_H, bpp);
++		byte *s = (byte *)FJ_SCREEN_ALLOC(FJ_SCREEN_W * FJ_SCREEN_H * bpp);
+ 		if (!s)
+ 			error("initSize: out of memory");
+-		free(fj->screen);
++		FJ_SCREEN_FREE(fj->screen);
+ 		fj->screen = s;
+ 		fj->screenBpp = bpp;
+ 	}

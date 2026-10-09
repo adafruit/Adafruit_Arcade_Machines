@@ -1,0 +1,53 @@
+--- a/backend/fj_core.cpp
++++ b/backend/fj_core.cpp
+@@ -238,8 +238,12 @@
+ 
+ #pragma mark --- audio ---
+ 
++// Adafruit Arcade Machines: samples mixed on top of the frame clock by
++// fj_core_mix_extra(), to catch the output up after a slow frame.
++static uint32 fjExtraSamples;
++
+ static void mixAudio() {
+-	uint32 target = (uint32)((uint64)fj->frames * FJ_AUDIO_RATE / FJ_FPS);
++	uint32 target = (uint32)((uint64)fj->frames * FJ_AUDIO_RATE / FJ_FPS) + fjExtraSamples;
+ 	int n = target - fj->samples;
+ 	fj->samples = target;
+ 	while (n > 0) {
+@@ -415,6 +419,20 @@
+ 
+ 	fjHostJmpSet = false;
+ 	return fj->dead ? 0 : 1;
++}
++
++// Adafruit Arcade Machines: see fj_core.h.
++void fj_core_mix_extra(int n) {
++	if (!fj || fj->dead || n <= 0)
++		return;
++	if (setjmp(fjHostJmp)) {
++		fjHostJmpSet = false;
++		return;
++	}
++	fjHostJmpSet = true;
++	fjExtraSamples += (uint32)n;
++	mixAudio();
++	fjHostJmpSet = false;
+ }
+ 
+ size_t fj_core_mem_used(void) {
+--- a/backend/fj_core.h
++++ b/backend/fj_core.h
+@@ -85,6 +85,13 @@
+ /* Running count of audio frames produced (one per 1/FJ_AUDIO_RATE s). */
+ uint32_t fj_core_samples(void);
+ 
++/* Adafruit Arcade Machines: mix `n` more audio frames into the ring now,
++ * beyond the 1/60 s that fj_core_frame() mixes, without advancing the
++ * game. The music players are driven by the samples they make, so their
++ * tempo is unchanged. For catching the output up after a slow frame (a
++ * room load or a full redraw), which mixes no more than a fast one. */
++void fj_core_mix_extra(int n);
++
+ /* Input for the next frame: mouse in game coordinates (0..319, 0..199) and
+  * FJ_BTN_* bits. */
+ void fj_core_input(int x, int y, int buttons);
