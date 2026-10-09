@@ -248,7 +248,47 @@ void setup() {
     g_video_ready = true;
 }
 
+#ifdef TEST_RESET_PROBE
+// For when the upload's 1200-baud reset is ignored, as it was before the
+// USB host fix (DEVNOTES #170): log every change in the
+// serial line's baud and DTR as TinyUSB sees them, and reboot to BOOTSEL
+// when 'B' arrives on the serial port.
+#include <pico/bootrom.h>
+static void reset_probe(void) {
+    static uint32_t last_baud = 0;
+    static int last_dtr = -1;
+    static uint32_t log_n = 0;
+    static char log[8][40];
+    const uint32_t b = Serial.baud();
+    const int d = Serial.dtr();
+    if (b != last_baud || d != last_dtr) {
+        snprintf(log[log_n % 8], sizeof log[0], "%lu ms: baud %lu dtr %d",
+                 (unsigned long)millis(), (unsigned long)b, d);
+        log_n++;
+        last_baud = b;
+        last_dtr = d;
+    }
+    while (Serial.available()) {
+        if (Serial.read() == 'B') {
+            Serial.println("[scumm] reset probe: calling reset_usb_boot()");
+            Serial.flush();
+            delay(50);
+            reset_usb_boot(0, 0);
+        }
+    }
+    static uint32_t t = 0;
+    if (millis() - t > 2000) {
+        t = millis();
+        const uint32_t from = log_n > 8 ? log_n - 8 : 0;
+        for (uint32_t i = from; i < log_n; i++) Serial.printf("[scumm] line: %s\n", log[i % 8]);
+    }
+}
+#endif
+
 void loop() {
+#ifdef TEST_RESET_PROBE
+    reset_probe();
+#endif
     if (!g_ok) {
         scumm_draw_error_frame(g_error_color);
         static uint32_t n = 0;

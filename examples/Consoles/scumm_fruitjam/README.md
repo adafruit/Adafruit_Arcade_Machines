@@ -123,9 +123,11 @@ address to a function with
 Building with `-DSCUMM_PROFILE` adds a sampling profiler that prints where
 the engine spends its time every 10 seconds (`extras/DEVNOTES.md` #165).
 
-## Known issues
+## Uploads
 
-- **Uploads need the BOOT button.** The board ignores the upload's
-  1200-baud reset while this sketch runs: hold BOOT while plugging in the
-  USB and copy the `.uf2` to the drive that appears (or upload with
-  arduino-cli once it's there). Other sketches aren't affected.
+Uploads work as for any sketch. Before v2.18.0's USB host fix
+(`extras/DEVNOTES.md` #166) the board often ignored the upload's 1200-baud
+reset while this sketch ran; if that ever comes back, hold BOOT while
+plugging in the USB and copy the `.uf2` to the drive that appears, and
+build with `-DTEST_RESET_PROBE` to see what the serial line receives
+(DEVNOTES #170).
