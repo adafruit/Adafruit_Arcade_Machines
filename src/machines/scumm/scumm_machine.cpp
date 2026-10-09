@@ -167,7 +167,24 @@ static int io_open(void *ctx, const char *name, int write) {
     }
     g_stats.io_opens++;
     io_note(t0);
-    if (!f) { g_stats.io_open_misses++; return -1; }
+    if (!f) {
+        g_stats.io_open_misses++;
+#if defined(ARDUINO)
+        // A failed write is worth saying (a save that didn't happen); a
+        // failed read is usually the engine looking for a save that isn't
+        // there.
+        if (write) {
+            int busy = 0;
+            for (int i = 0; i < MAX_HANDLES; i++) busy += g_files[i] != nullptr;
+            Serial.printf("[scumm] could not create %s (%d of %d handles in use)\n",
+                          path, busy, MAX_HANDLES);
+        }
+#endif
+        return -1;
+    }
+#if defined(ARDUINO)
+    if (write) Serial.printf("[scumm] writing %s\n", path);
+#endif
     g_files[h] = f;
     return h;
 }
@@ -403,8 +420,8 @@ void scumm_input_update(scumm_system *sys, uint32_t m) {
         sys->held = 0;
     }
     int b = 0;
-    if (m & SCUMM_PAD_A) b |= FJ_BTN_LEFT;
-    if (m & SCUMM_PAD_B) b |= FJ_BTN_RIGHT;
+    if ((m & SCUMM_PAD_A) || (sys->mouse_buttons & 1u)) b |= FJ_BTN_LEFT;
+    if ((m & SCUMM_PAD_B) || (sys->mouse_buttons & 2u)) b |= FJ_BTN_RIGHT;
     fj_core_input(sys->x, sys->y, b);
 
     // Start and Select fire on release, so pressing both sends neither
@@ -425,6 +442,66 @@ void scumm_input_update(scumm_system *sys, uint32_t m) {
     if (pressed & SCUMM_PAD_SAVE)   fj_core_save(SCUMM_QUICK_SLOT);
     if (pressed & SCUMM_PAD_LOAD)   fj_core_load(SCUMM_QUICK_SLOT);
     sys->pad_prev = m;
+}
+
+// --- Mouse and keyboard --------------------------------------------------------
+
+static inline int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+void scumm_mouse_input(scumm_system *sys, int32_t dx, int32_t dy, uint8_t buttons) {
+    // Two counts a game pixel (the picture is at 2x); the remainder carries
+    // over, so slow movement isn't lost.
+    sys->mouse_rem_x += dx;
+    sys->mouse_rem_y += dy;
+    const int32_t px = sys->mouse_rem_x / 2, py = sys->mouse_rem_y / 2;
+    sys->mouse_rem_x -= px * 2;
+    sys->mouse_rem_y -= py * 2;
+    sys->x = clampi(sys->x + (int)px, 0, FJ_SCREEN_W - 1);
+    sys->y = clampi(sys->y + (int)py, 0, FJ_SCREEN_H - 1);
+    sys->mouse_buttons = buttons;
+}
+
+// HID keyboard usage to ScummVM's keycode and ASCII, US layout. Letters
+// keep their lower-case keycode whatever Shift does; ASCII follows Shift.
+// Function keys' ASCII is ScummVM's ASCII_F1 (315) onwards.
+void scumm_key_hid(scumm_system *sys, uint8_t u, uint8_t mods) {
+    static const char kDigits[]  = "1234567890";
+    static const char kDigitsS[] = "!@#$%^&*()";
+    // Usages 0x2D-0x38 in order, unshifted and shifted: - = [ ] \ (non-US
+    // #, skipped below) ; ' ` , . /
+    static const char kPunct[]   = "-=[]\\#;'`,./";
+    static const char kPunctS[]  = "_+{}|~:\"~<>?";
+    const bool shift = (mods & 0x22u) != 0;
+    int key = 0, ascii = 0;
+    if (u >= 0x04 && u <= 0x1D) {                    // a-z
+        key = 'a' + (u - 0x04);
+        ascii = shift ? 'A' + (u - 0x04) : key;
+    } else if (u >= 0x1E && u <= 0x27) {             // 1-9, 0
+        key = kDigits[u - 0x1E];
+        ascii = shift ? kDigitsS[u - 0x1E] : key;
+    } else if (u >= 0x2D && u <= 0x38 && u != 0x32) {
+        key = kPunct[u - 0x2D];
+        ascii = shift ? kPunctS[u - 0x2D] : key;
+    } else if (u >= 0x3A && u <= 0x45) {             // F1-F12
+        key = FJ_KEY_F1 + (u - 0x3A);
+        ascii = 315 + (u - 0x3A);
+    } else {
+        switch (u) {
+        case 0x28: key = ascii = FJ_KEY_RETURN; break;
+        case 0x29: key = ascii = FJ_KEY_ESCAPE; break;
+        case 0x2A: key = ascii = 8; break;            // Backspace
+        case 0x2B: key = ascii = 9; break;            // Tab
+        case 0x2C: key = ascii = FJ_KEY_SPACE; break;
+        case 0x4C: key = ascii = 127; break;          // Delete
+        case 0x4F: key = 275; break;                  // Right
+        case 0x50: key = 276; break;                  // Left
+        case 0x51: key = 274; break;                  // Down
+        case 0x52: key = 273; break;                  // Up
+        default: return;
+        }
+    }
+    fj_core_key(key, ascii);
+    sys->keys++;
 }
 
 // --- The frame ---------------------------------------------------------------
