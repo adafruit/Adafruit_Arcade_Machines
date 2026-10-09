@@ -316,7 +316,7 @@ carries **all seven games for both boards** — fourteen files — plus the
 two consoles for both boards: `gameboy_fruitjam.uf2` (from v2.11.0),
 `nes_fruitjam.uf2` (from v2.12.0), and `gameboy_featheresp32.bin` and
 `nes_featheresp32.bin` (from v2.13.0), and the SCUMM adventures on the Fruit
-Jam, `scumm_fruitjam.uf2` (from the release after v2.19.0). The Fruit Jam
+Jam, `scumm_fruitjam.uf2` (from v2.19.1). The Fruit Jam
 builds include USB gamepad support (and a keyboard and mouse in SCUMM); the
 Feather builds include Wii Classic / SNES Classic controller support.
 
@@ -645,7 +645,7 @@ flashing it.
 library **passes**: 0 errors, 1 warning, exit 0, with all 30 examples clean —
 fourteen games (seven per board), the Game Boy and NES consoles on both
 boards, SCUMM on the Fruit Jam, and eleven SelfTest sketches (checked for
-v2.19.0).
+v2.19.1).
 
 ```bash
 # lint what the registry would actually clone, NOT the working tree
