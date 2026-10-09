@@ -10,6 +10,8 @@
 #include <string.h>
 #include <Adafruit_TinyUSB.h>
 
+#include "input/usb_keyboard_mouse.h"
+
 namespace {
 
 struct pad_t {
@@ -25,6 +27,7 @@ pad_t    g_pads[USB_GAMEPAD_MAX];
 uint32_t g_unsupported;
 usb_gamepad_mount_hook_t  g_on_mount;
 usb_gamepad_report_hook_t g_on_report;
+usb_hid_any_mount_hook_t  g_on_any_mount;
 
 pad_t *find(uint8_t dev_addr, uint8_t instance) {
     for (pad_t &p : g_pads)
@@ -48,9 +51,19 @@ extern "C" {
 // TinyUSB calls these from tuh_task(), on the core that runs the host.
 
 void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, const uint8_t *desc, uint16_t desc_len) {
-    // Keyboards and mice have their own boot protocols; not gamepads.
+    // Keyboards and mice have their own boot protocols; not gamepads. They
+    // go to usb_keyboard_mouse (TinyUSB has only one set of these
+    // callbacks, so this file hands them over).
     const uint8_t proto = tuh_hid_interface_protocol(dev_addr, instance);
-    if (proto == HID_ITF_PROTOCOL_KEYBOARD || proto == HID_ITF_PROTOCOL_MOUSE) return;
+    if (g_on_any_mount) {
+        uint16_t v = 0, p = 0;
+        tuh_vid_pid_get(dev_addr, &v, &p);
+        g_on_any_mount(dev_addr, instance, v, p, proto, desc_len);
+    }
+    if (proto == HID_ITF_PROTOCOL_KEYBOARD || proto == HID_ITF_PROTOCOL_MOUSE) {
+        (void)usb_keyboard_mouse_mount(dev_addr, instance, proto);
+        return;
+    }
 
     uint16_t vid = 0, pid = 0;
     tuh_vid_pid_get(dev_addr, &vid, &pid);
@@ -76,10 +89,15 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, const uint8_t *desc, u
 }
 
 void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
+    usb_keyboard_mouse_umount(dev_addr, instance);
     if (pad_t *p = find(dev_addr, instance)) { p->buttons = 0; p->used = false; }
 }
 
 void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, const uint8_t *report, uint16_t len) {
+    if (usb_keyboard_mouse_report(dev_addr, instance, report, len)) {
+        tuh_hid_receive_report(dev_addr, instance);
+        return;
+    }
     if (pad_t *p = find(dev_addr, instance)) {
         uint32_t b = p->buttons;
         if (usb_pad_decode(&p->layout, report, len, &b)) { p->buttons = b; p->reports++; }
@@ -117,6 +135,8 @@ bool usb_gamepad_info(uint8_t player, usb_gamepad_info_t *out) {
 }
 
 uint32_t usb_gamepad_unsupported_count(void) { return g_unsupported; }
+
+void usb_hid_set_any_mount_hook(usb_hid_any_mount_hook_t hook) { g_on_any_mount = hook; }
 
 void usb_gamepad_set_hooks(usb_gamepad_mount_hook_t on_mount, usb_gamepad_report_hook_t on_report) {
     g_on_mount = on_mount;

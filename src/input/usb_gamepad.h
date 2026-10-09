@@ -56,6 +56,14 @@ typedef void (*usb_gamepad_report_hook_t)(int player, const uint8_t *report, uin
 void usb_gamepad_set_hooks(usb_gamepad_mount_hook_t on_mount,
                            usb_gamepad_report_hook_t on_report);
 
+// And on EVERY HID interface plugged in, before it's sorted into gamepad,
+// keyboard or mouse: `protocol` is its boot protocol (0 none, 1 keyboard,
+// 2 mouse). For finding out what a device that isn't recognised offers.
+typedef void (*usb_hid_any_mount_hook_t)(uint8_t dev_addr, uint8_t instance,
+                                         uint16_t vid, uint16_t pid,
+                                         uint8_t protocol, uint16_t desc_len);
+void usb_hid_set_any_mount_hook(usb_hid_any_mount_hook_t hook);
+
 #ifdef __cplusplus
 }
 #endif
