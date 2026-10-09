@@ -9343,4 +9343,5 @@ output for the next device that doesn't appear.
 
 Both are in `scumm-save-screen.patch`. On hardware (Loom, Keychron K8 and a
 USB mouse): typed a save name, saved, reopened, the save was listed under
-its name, and it loaded to the right place.
+its name, and it loaded to the right place. Loom's drafts also play when
+their notes are typed.

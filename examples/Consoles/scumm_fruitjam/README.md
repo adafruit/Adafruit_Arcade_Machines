@@ -77,8 +77,8 @@ pointer.
   the picture is drawn at 2x) and clicks, left and right.
 - **USB keyboard** (US layout): letters, digits, punctuation, F1-F12,
   Enter, Esc, Backspace, Tab, Space, Delete and the arrows reach the game,
-  so you can type save names (Loom's drafts by letter should work too,
-  but haven't been tried). It must
+  so you can type save names, and in Loom play a draft by typing its
+  notes. It must
   offer the standard boot keyboard interface, as most do (tested: a
   Keychron K8). A keyboard with an off switch is invisible until it's on.
 - **USB devices** plug into either Type-A port, with **Tools → USB Stack →
