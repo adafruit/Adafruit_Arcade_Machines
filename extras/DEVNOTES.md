@@ -9304,3 +9304,43 @@ NMI at its exact line.
 it interrupted, in 64-byte buckets, read out with `addr2line`. It runs
 just below PIO USB's frame timer (#166). Keep the ELF of the build that
 ran: a rebuild into the same folder moves the addresses.
+
+### 169. SCUMM gets a USB keyboard and mouse, and the game's own save screen starts working
+
+**Keyboard and mouse:** `src/input/usb_keyboard_mouse.*` reads boot-protocol
+keyboards and mice, which TinyUSB's host selects by default (the 8-byte
+keyboard report; the mouse's buttons, X, Y, wheel). TinyUSB has only one set
+of HID callbacks, and `usb_gamepad.cpp` owned them, skipping boot keyboards
+and mice ("not gamepads"); it now hands those interfaces over. Key presses
+queue as HID usages with their modifiers; the SCUMM machine turns them into
+ScummVM keycodes and ASCII (US layout; F-keys' ASCII from 315, as ScummVM's
+`ASCII_F1`). The mouse moves the same pointer as the pad, at two counts per
+game pixel since the picture is at 2x, with the remainder carried so slow
+movement isn't lost; its clicks join the pad's.
+
+**The first test found no keyboard** (`kbd 0 mouse 1`) -- it had an off
+switch. A diagnostic hook that logs every HID interface plugged in, before
+it's sorted (`usb_hid_set_any_mount_hook()`), stays in the sketch's status
+output for the next device that doesn't appear.
+
+**Then the game's save screen: two bugs, neither from the keyboard.**
+
+1. **"ERROR: The game was NOT saved."** The log showed no file opened for
+   writing at all. SCUMM v3 (Loom, Indy 3) saves through
+   `savePreparedSavegame()`, a snapshot taken when the save screen opens,
+   and ScummVM takes it on **Alt-F5** only (`ScummEngine_v3::processKeyboard`):
+   desktop ScummVM keeps plain F5 for its own menu. This port has no such
+   menu; F5 opens the game's dialog directly, no snapshot was ever taken,
+   and every typed save failed before reaching the card. Plain F5 now takes
+   it too. (Quick save uses `requestSave()`, which saves the live state, so
+   it always worked.)
+2. **The load list was empty** with `loom.s01` on the card. Upstream's
+   `listSavefiles()` probes `<prefix>00`-`19`, stripping the pattern's
+   trailing `*`. `listSavegames()` builds the pattern from "loom.s99" with
+   `setChar('*')` and `setChar(0)`, and `setChar` doesn't change the size,
+   so `lastChar()` was the NUL, the `*` stayed, and every probe was
+   `loom.s*NN`. The prefix now comes from the C string.
+
+Both are in `scumm-save-screen.patch`. On hardware (Loom, Keychron K8 and a
+USB mouse): typed a save name, saved, reopened, the save was listed under
+its name, and it loaded to the right place.

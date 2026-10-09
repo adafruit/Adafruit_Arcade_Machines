@@ -148,7 +148,7 @@ any known quirks. They all share the building steps below.
 |---|---|---|
 | NES | [`nes_fruitjam/`](examples/Consoles/nes_fruitjam/README.md) | The microSD card is the cartridge (one `.nes` in `/cart`), with nofrendo's 59 mappers, battery saves to a standard `.sav`, 8:7 aspect correction on Button 1, six palettes on Button 3, and full APU sound. Core: nofrendo from retro-go, **GPL-2.0-only** (linked only into the NES sketches). Also on the Feather ESP32 V2: [`nes_featheresp32/`](examples/Consoles/nes_featheresp32/). |
 | Game Boy (DMG) | [`gameboy_fruitjam/`](examples/Consoles/gameboy_fruitjam/README.md) | The project's first **console**: the microSD card is the cartridge (one `.gb` in `/cart`), loaded into PSRAM, with MBC1/2/3/5 bank switching, battery saves to a standard `.sav`, four colour palettes on Button 3, a 3x picture by default (each pixel an exact 3×3 block; Button 1 for 1x), and full APU sound. Core: Peanut-GB (MIT). Also on the Feather ESP32 V2: [`gameboy_featheresp32/`](examples/Consoles/gameboy_featheresp32/). More consoles are planned in `extras/CONSOLES_PLAN.md`. |
-| SCUMM (LucasArts adventures) | [`scumm_fruitjam/`](examples/Consoles/scumm_fruitjam/README.md) | Loom, Monkey Island 1 (EGA), Indy 3 (EGA) and the free demos, Fruit Jam only. The game is a folder on the card plus a marker in `/cart`; the pad is a mouse; PC speaker or AdLib music; the game's own saves, plus a quick save. Engine: Mikey Sklar's **fruitjam-scumm** (ScummVM 2.2.0's SCUMM engine), vendored, **GPL-3.0-or-later** (linked only into this sketch). Bring-up: `extras/DEVNOTES.md` #165-#168. |
+| SCUMM (LucasArts adventures) | [`scumm_fruitjam/`](examples/Consoles/scumm_fruitjam/README.md) | Loom, Monkey Island 1 (EGA), Indy 3 (EGA) and the free demos, Fruit Jam only. The game is a folder on the card plus a marker in `/cart`; a USB keyboard and mouse, or the pad as a mouse; PC speaker or AdLib music; the game's own save/load screen, plus a quick save. Engine: Mikey Sklar's **fruitjam-scumm** (ScummVM 2.2.0's SCUMM engine), vendored, **GPL-3.0-or-later** (linked only into this sketch). Bring-up: `extras/DEVNOTES.md` #165-#168. |
 
 **USB gamepads** work in every Fruit Jam game, both consoles and SCUMM, plugged
 into either Type-A port, when the sketch is built with the Adafruit TinyUSB
@@ -945,7 +945,7 @@ any code was written is kept in `extras/DVI_AUDIO_NOTES.md`.
   [mikeysklar/fruitjam-arcade](https://github.com/mikeysklar/fruitjam-arcade)
   (`ports/scumm`): a cut-down copy of [ScummVM](https://www.scummvm.org/)
   2.2.0's SCUMM engine (the ScummVM team, credited in its `AUTHORS` and
-  `COPYRIGHT`), with a C interface for small boards. Vendored with two
+  `COPYRIGHT`), with a C interface for small boards. Vendored with three
   documented patches, **GPL-3.0-or-later** (ScummVM's own files are
   GPL-2.0-or-later), linked only into the SCUMM sketch — see
   `src/machines/scumm/core/VENDORED.md`.
