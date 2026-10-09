@@ -275,7 +275,12 @@ InSaveFile *SaveFileManager::openForLoading(const String &name) {
 // There is no directory listing, so probe the first 20 slots.
 StringArray SaveFileManager::listSavefiles(const String &pattern) {
 	StringArray out;
-	String prefix = pattern;
+	// Adafruit Arcade Machines: from the C string. ScummEngine::listSavegames()
+	// builds its pattern as "loom.s99" with setChar('*') and setChar(0),
+	// which leaves the size at 8, so lastChar() was the NUL, the '*' was
+	// never stripped, and every slot was probed as "loom.s*NN": the game's
+	// load screen came up empty however many saves there were.
+	String prefix = pattern.c_str();
 	while (!prefix.empty() && (prefix.lastChar() == '*' || prefix.lastChar() == '?'))
 		prefix.deleteLastChar();
 	for (int slot = 0; slot < 20; slot++) {
