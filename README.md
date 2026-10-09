@@ -644,7 +644,7 @@ flashing it.
 library **passes**: 0 errors, 1 warning, exit 0, with all 30 examples clean —
 fourteen games (seven per board), the Game Boy and NES consoles on both
 boards, SCUMM on the Fruit Jam, and eleven SelfTest sketches (checked for
-v2.18.0).
+v2.19.0).
 
 ```bash
 # lint what the registry would actually clone, NOT the working tree
