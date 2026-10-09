@@ -950,11 +950,12 @@ any code was written is kept in `extras/DVI_AUDIO_NOTES.md`.
   documented patches, **GPL-3.0-or-later** (ScummVM's own files are
   GPL-2.0-or-later), linked only into the SCUMM sketch — see
   `src/machines/scumm/core/VENDORED.md`.
-- USB gamepads on the Fruit Jam: the
+- USB gamepads, keyboards and mice on the Fruit Jam: the
   [Adafruit TinyUSB Library](https://github.com/adafruit/Adafruit_TinyUSB_Arduino)
   and [Pico PIO USB](https://github.com/sekigon-gonnoc/Pico-PIO-USB) by
-  sekigon-gonnoc, as Library Manager dependencies. The gamepad layer on top
-  (`src/input/usb_gamepad*`) is this project's own.
+  sekigon-gonnoc, as Library Manager dependencies. The layers on top
+  (`src/input/usb_gamepad*`, `src/input/usb_keyboard_mouse*`) are this
+  project's own.
 - Wii Classic / SNES Classic controller driver (`src/input/wii_classic`):
   written from the public protocol on WiiBrew ("Wiimote/Extension
   Controllers");
